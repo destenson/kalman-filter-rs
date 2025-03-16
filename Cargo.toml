@@ -1,0 +1,9 @@
+[package]
+name = "kalman_filter"
+version = "0.1.2"
+authors = ["Yu Jin <dedaluss@foxmail.com>"]
+description = "An OpenCV-like kalman filter"
+license = "MIT"
+
+[dependencies]
+nalgebra = "0.14.1"
