@@ -45,3 +45,9 @@ harness = false
 path = "examples/main.rs"
 name = "legacy"
 required-features = ["legacy"]
+
+
+[[example]]
+path = "examples/if_sensor_network.rs"
+name = "if_sensor_network"
+required-features = ["std"]
