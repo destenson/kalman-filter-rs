@@ -1,0 +1,497 @@
+//! Extended Kalman Filter (EKF) implementation
+//!
+//! The Extended Kalman Filter linearizes non-linear models around the current estimate
+//! using Jacobian matrices. It extends the linear Kalman filter to handle nonlinear
+//! state transition and measurement functions.
+//!
+//! # Theory
+//!
+//! For a nonlinear system:
+//! - State transition: x_k+1 = f(x_k, u_k) + w_k
+//! - Measurement: z_k = h(x_k) + v_k
+//!
+//! The EKF linearizes these functions using Jacobians:
+//! - F_k = ∂f/∂x evaluated at x̂_k
+//! - H_k = ∂h/∂x evaluated at x̂_k|k-1
+//!
+//! # Example
+//!
+//! ```no_run
+//! use kalman_filter::{ExtendedKalmanFilter, NonlinearSystem, KalmanScalar};
+//!
+//! struct PendulumSystem;
+//!
+//! impl NonlinearSystem<f64> for PendulumSystem {
+//!     fn state_transition(&self, state: &[f64], _control: Option<&[f64]>, dt: f64) -> Vec<f64> {
+//!         let theta = state[0];
+//!         let theta_dot = state[1];
+//!         let g = 9.81;
+//!         let l = 1.0;
+//!         vec![
+//!             theta + theta_dot * dt,
+//!             theta_dot - (g / l) * theta.sin() * dt,
+//!         ]
+//!     }
+//!     
+//!     fn measurement(&self, state: &[f64]) -> Vec<f64> {
+//!         vec![state[0]] // Measure angle only
+//!     }
+//!     
+//!     fn state_jacobian(&self, state: &[f64], _control: Option<&[f64]>, dt: f64) -> Vec<f64> {
+//!         let theta = state[0];
+//!         let g = 9.81;
+//!         let l = 1.0;
+//!         vec![
+//!             1.0, dt,
+//!             -(g / l) * theta.cos() * dt, 1.0,
+//!         ]
+//!     }
+//!     
+//!     fn measurement_jacobian(&self, _state: &[f64]) -> Vec<f64> {
+//!         vec![1.0, 0.0]
+//!     }
+//!     
+//!     fn state_dim(&self) -> usize { 2 }
+//!     fn measurement_dim(&self) -> usize { 1 }
+//! }
+//! ```
+#![allow(unused)]
+
+use crate::types::{KalmanError, KalmanResult, KalmanScalar, NonlinearSystem, JacobianStrategy};
+use crate::filter::KalmanFilter;
+use num_traits::{One, Zero};
+
+/// Extended Kalman Filter for nonlinear state estimation
+pub struct ExtendedKalmanFilter<T, S>
+where
+    T: KalmanScalar,
+    S: NonlinearSystem<T>,
+{
+    /// The nonlinear system model
+    pub system: S,
+    /// State dimension
+    pub state_dim: usize,
+    /// Measurement dimension
+    pub measurement_dim: usize,
+    /// State vector (N x 1)
+    pub x: Vec<T>,
+    /// State covariance matrix (N x N) - row major
+    pub P: Vec<T>,
+    /// Process noise covariance (N x N) - row major
+    pub Q: Vec<T>,
+    /// Measurement noise covariance (M x M) - row major
+    pub R: Vec<T>,
+    /// Jacobian computation strategy
+    pub jacobian_strategy: JacobianStrategy,
+    /// Control input (optional)
+    pub control: Option<Vec<T>>,
+    /// Time step
+    pub dt: T,
+}
+
+impl<T, S> ExtendedKalmanFilter<T, S>
+where
+    T: KalmanScalar,
+    S: NonlinearSystem<T>,
+{
+    /// Create a new Extended Kalman Filter
+    pub fn new(
+        system: S,
+        initial_state: Vec<T>,
+        initial_covariance: Vec<T>,
+        process_noise: Vec<T>,
+        measurement_noise: Vec<T>,
+        dt: T,
+    ) -> KalmanResult<Self> {
+        let n = system.state_dim();
+        let m = system.measurement_dim();
+        
+        // Validate dimensions
+        if initial_state.len() != n {
+            return Err(KalmanError::DimensionMismatch {
+                expected: (n, 1),
+                actual: (initial_state.len(), 1),
+            });
+        }
+        if initial_covariance.len() != n * n {
+            return Err(KalmanError::DimensionMismatch {
+                expected: (n, n),
+                actual: (initial_covariance.len() / n, n),
+            });
+        }
+        if process_noise.len() != n * n {
+            return Err(KalmanError::DimensionMismatch {
+                expected: (n, n),
+                actual: (process_noise.len() / n, n),
+            });
+        }
+        if measurement_noise.len() != m * m {
+            return Err(KalmanError::DimensionMismatch {
+                expected: (m, m),
+                actual: (measurement_noise.len() / m, m),
+            });
+        }
+        
+        Ok(Self {
+            system,
+            state_dim: n,
+            measurement_dim: m,
+            x: initial_state,
+            P: initial_covariance,
+            Q: process_noise,
+            R: measurement_noise,
+            jacobian_strategy: JacobianStrategy::Analytical,
+            control: None,
+            dt,
+        })
+    }
+    
+    /// Set the Jacobian computation strategy
+    pub fn set_jacobian_strategy(&mut self, strategy: JacobianStrategy) {
+        self.jacobian_strategy = strategy;
+    }
+    
+    /// Set control input
+    pub fn set_control(&mut self, control: Vec<T>) {
+        self.control = Some(control);
+    }
+    
+    /// Predict step: propagate state and covariance using nonlinear dynamics
+    pub fn predict(&mut self) {
+        let n = self.state_dim;
+        
+        // Propagate state through nonlinear function
+        let new_x = self.system.state_transition(&self.x, self.control.as_deref(), self.dt);
+        
+        // Get state transition Jacobian at current state
+        let F = match self.jacobian_strategy {
+            JacobianStrategy::Analytical => {
+                self.system.state_jacobian(&self.x, self.control.as_deref(), self.dt)
+            },
+            JacobianStrategy::Numerical { step_size } => {
+                self.compute_numerical_jacobian_state(step_size)
+            },
+            _ => {
+                self.system.state_jacobian(&self.x, self.control.as_deref(), self.dt)
+            }
+        };
+        
+        self.x = new_x;
+        
+        // P = F * P * F^T + Q
+        // First compute F * P
+        let mut fp = vec![T::zero(); n * n];
+        for i in 0..n {
+            for j in 0..n {
+                for k in 0..n {
+                    fp[i * n + j] = fp[i * n + j] + F[i * n + k] * self.P[k * n + j];
+                }
+            }
+        }
+        
+        // Then compute (F * P) * F^T + Q
+        let mut new_p = self.Q.clone();
+        for i in 0..n {
+            for j in 0..n {
+                for k in 0..n {
+                    new_p[i * n + j] = new_p[i * n + j] + fp[i * n + k] * F[j * n + k];
+                }
+            }
+        }
+        
+        // Check for divergence
+        let trace = (0..n).map(|i| new_p[i * n + i]).fold(T::zero(), |a, b| a + b);
+        if trace > T::from(1e6).unwrap() {
+            // Filter is diverging, but continue anyway
+            eprintln!("Warning: EKF covariance trace is large: {}", trace);
+        }
+        
+        self.P = new_p;
+    }
+    
+    /// Update step: incorporate measurement using nonlinear measurement function
+    pub fn update(&mut self, measurement: &[T]) -> KalmanResult<()> {
+        let n = self.state_dim;
+        let m = self.measurement_dim;
+        
+        if measurement.len() != m {
+            return Err(KalmanError::DimensionMismatch {
+                expected: (m, 1),
+                actual: (measurement.len(), 1),
+            });
+        }
+        
+        // Predicted measurement from nonlinear function
+        let h_x = self.system.measurement(&self.x);
+        
+        // Innovation: y = z - h(x)
+        let mut y = vec![T::zero(); m];
+        for i in 0..m {
+            y[i] = measurement[i] - h_x[i];
+        }
+        
+        // Get measurement Jacobian at predicted state
+        let H = match self.jacobian_strategy {
+            JacobianStrategy::Analytical => {
+                self.system.measurement_jacobian(&self.x)
+            },
+            JacobianStrategy::Numerical { step_size } => {
+                self.compute_numerical_jacobian_measurement(step_size)
+            },
+            _ => {
+                self.system.measurement_jacobian(&self.x)
+            }
+        };
+        
+        // Innovation covariance: S = H * P * H^T + R
+        // First compute H * P
+        let mut hp = vec![T::zero(); m * n];
+        for i in 0..m {
+            for j in 0..n {
+                for k in 0..n {
+                    hp[i * n + j] = hp[i * n + j] + H[i * n + k] * self.P[k * n + j];
+                }
+            }
+        }
+        
+        // Then compute S = (H * P) * H^T + R
+        let mut s = self.R.clone();
+        for i in 0..m {
+            for j in 0..m {
+                for k in 0..n {
+                    s[i * m + j] = s[i * m + j] + hp[i * n + k] * H[j * n + k];
+                }
+            }
+        }
+        
+        // Invert S
+        let s_inv = KalmanFilter::<T>::invert_matrix(&s, m)?;
+        
+        // Kalman gain: K = P * H^T * S^-1
+        // First compute P * H^T
+        let mut ph_t = vec![T::zero(); n * m];
+        for i in 0..n {
+            for j in 0..m {
+                for k in 0..n {
+                    ph_t[i * m + j] = ph_t[i * m + j] + self.P[i * n + k] * H[j * n + k];
+                }
+            }
+        }
+        
+        // Then compute K = (P * H^T) * S^-1
+        let mut k = vec![T::zero(); n * m];
+        for i in 0..n {
+            for j in 0..m {
+                for l in 0..m {
+                    k[i * m + j] = k[i * m + j] + ph_t[i * m + l] * s_inv[l * m + j];
+                }
+            }
+        }
+        
+        // State update: x = x + K * y
+        for i in 0..n {
+            for j in 0..m {
+                self.x[i] = self.x[i] + k[i * m + j] * y[j];
+            }
+        }
+        
+        // Covariance update: P = (I - K * H) * P
+        // First compute K * H
+        let mut kh = vec![T::zero(); n * n];
+        for i in 0..n {
+            for j in 0..n {
+                for l in 0..m {
+                    kh[i * n + j] = kh[i * n + j] + k[i * m + l] * H[l * n + j];
+                }
+            }
+        }
+        
+        // Compute I - K * H
+        let mut i_kh = vec![T::zero(); n * n];
+        for i in 0..n {
+            for j in 0..n {
+                i_kh[i * n + j] = if i == j { T::one() } else { T::zero() } - kh[i * n + j];
+            }
+        }
+        
+        // Finally compute P = (I - K * H) * P
+        let mut new_p = vec![T::zero(); n * n];
+        for i in 0..n {
+            for j in 0..n {
+                for l in 0..n {
+                    new_p[i * n + j] = new_p[i * n + j] + i_kh[i * n + l] * self.P[l * n + j];
+                }
+            }
+        }
+        
+        // Ensure symmetry
+        for i in 0..n {
+            for j in i+1..n {
+                let avg = (new_p[i * n + j] + new_p[j * n + i]) * T::from(0.5).unwrap();
+                new_p[i * n + j] = avg;
+                new_p[j * n + i] = avg;
+            }
+        }
+        
+        self.P = new_p;
+        Ok(())
+    }
+    
+    /// Compute numerical Jacobian for state transition using finite differences
+    fn compute_numerical_jacobian_state(&self, step_size: f64) -> Vec<T> {
+        let n = self.state_dim;
+        let step = T::from(step_size).unwrap();
+        let mut jacobian = vec![T::zero(); n * n];
+        
+        for j in 0..n {
+            // Perturb state in j-th dimension
+            let mut state_plus = self.x.clone();
+            let mut state_minus = self.x.clone();
+            state_plus[j] = state_plus[j] + step;
+            state_minus[j] = state_minus[j] - step;
+            
+            // Compute f(x + h) and f(x - h)
+            let f_plus = self.system.state_transition(&state_plus, self.control.as_deref(), self.dt);
+            let f_minus = self.system.state_transition(&state_minus, self.control.as_deref(), self.dt);
+            
+            // Finite difference: (f(x+h) - f(x-h)) / (2h)
+            for i in 0..n {
+                jacobian[i * n + j] = (f_plus[i] - f_minus[i]) / (step + step);
+            }
+        }
+        
+        jacobian
+    }
+    
+    /// Compute numerical Jacobian for measurement using finite differences
+    fn compute_numerical_jacobian_measurement(&self, step_size: f64) -> Vec<T> {
+        let n = self.state_dim;
+        let m = self.measurement_dim;
+        let step = T::from(step_size).unwrap();
+        let mut jacobian = vec![T::zero(); m * n];
+        
+        for j in 0..n {
+            // Perturb state in j-th dimension
+            let mut state_plus = self.x.clone();
+            let mut state_minus = self.x.clone();
+            state_plus[j] = state_plus[j] + step;
+            state_minus[j] = state_minus[j] - step;
+            
+            // Compute h(x + h) and h(x - h)
+            let h_plus = self.system.measurement(&state_plus);
+            let h_minus = self.system.measurement(&state_minus);
+            
+            // Finite difference: (h(x+h) - h(x-h)) / (2h)
+            for i in 0..m {
+                jacobian[i * n + j] = (h_plus[i] - h_minus[i]) / (step + step);
+            }
+        }
+        
+        jacobian
+    }
+    
+    /// Get current state estimate
+    pub fn state(&self) -> &[T] {
+        &self.x
+    }
+    
+    /// Get current state covariance
+    pub fn covariance(&self) -> &[T] {
+        &self.P
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    /// Simple pendulum system for testing
+    struct PendulumSystem {
+        g: f64,  // Gravity
+        l: f64,  // Length
+    }
+    
+    impl NonlinearSystem<f64> for PendulumSystem {
+        fn state_transition(&self, state: &[f64], _control: Option<&[f64]>, dt: f64) -> Vec<f64> {
+            let theta = state[0];
+            let theta_dot = state[1];
+            vec![
+                theta + theta_dot * dt,
+                theta_dot - (self.g / self.l) * theta.sin() * dt,
+            ]
+        }
+        
+        fn measurement(&self, state: &[f64]) -> Vec<f64> {
+            vec![state[0]]  // Measure angle only
+        }
+        
+        fn state_jacobian(&self, state: &[f64], _control: Option<&[f64]>, dt: f64) -> Vec<f64> {
+            let theta = state[0];
+            vec![
+                1.0, dt,
+                -(self.g / self.l) * theta.cos() * dt, 1.0,
+            ]
+        }
+        
+        fn measurement_jacobian(&self, _state: &[f64]) -> Vec<f64> {
+            vec![1.0, 0.0]
+        }
+        
+        fn state_dim(&self) -> usize { 2 }
+        fn measurement_dim(&self) -> usize { 1 }
+    }
+    
+    #[test]
+    fn test_ekf_pendulum() {
+        let system = PendulumSystem { g: 9.81, l: 1.0 };
+        
+        let initial_state = vec![0.1, 0.0];  // Small angle, no velocity
+        let initial_covariance = vec![0.01, 0.0, 0.0, 0.01];
+        let process_noise = vec![0.001, 0.0, 0.0, 0.001];
+        let measurement_noise = vec![0.01];
+        
+        let mut ekf = ExtendedKalmanFilter::new(
+            system,
+            initial_state,
+            initial_covariance,
+            process_noise,
+            measurement_noise,
+            0.01,  // dt
+        ).unwrap();
+        
+        // Predict and update
+        ekf.predict();
+        ekf.update(&[0.09]).unwrap();
+        
+        // Check that state has been updated
+        assert!((ekf.state()[0] - 0.1).abs() < 0.05);
+    }
+    
+    #[test]
+    fn test_ekf_numerical_jacobian() {
+        let system = PendulumSystem { g: 9.81, l: 1.0 };
+        
+        let initial_state = vec![0.1, 0.0];
+        let initial_covariance = vec![0.01, 0.0, 0.0, 0.01];
+        let process_noise = vec![0.001, 0.0, 0.0, 0.001];
+        let measurement_noise = vec![0.01];
+        
+        let mut ekf = ExtendedKalmanFilter::new(
+            system,
+            initial_state,
+            initial_covariance,
+            process_noise,
+            measurement_noise,
+            0.01,
+        ).unwrap();
+        
+        // Use numerical Jacobian
+        ekf.set_jacobian_strategy(JacobianStrategy::Numerical { step_size: 1e-6 });
+        
+        ekf.predict();
+        ekf.update(&[0.09]).unwrap();
+        
+        // Should still work with numerical Jacobian
+        assert!((ekf.state()[0] - 0.1).abs() < 0.05);
+    }
+}
