@@ -10,12 +10,12 @@ use core::fmt;
 /// Format a matrix for logging with lazy evaluation
 /// 
 /// Only computes the string representation if the log level is enabled
-pub fn format_matrix<T: KalmanScalar>(
-    matrix: &[T],
+pub fn format_matrix<'a, T: KalmanScalar>(
+    matrix: &'a [T],
     rows: usize,
     cols: usize,
-    name: &str,
-) -> impl fmt::Display + '_ {
+    name: &'a str,
+) -> impl fmt::Display + 'a {
     MatrixFormatter {
         matrix,
         rows,
@@ -55,7 +55,7 @@ impl<T: KalmanScalar> fmt::Display for MatrixFormatter<'_, T> {
 }
 
 /// Format a state vector for logging
-pub fn format_state<T: KalmanScalar>(state: &[T], name: &str) -> impl fmt::Display + '_ {
+pub fn format_state<'a, T: KalmanScalar>(state: &'a [T], name: &'a str) -> impl fmt::Display + 'a {
     StateFormatter { state, name }
 }
 
@@ -184,7 +184,7 @@ pub fn small_determinant<T: KalmanScalar>(matrix: &[T], size: usize) -> Option<f
 }
 
 /// Format innovation/residual for logging
-pub fn format_innovation<T: KalmanScalar>(innovation: &[T]) -> impl fmt::Display + '_ {
+pub fn format_innovation<'a, T: KalmanScalar>(innovation: &'a [T]) -> impl fmt::Display + 'a {
     InnovationFormatter { innovation }
 }
 
