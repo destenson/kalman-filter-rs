@@ -141,7 +141,7 @@ where
         check_numerical_stability(&initial_covariance, n, "EKF initial covariance");
         
         debug!("EKF initialized: {}", format_state(&initial_state, "initial_state"));
-        debug!("EKF time step dt={:.6}", dt.to_f64());
+        debug!("EKF time step dt={:.6}", dt.to_f64().unwrap_or(0.0));
         
         Ok(Self {
             system,
@@ -183,7 +183,7 @@ where
                 self.system.state_jacobian(&self.x, self.control.as_deref(), self.dt)
             },
             JacobianStrategy::Numerical { step_size } => {
-                trace!("EKF: Computing numerical Jacobian with step_size={:.6}", step_size.to_f64());
+                trace!("EKF: Computing numerical Jacobian with step_size={:.6}", step_size.to_f64().unwrap_or(0.0));
                 self.compute_numerical_jacobian_state(step_size)
             },
             _ => {
@@ -221,7 +221,7 @@ where
         // Check for divergence
         let trace_val = (0..n).map(|i| new_p[i * n + i]).fold(T::zero(), |a, b| a + b);
         if trace_val > T::from(1e6).unwrap() {
-            warn!("EKF covariance trace is large: {:.6e}, filter may be diverging", trace_val.to_f64());
+            warn!("EKF covariance trace is large: {:.6e}, filter may be diverging", trace_val.to_f64().unwrap_or(0.0));
         }
         
         self.P = new_p;
