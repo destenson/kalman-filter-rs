@@ -23,7 +23,9 @@
 
 use crate::types::{KalmanError, KalmanResult, KalmanScalar, NonlinearSystem};
 use crate::filter::KalmanFilter;
+use crate::logging::{format_matrix, format_state, format_innovation, state_norm, check_numerical_stability, log_filter_dimensions};
 use num_traits::{One, Zero};
+use log::{trace, debug, info, warn, error};
 
 /// Cubature Kalman Filter for nonlinear state estimation
 ///
@@ -75,6 +77,9 @@ where
     ) -> KalmanResult<Self> {
         let n = system.state_dim();
         let m = system.measurement_dim();
+        
+        log_filter_dimensions(n, m, None);
+        info!("Cubature Kalman Filter: Initializing with {} cubature points", 2*n);
         
         // Validate dimensions
         if initial_state.len() != n {
@@ -130,6 +135,8 @@ where
         let n = self.state_dim;
         let sqrt_n = T::from(n).unwrap().sqrt();
         
+        trace!("CKF: Generating {} cubature points with weight={:.6}", 2*n, self.weight.to_f64());
+        
         // Compute matrix square root of P using Cholesky decomposition
         let L = self.cholesky_decomposition(&self.P)?;
         
@@ -147,6 +154,8 @@ where
                     self.x[j] - sqrt_n * L[j * n + i];
             }
         }
+        
+        trace!("CKF: Generated cubature points around {}", format_state(&self.x, "state"));
         
         Ok(())
     }
@@ -166,6 +175,7 @@ where
                 
                 if i == j {
                     if sum <= T::zero() {
+                        error!("CKF: Cholesky decomposition failed - negative diagonal element at ({},{}) = {:.6e}", i, j, sum.to_f64());
                         return Err(KalmanError::SingularMatrix);
                     }
                     L[i * n + j] = sum.sqrt();
@@ -182,6 +192,8 @@ where
     pub fn predict(&mut self) -> KalmanResult<()> {
         let n = self.state_dim;
         let num_points = 2 * n;
+        
+        debug!("CKF predict: {} prior={:.4}", format_state(&self.x, "state"), state_norm(&self.x));
         
         // Generate cubature points
         self.generate_cubature_points()?;
@@ -233,6 +245,9 @@ where
             }
         }
         
+        debug!("CKF predict: {} posterior={:.4}", format_state(&new_x, "state"), state_norm(&new_x));
+        check_numerical_stability(&new_P, n, "CKF predict covariance");
+        
         self.x = new_x;
         self.P = new_P;
         self.cubature_points = transformed_points;
@@ -247,11 +262,14 @@ where
         let num_points = 2 * n;
         
         if measurement.len() != m {
+            error!("CKF update: measurement dimension mismatch: expected {}x1, got {}x1", m, measurement.len());
             return Err(KalmanError::DimensionMismatch {
                 expected: (m, 1),
                 actual: (measurement.len(), 1),
             });
         }
+        
+        debug!("CKF update: {}", format_state(measurement, "measurement"));
         
         // Transform cubature points through measurement function
         let mut measurement_points = vec![T::zero(); m * num_points];
@@ -328,6 +346,9 @@ where
             y[i] = measurement[i] - z_pred[i];
         }
         
+        debug!("CKF update: {}", format_innovation(&y));
+        trace!("CKF update: predicted measurement {}", format_state(&z_pred, "z_pred"));
+        
         // State update: x = x + K * y
         for i in 0..n {
             for j in 0..m {
@@ -371,6 +392,9 @@ where
                 self.P[j * n + i] = avg;
             }
         }
+        
+        debug!("CKF update: {} posterior={:.4}", format_state(&self.x, "state"), state_norm(&self.x));
+        check_numerical_stability(&self.P, n, "CKF update covariance");
         
         Ok(())
     }

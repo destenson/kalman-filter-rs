@@ -2,7 +2,9 @@
 #![allow(unused)]
 
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
+use crate::logging::{format_matrix, format_state, format_innovation, state_norm, check_numerical_stability, log_filter_dimensions};
 use num_traits::{One, Zero};
+use log::{trace, debug, info, warn, error};
 
 #[cfg(feature = "nalgebra")]
 use nalgebra::{RealField, SMatrix, SVector};
@@ -79,14 +81,18 @@ where
         let n = state_dim;
         let m = measurement_dim;
         
+        log_filter_dimensions(n, m, None);
+        
         // Validate dimensions
         if initial_state.len() != n {
+            error!("Initial state dimension mismatch: expected {}x1, got {}x1", n, initial_state.len());
             return Err(KalmanError::DimensionMismatch {
                 expected: (n, 1),
                 actual: (initial_state.len(), 1),
             });
         }
         if initial_covariance.len() != n * n {
+            error!("Initial covariance dimension mismatch: expected {}x{}, got len={}", n, n, initial_covariance.len());
             return Err(KalmanError::DimensionMismatch {
                 expected: (n, n),
                 actual: (initial_covariance.len() / n, n),
@@ -117,6 +123,16 @@ where
             });
         }
         
+        // Check numerical stability of initial covariance
+        check_numerical_stability(&initial_covariance, n, "Initial covariance");
+        
+        debug!("Kalman filter initialized: {}", format_state(&initial_state, "initial_state"));
+        
+        if log::log_enabled!(log::Level::Trace) {
+            trace!("Initial covariance: {}", format_matrix(&initial_covariance, n, n, "P0"));
+            trace!("Process noise: {}", format_matrix(&process_noise, n, n, "Q"));
+        }
+        
         Ok(Self {
             state_dim: n,
             measurement_dim: m,
@@ -132,6 +148,12 @@ where
     /// Predict step: propagate state and covariance forward
     pub fn predict(&mut self) {
         let n = self.state_dim;
+        
+        debug!("Predict step: state_norm={:.6}", state_norm(&self.x));
+        
+        if log::log_enabled!(log::Level::Trace) {
+            trace!("Before predict: {}", format_state(&self.x, "x"));
+        }
         
         // x = F * x
         let mut new_x = vec![T::zero(); n];
@@ -163,6 +185,10 @@ where
             }
         }
         self.P = new_p;
+        
+        check_numerical_stability(&self.P, n, "Predicted covariance");
+        
+        debug!("Predict complete: state_norm={:.6}", state_norm(&self.x));
     }
 
     /// Update step: incorporate measurement to correct state estimate
@@ -170,7 +196,10 @@ where
         let n = self.state_dim;
         let m = self.measurement_dim;
         
+        debug!("Update step: measurement_norm={:.6}", state_norm(measurement));
+        
         if measurement.len() != m {
+            error!("Measurement dimension mismatch: expected {}, got {}", m, measurement.len());
             return Err(KalmanError::DimensionMismatch {
                 expected: (m, 1),
                 actual: (measurement.len(), 1),
@@ -186,6 +215,8 @@ where
             }
             y[i] = y[i] - hx;
         }
+        
+        debug!("Innovation: {}", format_innovation(&y));
         
         // Innovation covariance: S = H * P * H^T + R
         // First compute H * P
@@ -209,7 +240,15 @@ where
         }
         
         // Invert S
-        let s_inv = Self::invert_matrix(&s, m)?;
+        trace!("Computing innovation covariance inverse");
+        let s_inv = match Self::invert_matrix(&s, m) {
+            Ok(inv) => inv,
+            Err(e) => {
+                error!("Failed to invert innovation covariance: {:?}", e);
+                check_numerical_stability(&s, m, "Innovation covariance (singular)");
+                return Err(e);
+            }
+        };
         
         // Kalman gain: K = P * H^T * S^-1
         // First compute P * H^T
@@ -278,6 +317,11 @@ where
         }
         
         self.P = new_p;
+        
+        check_numerical_stability(&self.P, n, "Updated covariance");
+        
+        debug!("Update complete: state_norm={:.6}", state_norm(&self.x));
+        
         Ok(())
     }
 
@@ -326,6 +370,7 @@ where
             }
             
             if pivot.abs() < <T as KalmanScalar>::epsilon() {
+                warn!("Matrix inversion failed: pivot {:.6e} at position ({}, {})", pivot.to_f64(), i, i);
                 return Err(KalmanError::SingularMatrix);
             }
             

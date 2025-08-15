@@ -45,6 +45,7 @@ pub mod error;
 pub mod extended;
 pub mod filter;
 pub mod information;
+pub mod logging;
 pub mod particle;
 pub mod scented;
 pub mod types;

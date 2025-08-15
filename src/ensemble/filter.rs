@@ -6,10 +6,12 @@
 #![allow(unused, non_snake_case)] // DO NOT CHANGE
 
 use crate::types::{KalmanError, KalmanResult, KalmanScalar, NonlinearSystem};
+use crate::logging::{format_matrix, format_state, state_norm, check_numerical_stability, log_filter_dimensions};
 use num_traits::{One, Zero};
 use rand::distributions::Distribution;
 use rand_distr::Normal;
 use rand::thread_rng;
+use log::{trace, debug, info, warn, error};
 
 /// Statistics computed from an ensemble
 #[derive(Debug, Clone)]
@@ -73,6 +75,9 @@ where
     ) -> KalmanResult<Self> {
         let n = system.state_dim();
         let m = system.measurement_dim();
+        
+        log_filter_dimensions(n, m, None);
+        info!("Ensemble Kalman Filter: Initializing with {} ensemble members", ensemble_size);
         
         // Validate dimensions
         if initial_mean.len() != n {
@@ -187,6 +192,12 @@ where
         let n = self.state_dim;
         let m = self.ensemble_size;
         
+        let prior_stats = self.compute_statistics();
+        debug!("EnKF forecast: {} prior_norm={:.4} spread={:.4}", 
+            format_state(&prior_stats.mean, "mean"), 
+            state_norm(&prior_stats.mean),
+            state_norm(&prior_stats.spread));
+        
         // Propagate each ensemble member
         let mut new_ensemble = vec![T::zero(); n * m];
         
@@ -208,6 +219,7 @@ where
         
         // Apply multiplicative inflation to maintain spread
         if self.inflation_factor > T::one() {
+            debug!("EnKF forecast: Applying multiplicative inflation factor={:.4}", self.inflation_factor.to_f64());
             let stats = self.compute_statistics();
             for i in 0..n {
                 for j in 0..m {
@@ -218,6 +230,12 @@ where
         }
         
         self.ensemble = new_ensemble;
+        
+        let posterior_stats = self.compute_statistics();
+        debug!("EnKF forecast: {} posterior_norm={:.4} spread={:.4}", 
+            format_state(&posterior_stats.mean, "mean"), 
+            state_norm(&posterior_stats.mean),
+            state_norm(&posterior_stats.spread));
     }
     
     /// Update step: assimilate observations using stochastic EnKF
@@ -227,11 +245,14 @@ where
         let m_obs = self.measurement_dim;
         
         if observation.len() != m_obs {
+            error!("EnKF update: observation dimension mismatch: expected {}x1, got {}x1", m_obs, observation.len());
             return Err(KalmanError::DimensionMismatch {
                 expected: (m_obs, 1),
                 actual: (observation.len(), 1),
             });
         }
+        
+        debug!("EnKF update: {}", format_state(observation, "observation"));
         
         // Get ensemble statistics
         let stats = self.compute_statistics();
@@ -309,6 +330,7 @@ where
         }
         
         // Compute Kalman gain K = P_xh * P_hh^-1
+        check_numerical_stability(&P_hh, m_obs, "EnKF observation covariance P_hh");
         let P_hh_inv = self.invert_matrix(&P_hh, m_obs)?;
         let mut K = vec![T::zero(); n * m_obs];
         
@@ -337,6 +359,12 @@ where
             }
         }
         
+        let final_stats = self.compute_statistics();
+        debug!("EnKF update: {} posterior_norm={:.4} spread={:.4}", 
+            format_state(&final_stats.mean, "mean"), 
+            state_norm(&final_stats.mean),
+            state_norm(&final_stats.spread));
+        
         Ok(())
     }
     
@@ -355,6 +383,7 @@ where
             // Find pivot
             let mut pivot = a[i * size + i];
             if pivot.abs() < T::from(1e-10).unwrap() {
+                error!("EnKF matrix inversion: Singular matrix encountered at pivot ({}, {}) = {:.6e}", i, i, pivot.to_f64());
                 return Err(KalmanError::SingularMatrix);
             }
             

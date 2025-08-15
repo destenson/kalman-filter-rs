@@ -59,7 +59,9 @@
 
 use crate::types::{KalmanError, KalmanResult, KalmanScalar, NonlinearSystem, JacobianStrategy};
 use crate::filter::KalmanFilter;
+use crate::logging::{format_matrix, format_state, format_innovation, state_norm, check_numerical_stability, log_filter_dimensions};
 use num_traits::{One, Zero};
+use log::{trace, debug, info, warn, error};
 
 /// Extended Kalman Filter for nonlinear state estimation
 pub struct ExtendedKalmanFilter<T, S>
@@ -106,8 +108,12 @@ where
         let n = system.state_dim();
         let m = system.measurement_dim();
         
+        log_filter_dimensions(n, m, None);
+        info!("Initializing Extended Kalman Filter");
+        
         // Validate dimensions
         if initial_state.len() != n {
+            error!("EKF: Initial state dimension mismatch: expected {}x1, got {}x1", n, initial_state.len());
             return Err(KalmanError::DimensionMismatch {
                 expected: (n, 1),
                 actual: (initial_state.len(), 1),
@@ -131,6 +137,11 @@ where
                 actual: (measurement_noise.len() / m, m),
             });
         }
+        
+        check_numerical_stability(&initial_covariance, n, "EKF initial covariance");
+        
+        debug!("EKF initialized: {}", format_state(&initial_state, "initial_state"));
+        debug!("EKF time step dt={:.6}", dt.to_f64());
         
         Ok(Self {
             system,
@@ -160,21 +171,29 @@ where
     pub fn predict(&mut self) {
         let n = self.state_dim;
         
+        debug!("EKF predict step: state_norm={:.6}", state_norm(&self.x));
+        
         // Propagate state through nonlinear function
         let new_x = self.system.state_transition(&self.x, self.control.as_deref(), self.dt);
         
         // Get state transition Jacobian at current state
         let F = match self.jacobian_strategy {
             JacobianStrategy::Analytical => {
+                trace!("EKF: Using analytical Jacobian");
                 self.system.state_jacobian(&self.x, self.control.as_deref(), self.dt)
             },
             JacobianStrategy::Numerical { step_size } => {
+                trace!("EKF: Computing numerical Jacobian with step_size={:.6}", step_size.to_f64());
                 self.compute_numerical_jacobian_state(step_size)
             },
             _ => {
                 self.system.state_jacobian(&self.x, self.control.as_deref(), self.dt)
             }
         };
+        
+        if log::log_enabled!(log::Level::Trace) {
+            trace!("EKF state Jacobian: {}", format_matrix(&F, n, n, "F"));
+        }
         
         self.x = new_x;
         
@@ -200,13 +219,15 @@ where
         }
         
         // Check for divergence
-        let trace = (0..n).map(|i| new_p[i * n + i]).fold(T::zero(), |a, b| a + b);
-        if trace > T::from(1e6).unwrap() {
-            // Filter is diverging, but continue anyway
-            eprintln!("Warning: EKF covariance trace is large: {}", trace);
+        let trace_val = (0..n).map(|i| new_p[i * n + i]).fold(T::zero(), |a, b| a + b);
+        if trace_val > T::from(1e6).unwrap() {
+            warn!("EKF covariance trace is large: {:.6e}, filter may be diverging", trace_val.to_f64());
         }
         
         self.P = new_p;
+        
+        check_numerical_stability(&self.P, n, "EKF predicted covariance");
+        debug!("EKF predict complete: state_norm={:.6}", state_norm(&self.x));
     }
     
     /// Update step: incorporate measurement using nonlinear measurement function
@@ -214,7 +235,10 @@ where
         let n = self.state_dim;
         let m = self.measurement_dim;
         
+        debug!("EKF update step: measurement_norm={:.6}", state_norm(measurement));
+        
         if measurement.len() != m {
+            error!("EKF: Measurement dimension mismatch: expected {}, got {}", m, measurement.len());
             return Err(KalmanError::DimensionMismatch {
                 expected: (m, 1),
                 actual: (measurement.len(), 1),
@@ -229,6 +253,8 @@ where
         for i in 0..m {
             y[i] = measurement[i] - h_x[i];
         }
+        
+        debug!("EKF innovation: {}", format_innovation(&y));
         
         // Get measurement Jacobian at predicted state
         let H = match self.jacobian_strategy {
@@ -265,7 +291,15 @@ where
         }
         
         // Invert S
-        let s_inv = KalmanFilter::<T>::invert_matrix(&s, m)?;
+        trace!("EKF: Computing innovation covariance inverse");
+        let s_inv = match KalmanFilter::<T>::invert_matrix(&s, m) {
+            Ok(inv) => inv,
+            Err(e) => {
+                error!("EKF: Failed to invert innovation covariance: {:?}", e);
+                check_numerical_stability(&s, m, "EKF innovation covariance (singular)");
+                return Err(e);
+            }
+        };
         
         // Kalman gain: K = P * H^T * S^-1
         // First compute P * H^T
@@ -334,6 +368,10 @@ where
         }
         
         self.P = new_p;
+        
+        check_numerical_stability(&self.P, n, "EKF updated covariance");
+        debug!("EKF update complete: state_norm={:.6}", state_norm(&self.x));
+        
         Ok(())
     }
     

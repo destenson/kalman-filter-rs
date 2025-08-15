@@ -51,7 +51,9 @@
 
 use crate::types::{KalmanError, KalmanResult, KalmanScalar, NonlinearSystem};
 use crate::filter::KalmanFilter;
+use crate::logging::{format_matrix, format_state, format_innovation, state_norm, check_numerical_stability, log_filter_dimensions};
 use num_traits::{One, Zero};
+use log::{trace, debug, info, warn, error};
 
 /// UKF scaling parameters for sigma point generation
 #[derive(Debug, Clone, Copy)]
@@ -128,6 +130,8 @@ where
     ) -> KalmanResult<Self> {
         let n = system.state_dim();
         let m = system.measurement_dim();
+        
+        log_filter_dimensions(n, m, None);
         
         // Validate dimensions
         if initial_state.len() != n {
@@ -224,6 +228,8 @@ where
         let n = self.state_dim;
         let sqrt_n_lambda = (T::from(n).unwrap() + self.lambda).sqrt();
         
+        trace!("UKF: Generating {} sigma points with lambda={:.6}", 2*n+1, self.lambda.to_f64());
+        
         // Compute matrix square root of P using Cholesky decomposition
         let L = self.cholesky_decomposition(&self.P)?;
         
@@ -247,6 +253,8 @@ where
             }
         }
         
+        trace!("UKF: Generated sigma points around {}", format_state(&self.x, "state"));
+        
         Ok(())
     }
     
@@ -265,6 +273,7 @@ where
                 
                 if i == j {
                     if sum <= T::zero() {
+                        error!("UKF: Cholesky decomposition failed - negative diagonal element at ({},{}) = {:.6e}", i, j, sum.to_f64());
                         return Err(KalmanError::SingularMatrix);
                     }
                     L[i * n + j] = sum.sqrt();
@@ -281,6 +290,8 @@ where
     pub fn predict(&mut self) -> KalmanResult<()> {
         let n = self.state_dim;
         let num_sigma = 2 * n + 1;
+        
+        debug!("UKF predict: {} prior={}", format_state(&self.x, "state"), state_norm(&self.x));
         
         // Generate sigma points
         self.generate_sigma_points()?;
@@ -332,6 +343,9 @@ where
             }
         }
         
+        debug!("UKF predict: {} posterior={}", format_state(&new_x, "state"), state_norm(&new_x));
+        check_numerical_stability(&new_P, n, "UKF predict covariance");
+        
         self.x = new_x;
         self.P = new_P;
         self.sigma_points = transformed_sigma;
@@ -346,11 +360,14 @@ where
         let num_sigma = 2 * n + 1;
         
         if measurement.len() != m {
+            error!("UKF update: measurement dimension mismatch: expected {}x1, got {}x1", m, measurement.len());
             return Err(KalmanError::DimensionMismatch {
                 expected: (m, 1),
                 actual: (measurement.len(), 1),
             });
         }
+        
+        debug!("UKF update: {}", format_state(measurement, "measurement"));
         
         // Transform sigma points through measurement function
         let mut measurement_sigma = vec![T::zero(); m * num_sigma];
@@ -427,6 +444,9 @@ where
             y[i] = measurement[i] - z_pred[i];
         }
         
+        debug!("UKF update: {}", format_innovation(&y));
+        trace!("UKF update: predicted measurement {}", format_state(&z_pred, "z_pred"));
+        
         // State update: x = x + K * y
         for i in 0..n {
             for j in 0..m {
@@ -470,6 +490,9 @@ where
                 self.P[j * n + i] = avg;
             }
         }
+        
+        debug!("UKF update: {} posterior={}", format_state(&self.x, "state"), state_norm(&self.x));
+        check_numerical_stability(&self.P, n, "UKF update covariance");
         
         Ok(())
     }

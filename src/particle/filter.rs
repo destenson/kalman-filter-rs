@@ -5,11 +5,13 @@
 #![allow(unused, non_snake_case)] // DO NOT CHANGE
 
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
+use crate::logging::{format_state, state_norm, log_filter_dimensions};
 use num_traits::{One, Zero};
 use rand::distributions::{Distribution, Uniform};
 use rand_distr::Normal;
 use rand::{thread_rng, Rng};
 use std::f64::consts::PI;
+use log::{trace, debug, info, warn, error};
 
 /// A single particle representing a state hypothesis
 #[derive(Debug, Clone)]
@@ -76,8 +78,12 @@ where
         measurement_noise_std: Vec<T>,
         dt: T,
     ) -> KalmanResult<Self> {
+        log_filter_dimensions(state_dim, measurement_noise_std.len(), None);
+        info!("Particle Filter: Initializing with {} particles", num_particles);
+        
         // Validate dimensions
         if initial_mean.len() != state_dim {
+            error!("Particle Filter: initial mean dimension mismatch: expected {}x1, got {}x1", state_dim, initial_mean.len());
             return Err(KalmanError::DimensionMismatch {
                 expected: (state_dim, 1),
                 actual: (initial_mean.len(), 1),
@@ -145,6 +151,9 @@ where
     where
         F: Fn(&[T], T) -> Vec<T>,
     {
+        let mean_state = self.mean();
+        debug!("Particle Filter predict: {} prior={:.4}", format_state(&mean_state, "mean_state"), state_norm(&mean_state));
+        
         let mut rng = thread_rng();
         
         for particle in &mut self.particles {
@@ -162,6 +171,9 @@ where
             
             particle.state = new_state;
         }
+        
+        let new_mean_state = self.mean();
+        debug!("Particle Filter predict: {} posterior={:.4}", format_state(&new_mean_state, "mean_state"), state_norm(&new_mean_state));
     }
     
     /// Update step: update particle weights based on measurement likelihood
@@ -169,6 +181,8 @@ where
     where
         F: Fn(&[T], &[T]) -> T,
     {
+        debug!("Particle Filter update: {}", format_state(measurement, "measurement"));
+        
         // Update weights based on measurement likelihood
         let mut max_log_weight = T::from(-1e308).unwrap();
         
@@ -201,9 +215,15 @@ where
         
         // Check for particle degeneracy and resample if needed
         let ess = self.effective_sample_size();
+        debug!("Particle Filter update: ESS={:.2}/{}, threshold={:.2}", ess.to_f64(), self.num_particles, self.ess_threshold.to_f64());
+        
         if ess < self.ess_threshold {
+            debug!("Particle Filter: Resampling triggered (ESS below threshold)");
             self.resample()?;
         }
+        
+        let final_mean_state = self.mean();
+        debug!("Particle Filter update: {} posterior={:.4}", format_state(&final_mean_state, "mean_state"), state_norm(&final_mean_state));
         
         Ok(())
     }
@@ -224,12 +244,21 @@ where
     
     /// Resample particles according to their weights
     pub fn resample(&mut self) -> KalmanResult<()> {
-        match self.resampling_strategy {
+        trace!("Particle Filter: Resampling using {:?} strategy", self.resampling_strategy);
+        let result = match self.resampling_strategy {
             ResamplingStrategy::Multinomial => self.multinomial_resample(),
             ResamplingStrategy::Systematic => self.systematic_resample(),
             ResamplingStrategy::Stratified => self.stratified_resample(),
             ResamplingStrategy::Residual => self.residual_resample(),
+        };
+        
+        if result.is_ok() {
+            debug!("Particle Filter: Resampling completed, weights reset to uniform");
+        } else {
+            error!("Particle Filter: Resampling failed");
         }
+        
+        result
     }
     
     /// Multinomial resampling
