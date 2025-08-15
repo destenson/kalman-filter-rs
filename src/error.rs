@@ -1,4 +1,3 @@
-
 use std::fmt;
 
 /// Result type for Kalman filter operations
@@ -57,4 +56,3 @@ impl fmt::Display for KalmanError {
 }
 
 impl std::error::Error for KalmanError {}
-

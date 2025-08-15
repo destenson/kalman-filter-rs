@@ -14,17 +14,14 @@ pub struct KalmanFilter {
 
 impl KalmanFilter {
     /// Create a new Kalman filter with the legacy API
-    /// 
+    ///
     /// # Arguments
     /// * `state_dim` - Dimension of state vector
     /// * `measurement_dim` - Dimension of measurement vector  
     /// * `control_dim` - Dimension of control vector (unused in new implementation)
     pub fn new(state_dim: usize, measurement_dim: usize, control_dim: usize) -> Self {
         let inner = NewKalmanFilter::new(state_dim, measurement_dim);
-        Self {
-            inner,
-            control_dim,
-        }
+        Self { inner, control_dim }
     }
 
     /// Set the state transition matrix (F)

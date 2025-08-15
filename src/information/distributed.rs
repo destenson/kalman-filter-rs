@@ -1,6 +1,6 @@
 //! Distributed Information Filter for sensor networks
 
-use crate::information::{InformationState, InformationForm};
+use crate::information::{InformationForm, InformationState};
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
 use num_traits::Zero;
 use std::collections::{HashMap, VecDeque};
@@ -61,9 +61,14 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
             delays: HashMap::new(),
         }
     }
-    
+
     /// Add a node to the network
-    pub fn add_node(&mut self, node_id: usize, initial_Y: Vec<T>, initial_y: Vec<T>) -> KalmanResult<()> {
+    pub fn add_node(
+        &mut self,
+        node_id: usize,
+        initial_Y: Vec<T>,
+        initial_y: Vec<T>,
+    ) -> KalmanResult<()> {
         if initial_Y.len() != self.state_dim * self.state_dim {
             return Err(KalmanError::DimensionMismatch {
                 expected: (self.state_dim, self.state_dim),
@@ -76,9 +81,9 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
                 actual: (initial_y.len(), 1),
             });
         }
-        
+
         let local_state = InformationState::from_information(initial_Y, initial_y)?;
-        
+
         let node = NodeState {
             node_id,
             local_state,
@@ -86,38 +91,44 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
             message_queue: VecDeque::new(),
             processed_messages: HashMap::new(),
         };
-        
+
         self.nodes.insert(node_id, node);
         self.topology.insert(node_id, Vec::new());
-        
+
         Ok(())
     }
-    
+
     /// Connect two nodes in the network
     pub fn connect_nodes(&mut self, node1: usize, node2: usize, delay: u64) -> KalmanResult<()> {
         // Update topology
-        self.topology.get_mut(&node1)
+        self.topology
+            .get_mut(&node1)
             .ok_or_else(|| KalmanError::FilterDivergence(format!("Unknown node: {}", node1)))?
             .push(node2);
-        self.topology.get_mut(&node2)
+        self.topology
+            .get_mut(&node2)
             .ok_or_else(|| KalmanError::FilterDivergence(format!("Unknown node: {}", node2)))?
             .push(node1);
-        
+
         // Update node neighbors
-        self.nodes.get_mut(&node1)
+        self.nodes
+            .get_mut(&node1)
             .ok_or_else(|| KalmanError::FilterDivergence(format!("Unknown node: {}", node1)))?
-            .neighbors.push(node2);
-        self.nodes.get_mut(&node2)
+            .neighbors
+            .push(node2);
+        self.nodes
+            .get_mut(&node2)
             .ok_or_else(|| KalmanError::FilterDivergence(format!("Unknown node: {}", node2)))?
-            .neighbors.push(node1);
-        
+            .neighbors
+            .push(node1);
+
         // Set communication delay
         self.delays.insert((node1, node2), delay);
         self.delays.insert((node2, node1), delay);
-        
+
         Ok(())
     }
-    
+
     /// Local measurement update at a node
     pub fn local_update(
         &mut self,
@@ -128,7 +139,7 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
     ) -> KalmanResult<()> {
         let n = self.state_dim;
         let m = measurement.len();
-        
+
         if H.len() != m * n {
             return Err(KalmanError::DimensionMismatch {
                 expected: (m, n),
@@ -141,10 +152,10 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
                 actual: (R.len() / m, m),
             });
         }
-        
+
         // Compute information contribution
         let R_inv = crate::filter::KalmanFilter::<T>::invert_matrix(R, m)?;
-        
+
         // H^T·R^-1
         let mut HtR_inv = vec![T::zero(); n * m];
         for i in 0..n {
@@ -154,7 +165,7 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
                 }
             }
         }
-        
+
         // δY = H^T·R^-1·H
         let mut delta_Y = vec![T::zero(); n * n];
         for i in 0..n {
@@ -164,7 +175,7 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
                 }
             }
         }
-        
+
         // δy = H^T·R^-1·z
         let mut delta_y = vec![T::zero(); n];
         for i in 0..n {
@@ -172,12 +183,14 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
                 delta_y[i] = delta_y[i] + HtR_inv[i * m + j] * measurement[j];
             }
         }
-        
+
         // Update local state
-        let node = self.nodes.get_mut(&node_id)
+        let node = self
+            .nodes
+            .get_mut(&node_id)
             .ok_or_else(|| KalmanError::FilterDivergence(format!("Unknown node: {}", node_id)))?;
         node.local_state.add_information(&delta_y, &delta_Y);
-        
+
         // Create message for neighbors
         let message = InformationMessage {
             source_id: node_id,
@@ -185,23 +198,30 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
             delta_Y,
             delta_y,
         };
-        
+
         // Send to neighbors
         self.broadcast_from_node(node_id, message)?;
-        
+
         Ok(())
     }
-    
+
     /// Broadcast information from a node to its neighbors
-    fn broadcast_from_node(&mut self, source_id: usize, message: InformationMessage<T>) -> KalmanResult<()> {
-        let neighbors = self.nodes.get(&source_id)
+    fn broadcast_from_node(
+        &mut self,
+        source_id: usize,
+        message: InformationMessage<T>,
+    ) -> KalmanResult<()> {
+        let neighbors = self
+            .nodes
+            .get(&source_id)
             .ok_or_else(|| KalmanError::FilterDivergence(format!("Unknown node: {}", source_id)))?
-            .neighbors.clone();
-        
+            .neighbors
+            .clone();
+
         for neighbor_id in neighbors {
             let delay = self.delays.get(&(source_id, neighbor_id)).unwrap_or(&0);
             let delivery_time = self.timestamp + delay;
-            
+
             // Queue message with delay
             let delayed_message = InformationMessage {
                 source_id: message.source_id,
@@ -209,34 +229,39 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
                 delta_Y: message.delta_Y.clone(),
                 delta_y: message.delta_y.clone(),
             };
-            
-            self.nodes.get_mut(&neighbor_id)
-                .ok_or_else(|| KalmanError::FilterDivergence(format!("Unknown node: {}", neighbor_id)))?
-                .message_queue.push_back(delayed_message);
+
+            self.nodes
+                .get_mut(&neighbor_id)
+                .ok_or_else(|| {
+                    KalmanError::FilterDivergence(format!("Unknown node: {}", neighbor_id))
+                })?
+                .message_queue
+                .push_back(delayed_message);
         }
-        
+
         Ok(())
     }
-    
+
     /// Process queued messages at all nodes
     pub fn process_messages(&mut self) -> KalmanResult<()> {
         self.timestamp += 1;
-        
+
         let node_ids: Vec<usize> = self.nodes.keys().cloned().collect();
-        
+
         for node_id in node_ids {
             self.process_node_messages(node_id)?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Process messages for a specific node
     fn process_node_messages(&mut self, node_id: usize) -> KalmanResult<()> {
         let messages_to_process: Vec<InformationMessage<T>> = {
-            let node = self.nodes.get_mut(&node_id)
-                .ok_or_else(|| KalmanError::FilterDivergence(format!("Unknown node: {}", node_id)))?;
-            
+            let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
+                KalmanError::FilterDivergence(format!("Unknown node: {}", node_id))
+            })?;
+
             let mut to_process = Vec::new();
             while let Some(msg) = node.message_queue.front() {
                 if msg.timestamp <= self.timestamp {
@@ -247,32 +272,38 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
             }
             to_process
         };
-        
+
         for message in messages_to_process {
             // Check if already processed
             let message_id = (message.source_id, message.timestamp);
-            
-            let node = self.nodes.get_mut(&node_id)
-                .ok_or_else(|| KalmanError::FilterDivergence(format!("Unknown node: {}", node_id)))?;
-            
+
+            let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
+                KalmanError::FilterDivergence(format!("Unknown node: {}", node_id))
+            })?;
+
             if node.processed_messages.contains_key(&message_id) {
                 continue;
             }
-            
+
             // Apply information update
-            node.local_state.add_information(&message.delta_y, &message.delta_Y);
+            node.local_state
+                .add_information(&message.delta_y, &message.delta_Y);
             node.processed_messages.insert(message_id, true);
-            
+
             // Forward to other neighbors (flooding with duplicate detection)
             let neighbors = node.neighbors.clone();
             for neighbor_id in neighbors {
                 if neighbor_id != message.source_id {
                     let forward_message = message.clone();
                     let delay = self.delays.get(&(node_id, neighbor_id)).unwrap_or(&0);
-                    
-                    self.nodes.get_mut(&neighbor_id)
-                        .ok_or_else(|| KalmanError::FilterDivergence(format!("Unknown node: {}", neighbor_id)))?
-                        .message_queue.push_back(InformationMessage {
+
+                    self.nodes
+                        .get_mut(&neighbor_id)
+                        .ok_or_else(|| {
+                            KalmanError::FilterDivergence(format!("Unknown node: {}", neighbor_id))
+                        })?
+                        .message_queue
+                        .push_back(InformationMessage {
                             source_id: forward_message.source_id,
                             timestamp: self.timestamp + delay,
                             delta_Y: forward_message.delta_Y,
@@ -281,23 +312,25 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Get consensus state across all nodes
     pub fn get_consensus_state(&self) -> KalmanResult<Vec<T>> {
         if self.nodes.is_empty() {
-            return Err(KalmanError::FilterDivergence("No nodes in network".to_string()));
+            return Err(KalmanError::FilterDivergence(
+                "No nodes in network".to_string(),
+            ));
         }
-        
+
         let n = self.state_dim;
         let num_nodes = self.nodes.len();
-        
+
         // Average information matrices and vectors
         let mut avg_Y = vec![T::zero(); n * n];
         let mut avg_y = vec![T::zero(); n];
-        
+
         for node in self.nodes.values() {
             for i in 0..n * n {
                 avg_Y[i] = avg_Y[i] + node.local_state.Y[i] / T::from(num_nodes).unwrap();
@@ -306,39 +339,48 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
                 avg_y[i] = avg_y[i] + node.local_state.y[i] / T::from(num_nodes).unwrap();
             }
         }
-        
+
         // Recover state from averaged information
         let avg_state = InformationState::from_information(avg_Y, avg_y)?;
         avg_state.recover_state()
     }
-    
+
     /// Get state estimate from a specific node
     pub fn get_node_state(&self, node_id: usize) -> KalmanResult<Vec<T>> {
-        self.nodes.get(&node_id)
+        self.nodes
+            .get(&node_id)
             .ok_or_else(|| KalmanError::FilterDivergence(format!("Unknown node: {}", node_id)))?
-            .local_state.recover_state()
+            .local_state
+            .recover_state()
     }
-    
+
     /// Get network connectivity statistics
     pub fn get_network_stats(&self) -> NetworkStats {
         let num_nodes = self.nodes.len();
-        let num_edges = self.topology.values()
+        let num_edges = self
+            .topology
+            .values()
             .map(|neighbors| neighbors.len())
-            .sum::<usize>() / 2;
-        
+            .sum::<usize>()
+            / 2;
+
         let avg_degree = if num_nodes > 0 {
-            self.topology.values()
+            self.topology
+                .values()
                 .map(|neighbors| neighbors.len())
-                .sum::<usize>() as f64 / num_nodes as f64
+                .sum::<usize>() as f64
+                / num_nodes as f64
         } else {
             0.0
         };
-        
-        let max_degree = self.topology.values()
+
+        let max_degree = self
+            .topology
+            .values()
             .map(|neighbors| neighbors.len())
             .max()
             .unwrap_or(0);
-        
+
         NetworkStats {
             num_nodes,
             num_edges,
@@ -360,61 +402,61 @@ pub struct NetworkStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_distributed_filter() {
         // Create 3-node network
         let mut dif = DistributedInformationFilter::<f64>::new(2);
-        
+
         // Add nodes with initial information
         let Y_init = vec![1.0, 0.0, 0.0, 1.0];
         let y_init = vec![0.0, 0.0];
-        
+
         dif.add_node(0, Y_init.clone(), y_init.clone()).unwrap();
         dif.add_node(1, Y_init.clone(), y_init.clone()).unwrap();
         dif.add_node(2, Y_init.clone(), y_init.clone()).unwrap();
-        
+
         // Connect in a line: 0 -- 1 -- 2
         dif.connect_nodes(0, 1, 1).unwrap();
         dif.connect_nodes(1, 2, 1).unwrap();
-        
+
         // Node 0 makes a measurement
         let H = vec![1.0, 0.0];
         let R = vec![0.1];
         dif.local_update(0, &[1.0], &H, &R).unwrap();
-        
+
         // Process messages (propagate information)
         dif.process_messages().unwrap();
-        dif.process_messages().unwrap();  // Need two steps for info to reach node 2
-        
+        dif.process_messages().unwrap(); // Need two steps for info to reach node 2
+
         // Check that information propagated
         let state0 = dif.get_node_state(0).unwrap();
         let state2 = dif.get_node_state(2).unwrap();
-        
+
         // Node 2 should have received the information
         assert!(state2[0] > 0.0);
     }
-    
+
     #[test]
     fn test_network_stats() {
         let mut dif = DistributedInformationFilter::<f64>::new(2);
-        
+
         // Create star topology with 4 nodes
         let Y_init = vec![1.0, 0.0, 0.0, 1.0];
         let y_init = vec![0.0, 0.0];
-        
+
         for i in 0..4 {
             dif.add_node(i, Y_init.clone(), y_init.clone()).unwrap();
         }
-        
+
         // Connect as star: 0 is center
         dif.connect_nodes(0, 1, 0).unwrap();
         dif.connect_nodes(0, 2, 0).unwrap();
         dif.connect_nodes(0, 3, 0).unwrap();
-        
+
         let stats = dif.get_network_stats();
         assert_eq!(stats.num_nodes, 4);
         assert_eq!(stats.num_edges, 3);
-        assert_eq!(stats.max_degree, 3);  // Center node
+        assert_eq!(stats.max_degree, 3); // Center node
     }
 }

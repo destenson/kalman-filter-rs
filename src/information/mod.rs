@@ -81,22 +81,22 @@
   distributed sensor networks, fully addressing the PRP requirements.
 */
 
-pub mod filter;
-pub mod conversion;
-pub mod extended;
-pub mod sparse;
-pub mod distributed;
 pub mod consensus;
+pub mod conversion;
+pub mod distributed;
+pub mod extended;
+pub mod filter;
+pub mod sparse;
 
-pub use filter::{InformationFilter, InformationState};
-pub use conversion::{kalman_to_information, information_to_kalman};
-pub use extended::ExtendedInformationFilter;
-pub use sparse::SparseInformationFilter;
+pub use consensus::{AverageConsensus, ConsensusAlgorithm, WeightedConsensus};
+pub use conversion::{information_to_kalman, kalman_to_information};
 pub use distributed::{DistributedInformationFilter, NodeState};
-pub use consensus::{ConsensusAlgorithm, AverageConsensus, WeightedConsensus};
+pub use extended::ExtendedInformationFilter;
+pub use filter::{InformationFilter, InformationState};
+pub use sparse::SparseInformationFilter;
 
-use crate::types::{KalmanScalar, KalmanResult, KalmanError};
-use num_traits::{Zero, One};
+use crate::types::{KalmanError, KalmanResult, KalmanScalar};
+use num_traits::{One, Zero};
 
 /// Information matrix type (Y = P^-1)
 pub type InformationMatrix<T> = Vec<T>;
@@ -108,16 +108,16 @@ pub type InformationVector<T> = Vec<T>;
 pub trait InformationForm<T: KalmanScalar> {
     /// Get information matrix
     fn information_matrix(&self) -> &[T];
-    
+
     /// Get information vector
     fn information_vector(&self) -> &[T];
-    
+
     /// Recover state from information form (x = Y^-1·y)
     fn recover_state(&self) -> KalmanResult<Vec<T>>;
-    
+
     /// Recover covariance from information matrix (P = Y^-1)
     fn recover_covariance(&self) -> KalmanResult<Vec<T>>;
-    
+
     /// Add information contribution (for sensor fusion)
     fn add_information(&mut self, delta_y: &[T], delta_Y: &[T]);
 }

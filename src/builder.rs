@@ -6,11 +6,11 @@ use crate::types::{KalmanError, KalmanResult, KalmanScalar};
 /// Builder for constructing Kalman filters
 ///
 /// Provides a convenient way to construct Kalman filters with validation
-/// 
+///
 /// # Example
 /// ```
 /// use kalman_filter::KalmanFilterBuilder;
-/// 
+///
 /// let kf = KalmanFilterBuilder::<f64>::new(2, 1)  // 2 states, 1 measurement
 ///     .initial_state(vec![0.0, 0.0])
 ///     .initial_covariance(vec![1.0, 0.0, 0.0, 1.0])
@@ -94,23 +94,23 @@ where
         let initial_state = self
             .initial_state
             .ok_or_else(|| KalmanError::BuilderIncomplete("initial_state".to_string()))?;
-        
+
         let initial_covariance = self
             .initial_covariance
             .ok_or_else(|| KalmanError::BuilderIncomplete("initial_covariance".to_string()))?;
-        
+
         let transition_matrix = self
             .transition_matrix
             .ok_or_else(|| KalmanError::BuilderIncomplete("transition_matrix".to_string()))?;
-        
+
         let process_noise = self
             .process_noise
             .ok_or_else(|| KalmanError::BuilderIncomplete("process_noise".to_string()))?;
-        
+
         let observation_matrix = self
             .observation_matrix
             .ok_or_else(|| KalmanError::BuilderIncomplete("observation_matrix".to_string()))?;
-        
+
         let measurement_noise = self
             .measurement_noise
             .ok_or_else(|| KalmanError::BuilderIncomplete("measurement_noise".to_string()))?;
@@ -118,7 +118,7 @@ where
         // Validate covariance matrices are symmetric
         let n = self.state_dim;
         let m = self.measurement_dim;
-        
+
         if !is_symmetric(&initial_covariance, n) {
             return Err(KalmanError::InvalidCovariance);
         }
@@ -156,7 +156,7 @@ where
     T: KalmanScalar,
 {
     for i in 0..size {
-        for j in i+1..size {
+        for j in i + 1..size {
             let diff = (matrix[i * size + j] - matrix[j * size + i]).abs();
             if diff > <T as KalmanScalar>::epsilon() {
                 return false;

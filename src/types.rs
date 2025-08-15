@@ -31,19 +31,19 @@ impl KalmanScalar for f64 {
 pub trait NonlinearSystem<T: KalmanScalar> {
     /// State transition function: x_k+1 = f(x_k, u_k)
     fn state_transition(&self, state: &[T], control: Option<&[T]>, dt: T) -> Vec<T>;
-    
+
     /// Measurement function: z_k = h(x_k)
     fn measurement(&self, state: &[T]) -> Vec<T>;
-    
+
     /// State transition Jacobian: F = ∂f/∂x
     fn state_jacobian(&self, state: &[T], control: Option<&[T]>, dt: T) -> Vec<T>;
-    
+
     /// Measurement Jacobian: H = ∂h/∂x
     fn measurement_jacobian(&self, state: &[T]) -> Vec<T>;
-    
+
     /// Get state dimension
     fn state_dim(&self) -> usize;
-    
+
     /// Get measurement dimension
     fn measurement_dim(&self) -> usize;
 }

@@ -5,4 +5,4 @@
 
 pub mod filter;
 
-pub use filter::{ParticleFilter, Particle, ResamplingStrategy};
+pub use filter::{Particle, ParticleFilter, ResamplingStrategy};
