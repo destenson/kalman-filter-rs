@@ -126,6 +126,19 @@ cargo bench --bench kalman_benchmarks -- --save-baseline main
 **Estimated Effort**: 3-4 days
 **Quality Score**: 10/10
 
+### 6. [Logging Infrastructure](06-logging-infrastructure.md) - **Priority: MEDIUM**
+**Goal**: Add comprehensive logging support for debugging and diagnostics.
+
+**Key Deliverables**:
+- Log crate integration throughout library
+- Optional tracing_subscriber for examples
+- Numerical diagnostics (condition numbers, convergence)
+- Performance monitoring without overhead
+- Structured logging with appropriate levels
+
+**Estimated Effort**: 1 day
+**Quality Score**: 8/10
+
 ## Updated Implementation Order
 
 ### Phase 0: Competitive Analysis (Week 0)
@@ -158,8 +171,9 @@ Optimize validated implementation:
 - Each PRP is self-contained and can be executed independently
 - All PRPs include validation gates for verification
 - Quality scores indicate confidence in one-pass implementation
-- Total estimated effort: 12-16 days for all five PRPs
-- New PRPs focus on validation and competitive positioning
+- Total estimated effort: 13-17 days for all six PRPs
+- PRPs 4-5 focus on validation and competitive positioning
+- PRP 6 adds debugging capabilities with zero performance overhead
 
 ## Next Steps
 1. Review PRPs for completeness
