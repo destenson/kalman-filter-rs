@@ -100,14 +100,70 @@ cargo bench --bench kalman_benchmarks
 cargo bench --bench kalman_benchmarks -- --save-baseline main
 ```
 
+### 4. [State of the Art Review](04-state-of-art-review.md) - **Priority: HIGH**
+**Goal**: Review all major Kalman filter implementations and establish competitive position.
+
+**Key Deliverables**:
+- Feature comparison matrix with 10+ implementations
+- Performance benchmarks against top Rust crates
+- Best practices extraction
+- Competitive analysis report
+- Feature roadmap based on gaps
+
+**Estimated Effort**: 2-3 days
+**Quality Score**: 9/10
+
+### 5. [Cross-Validation Testing](05-cross-validation-testing.md) - **Priority: CRITICAL**
+**Goal**: Validate against established implementations to ensure correctness.
+
+**Key Deliverables**:
+- FilterPy test suite adaptation
+- PyKalman validation tests
+- Standard dataset validation
+- MATLAB/Octave comparison
+- Cross-implementation equivalence proof
+
+**Estimated Effort**: 3-4 days
+**Quality Score**: 10/10
+
+## Updated Implementation Order
+
+### Phase 0: Competitive Analysis (Week 0)
+Understand the landscape before making changes:
+1. Execute PRP-04 (State of the Art Review)
+2. Identifies features to add
+3. Establishes performance targets
+
+### Phase 1: Validation First (Week 1)
+Ensure correctness against references:
+1. Execute PRP-05 (Cross-Validation Testing)
+2. Proves equivalence with established implementations
+3. Discovers any algorithmic issues
+4. Execute PRP-03 (Algorithm Validation)
+5. Ensures mathematical correctness
+
+### Phase 2: Documentation (Week 2)
+Document with confidence in correctness:
+1. Execute PRP-01 (Comprehensive Documentation)
+2. Can claim "validated against FilterPy/PyKalman"
+3. Include competitive advantages
+
+### Phase 3: Performance (Week 2-3)
+Optimize validated implementation:
+1. Execute PRP-02 (Performance Benchmarks)
+2. Compare against competitors identified in Phase 0
+3. Optimize with confidence in correctness
+
 ## Notes
 - Each PRP is self-contained and can be executed independently
 - All PRPs include validation gates for verification
 - Quality scores indicate confidence in one-pass implementation
-- Total estimated effort: 7-9 days for all three PRPs
+- Total estimated effort: 12-16 days for all five PRPs
+- New PRPs focus on validation and competitive positioning
 
 ## Next Steps
 1. Review PRPs for completeness
-2. Execute in recommended order
-3. Validate against success criteria
-4. Publish to crates.io once complete
+2. Execute state of the art review first
+3. Validate against reference implementations
+4. Complete documentation and benchmarks
+5. Publish to crates.io as "most validated Kalman filter library"
