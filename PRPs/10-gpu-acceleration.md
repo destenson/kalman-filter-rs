@@ -187,37 +187,14 @@ arrayfire = { version = "3.8", optional = true }
 ```
 
 ### API Design Pattern
-```
-// Pseudocode for GPU-enabled filter
-impl KalmanFilter {
-    pub fn with_gpu(mut self) -> Result<Self> {
-        #[cfg(feature = "gpu")]
-        {
-            self.gpu_context = Some(GpuContext::new()?);
-            self.transfer_to_gpu()?;
-        }
-        Ok(self)
-    }
-    
-    pub fn predict(&mut self) {
-        #[cfg(feature = "gpu")]
-        if let Some(ref mut gpu) = self.gpu_context {
-            if self.state_dim > GPU_THRESHOLD {
-                return gpu.predict();
-            }
-        }
-        self.predict_cpu()
-    }
-}
-```
+The implementation should provide a `with_gpu()` method that enables GPU acceleration for a filter instance. When GPU is enabled and available, the predict and update operations should automatically dispatch to GPU kernels when the problem size exceeds empirically-determined thresholds. The filter should maintain both CPU and GPU paths, selecting the optimal one based on matrix dimensions.
 
 ### Threshold Configuration
-```
-// Empirically determined thresholds
-const GPU_MATRIX_THRESHOLD: usize = 100;  // 100x100 matrices
-const GPU_PARTICLE_THRESHOLD: usize = 1000;  // 1000 particles
-const GPU_ENSEMBLE_THRESHOLD: usize = 50;  // 50 ensemble members
-```
+Empirically determine thresholds for GPU benefit:
+- Matrix operations: typically beneficial above 100x100
+- Particle filters: beneficial above 1000 particles  
+- Ensemble filters: beneficial above 50 members
+These thresholds should be configurable via environment variables or runtime parameters.
 
 ## Validation Gates
 

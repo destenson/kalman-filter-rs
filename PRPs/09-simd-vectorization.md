@@ -162,18 +162,7 @@ wide = { version = "0.7", optional = true }
 ```
 
 ### Integration Pattern
-```
-// Pseudocode for SIMD dispatch
-fn matrix_multiply(a: &[f64], b: &[f64], n: usize) -> Vec<f64> {
-    #[cfg(feature = "simd")]
-    {
-        if is_x86_feature_detected!("avx2") && n >= 8 {
-            return simd_matrix_multiply_avx2(a, b, n);
-        }
-    }
-    scalar_matrix_multiply(a, b, n)
-}
-```
+The implementation should use runtime CPU feature detection to dispatch to the appropriate SIMD implementation. When the SIMD feature is enabled and the CPU supports it (e.g., AVX2 on x86_64), use the vectorized path. Otherwise, fall back to scalar operations. The threshold for using SIMD should be configurable based on matrix dimensions.
 
 ## Validation Gates
 
