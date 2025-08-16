@@ -138,14 +138,14 @@ mod tests {
             assert_abs_diff_eq!(
                 kf.x[0], 
                 expected_states[i], 
-                epsilon = 1e-4
+                epsilon = 1e-6
             );
             
             // Compare covariance (small numerical differences are expected)
             assert_abs_diff_eq!(
                 kf.P[0], 
                 expected_covariances[i], 
-                epsilon = 1e-4
+                epsilon = 1e-6
             );
         }
     }
