@@ -310,6 +310,9 @@ where
             state_norm(&self.x)
         );
 
+        #[cfg(feature = "prometheus-metrics")]
+        let _timer = crate::metrics::MetricsTimer::start();
+
         // Generate sigma points
         self.generate_sigma_points()?;
 
@@ -373,6 +376,19 @@ where
         self.P = new_P;
         self.sigma_points = transformed_sigma;
 
+        #[cfg(feature = "prometheus-metrics")]
+        {
+            _timer.finish_predict("ukf");
+            crate::metrics::record_prediction("ukf");
+            crate::metrics::set_state_dimension("ukf", n);
+
+            // Calculate and record covariance trace
+            let trace: f64 = (0..n)
+                .map(|i| KalmanScalar::to_f64(&self.P[i * n + i]))
+                .sum();
+            crate::metrics::set_covariance_trace("ukf", trace);
+        }
+
         Ok(())
     }
 
@@ -382,12 +398,17 @@ where
         let m = self.measurement_dim;
         let num_sigma = 2 * n + 1;
 
+        #[cfg(feature = "prometheus-metrics")]
+        let _timer = crate::metrics::MetricsTimer::start();
+
         if measurement.len() != m {
             error!(
                 "UKF update: measurement dimension mismatch: expected {}x1, got {}x1",
                 m,
                 measurement.len()
             );
+            #[cfg(feature = "prometheus-metrics")]
+            crate::metrics::record_error("ukf", "dimension_mismatch");
             return Err(KalmanError::DimensionMismatch {
                 expected: (m, 1),
                 actual: (measurement.len(), 1),
@@ -472,6 +493,16 @@ where
         }
 
         debug!("UKF update: {}", format_innovation(&y));
+
+        // Calculate innovation norm for metrics
+        #[cfg(feature = "prometheus-metrics")]
+        let innovation_norm = {
+            let mut norm_sq = T::zero();
+            for i in 0..m {
+                norm_sq = norm_sq + y[i] * y[i];
+            }
+            KalmanScalar::to_f64(&norm_sq.sqrt())
+        };
         trace!(
             "UKF update: predicted measurement {}",
             format_state(&z_pred, "z_pred")
@@ -527,6 +558,19 @@ where
             state_norm(&self.x)
         );
         check_numerical_stability(&self.P, n, "UKF update covariance");
+
+        #[cfg(feature = "prometheus-metrics")]
+        {
+            _timer.finish_update("ukf");
+            crate::metrics::record_update("ukf");
+            crate::metrics::set_innovation_norm("ukf", innovation_norm);
+
+            // Calculate and record covariance trace
+            let trace: f64 = (0..n)
+                .map(|i| KalmanScalar::to_f64(&self.P[i * n + i]))
+                .sum();
+            crate::metrics::set_covariance_trace("ukf", trace);
+        }
 
         Ok(())
     }

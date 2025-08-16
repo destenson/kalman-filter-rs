@@ -158,6 +158,9 @@ where
     where
         F: Fn(&[T], T) -> Vec<T>,
     {
+        #[cfg(feature = "prometheus-metrics")]
+        let _timer = crate::metrics::MetricsTimer::start();
+
         let mean_state = self.mean();
         debug!(
             "Particle Filter predict: {} prior={:.4}",
@@ -189,6 +192,13 @@ where
             format_state(&new_mean_state, "mean_state"),
             state_norm(&new_mean_state)
         );
+
+        #[cfg(feature = "prometheus-metrics")]
+        {
+            _timer.finish_predict("pf");
+            crate::metrics::record_prediction("pf");
+            crate::metrics::set_state_dimension("pf", self.state_dim);
+        }
     }
 
     /// Update step: update particle weights based on measurement likelihood
@@ -196,6 +206,9 @@ where
     where
         F: Fn(&[T], &[T]) -> T,
     {
+        #[cfg(feature = "prometheus-metrics")]
+        let _timer = crate::metrics::MetricsTimer::start();
+
         debug!(
             "Particle Filter update: {}",
             format_state(measurement, "measurement")
@@ -252,6 +265,13 @@ where
             state_norm(&final_mean_state)
         );
 
+        #[cfg(feature = "prometheus-metrics")]
+        {
+            _timer.finish_update("pf");
+            crate::metrics::record_update("pf");
+            crate::metrics::set_effective_particles("pf", KalmanScalar::to_f64(&ess));
+        }
+
         Ok(())
     }
 
@@ -275,6 +295,15 @@ where
             "Particle Filter: Resampling using {:?} strategy",
             self.resampling_strategy
         );
+
+        #[cfg(feature = "prometheus-metrics")]
+        let strategy_str = match self.resampling_strategy {
+            ResamplingStrategy::Multinomial => "multinomial",
+            ResamplingStrategy::Systematic => "systematic",
+            ResamplingStrategy::Stratified => "stratified",
+            ResamplingStrategy::Residual => "residual",
+        };
+
         let result = match self.resampling_strategy {
             ResamplingStrategy::Multinomial => self.multinomial_resample(),
             ResamplingStrategy::Systematic => self.systematic_resample(),
@@ -284,6 +313,8 @@ where
 
         if result.is_ok() {
             debug!("Particle Filter: Resampling completed, weights reset to uniform");
+            #[cfg(feature = "prometheus-metrics")]
+            crate::metrics::record_resampling("pf", strategy_str);
         } else {
             error!("Particle Filter: Resampling failed");
         }
