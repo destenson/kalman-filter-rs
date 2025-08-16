@@ -188,6 +188,9 @@ where
 
         debug!("Predict step: state_norm={:.6}", state_norm(&self.x));
 
+        #[cfg(feature = "prometheus-metrics")]
+        let _timer = crate::metrics::MetricsTimer::start();
+
         if log::log_enabled!(log::Level::Trace) {
             trace!("Before predict: {}", format_state(&self.x, "x"));
         }
@@ -226,6 +229,19 @@ where
         check_numerical_stability(&self.P, n, "Predicted covariance");
 
         debug!("Predict complete: state_norm={:.6}", state_norm(&self.x));
+
+        #[cfg(feature = "prometheus-metrics")]
+        {
+            _timer.finish_predict("kf");
+            crate::metrics::record_prediction("kf");
+            crate::metrics::set_state_dimension("kf", n);
+
+            // Calculate and record covariance trace
+            let trace: f64 = (0..n)
+                .map(|i| KalmanScalar::to_f64(&self.P[i * n + i]))
+                .sum();
+            crate::metrics::set_covariance_trace("kf", trace);
+        }
     }
 
     /// Update step: incorporate measurement to correct state estimate
@@ -238,12 +254,17 @@ where
             state_norm(measurement)
         );
 
+        #[cfg(feature = "prometheus-metrics")]
+        let _timer = crate::metrics::MetricsTimer::start();
+
         if measurement.len() != m {
             error!(
                 "Measurement dimension mismatch: expected {}, got {}",
                 m,
                 measurement.len()
             );
+            #[cfg(feature = "prometheus-metrics")]
+            crate::metrics::record_error("kf", "dimension_mismatch");
             return Err(KalmanError::DimensionMismatch {
                 expected: (m, 1),
                 actual: (measurement.len(), 1),
@@ -261,6 +282,16 @@ where
         }
 
         debug!("Innovation: {}", format_innovation(&y));
+
+        // Calculate innovation norm for metrics
+        #[cfg(feature = "prometheus-metrics")]
+        let innovation_norm = {
+            let mut norm_sq = T::zero();
+            for i in 0..m {
+                norm_sq = norm_sq + y[i] * y[i];
+            }
+            KalmanScalar::to_f64(&norm_sq.sqrt())
+        };
 
         // Innovation covariance: S = H * P * H^T + R
         // First compute H * P
@@ -290,6 +321,8 @@ where
             Err(e) => {
                 error!("Failed to invert innovation covariance: {:?}", e);
                 check_numerical_stability(&s, m, "Innovation covariance (singular)");
+                #[cfg(feature = "prometheus-metrics")]
+                crate::metrics::record_error("kf", "singular_matrix");
                 return Err(e);
             }
         };
@@ -366,6 +399,19 @@ where
 
         debug!("Update complete: state_norm={:.6}", state_norm(&self.x));
 
+        #[cfg(feature = "prometheus-metrics")]
+        {
+            _timer.finish_update("kf");
+            crate::metrics::record_update("kf");
+            crate::metrics::set_innovation_norm("kf", innovation_norm);
+
+            // Calculate and record covariance trace
+            let trace: f64 = (0..n)
+                .map(|i| KalmanScalar::to_f64(&self.P[i * n + i]))
+                .sum();
+            crate::metrics::set_covariance_trace("kf", trace);
+        }
+
         Ok(())
     }
 
@@ -381,6 +427,9 @@ where
 
     /// Simple matrix inversion using Gauss-Jordan elimination
     pub(crate) fn invert_matrix(matrix: &[T], size: usize) -> KalmanResult<Vec<T>> {
+        #[cfg(feature = "prometheus-metrics")]
+        let _timer = crate::metrics::MetricsTimer::start();
+
         let mut a = matrix.to_vec();
         let mut inv = vec![T::zero(); size * size];
 
@@ -440,6 +489,9 @@ where
                 }
             }
         }
+
+        #[cfg(feature = "prometheus-metrics")]
+        _timer.finish_matrix_inversion();
 
         Ok(inv)
     }

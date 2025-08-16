@@ -46,6 +46,10 @@ pub mod extended;
 pub mod filter;
 pub mod information;
 pub mod logging;
+
+#[cfg(feature = "prometheus-metrics")]
+pub mod metrics;
+
 pub mod particle;
 pub mod scented;
 pub mod types;

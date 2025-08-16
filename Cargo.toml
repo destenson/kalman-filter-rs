@@ -21,6 +21,7 @@ serde = ["dep:serde", "serde/derive"]
 adskalman = ["dep:adskalman"]
 legacy = []
 tracing-subscriber = ["dep:tracing-subscriber"]
+prometheus-metrics = ["dep:prometheus-client", "dep:once_cell"]
 
 
 [dependencies]
@@ -35,6 +36,8 @@ serde = { version = "1.0", features = ["derive"], optional = true }
 adskalman = { version = "0.17.0", optional = true }
 log = "0.4.27"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"], optional = true }
+prometheus-client = { version = "0.22", optional = true }
+once_cell = { version = "1.19", optional = true }
 
 
 [dev-dependencies]

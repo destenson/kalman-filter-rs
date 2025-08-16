@@ -183,6 +183,9 @@ where
 
         debug!("EKF predict step: state_norm={:.6}", state_norm(&self.x));
 
+        #[cfg(feature = "prometheus-metrics")]
+        let _timer = crate::metrics::MetricsTimer::start();
+
         // Propagate state through nonlinear function
         let new_x = self
             .system
@@ -200,7 +203,15 @@ where
                     "EKF: Computing numerical Jacobian with step_size={:.6}",
                     step_size.to_f64()
                 );
-                self.compute_numerical_jacobian_state(step_size)
+                #[cfg(feature = "prometheus-metrics")]
+                let _jacobian_timer = crate::metrics::MetricsTimer::start();
+
+                let jacobian = self.compute_numerical_jacobian_state(step_size);
+
+                #[cfg(feature = "prometheus-metrics")]
+                _jacobian_timer.finish_jacobian("ekf");
+
+                jacobian
             }
             _ => self
                 .system
@@ -252,6 +263,14 @@ where
             "EKF predict complete: state_norm={:.6}",
             state_norm(&self.x)
         );
+
+        #[cfg(feature = "prometheus-metrics")]
+        {
+            _timer.finish_predict("ekf");
+            crate::metrics::record_prediction("ekf");
+            crate::metrics::set_state_dimension("ekf", n);
+            crate::metrics::set_covariance_trace("ekf", KalmanScalar::to_f64(&trace_val));
+        }
     }
 
     /// Update step: incorporate measurement using nonlinear measurement function
