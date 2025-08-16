@@ -21,7 +21,7 @@ A comprehensive Kalman filter library in Rust, providing multiple filter variant
 - **Kalman Filter (KF)**: Standard linear filter for systems with Gaussian noise
 - **Information Filter (IF)**: Dual form using information matrix (inverse covariance)
 
-### Non-linear Filters  
+### Non-linear Filters
 - **Extended Kalman Filter (EKF)**: Linearization via Jacobians for non-linear systems
 - **Unscented Kalman Filter (UKF)**: Sigma point sampling for better non-linear handling
 - **Cubature Kalman Filter (CKF)**: High-dimensional non-linear estimation
