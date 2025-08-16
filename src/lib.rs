@@ -88,3 +88,6 @@ pub mod legacy;
 // When legacy feature is enabled, use the legacy API as default KalmanFilter
 #[cfg(feature = "legacy")]
 pub use legacy::KalmanFilter;
+
+#[cfg(feature = "nalgebra")]
+pub use nalgebra;
