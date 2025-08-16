@@ -22,7 +22,7 @@ pub fn kalman_to_information<T: KalmanScalar>(
     let info_state = InformationState::from_state_covariance(&kf.x, &kf.P)?;
     trace!("KF->IF conversion: information state created");
 
-    InformationFilter::new(
+    InformationFilter::initialize(
         n,
         m,
         info_state.Y,
