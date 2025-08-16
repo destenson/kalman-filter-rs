@@ -50,6 +50,7 @@ pub mod particle;
 pub mod scented;
 pub mod types;
 pub mod unscented;
+pub mod validation;
 
 // Re-export main types for convenience
 pub use builder::KalmanFilterBuilder;

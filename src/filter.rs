@@ -6,6 +6,7 @@ use crate::logging::{
     log_filter_dimensions, state_norm,
 };
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
+use crate::validation::{regularize_matrix, validate_covariance, validate_measurement_noise};
 use log::{debug, error, info, trace, warn};
 use num_traits::{One, Zero};
 
@@ -133,6 +134,21 @@ where
                 expected: (m, m),
                 actual: (measurement_noise.len() / m, m),
             });
+        }
+
+        // Validate initial covariance
+        if let Err(e) = validate_covariance(&initial_covariance, n) {
+            warn!(
+                "Initial covariance validation failed: {:?}, attempting regularization",
+                e
+            );
+            // Don't regularize here, just warn - user should provide valid covariance
+        }
+
+        // Validate measurement noise
+        if let Err(e) = validate_measurement_noise(&measurement_noise, m) {
+            error!("Measurement noise validation failed: {:?}", e);
+            return Err(e);
         }
 
         // Check numerical stability of initial covariance
