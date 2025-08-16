@@ -178,7 +178,22 @@ pub struct InformationFilter<T: KalmanScalar> {
 
 impl<T: KalmanScalar> InformationFilter<T> {
     /// Create new Information Filter
+    #[deprecated(since = "1.0.0-alpha0", note = "Use InformationFilterBuilder instead")]
     pub fn new(
+        state_dim: usize,
+        measurement_dim: usize,
+        initial_Y: Vec<T>,
+        initial_y: Vec<T>,
+        F: Vec<T>,
+        Q: Vec<T>,
+        H: Vec<T>,
+        R: Vec<T>,
+    ) -> KalmanResult<Self> {
+        Self::initialize(state_dim, measurement_dim, initial_Y, initial_y, F, Q, H, R)
+    }
+
+    /// Initialize a new Information Filter (internal method)
+    pub fn initialize(
         state_dim: usize,
         measurement_dim: usize,
         initial_Y: Vec<T>,

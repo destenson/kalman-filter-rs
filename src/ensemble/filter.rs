@@ -66,6 +66,7 @@ where
     S: NonlinearSystem<T>,
 {
     /// Create a new Ensemble Kalman Filter
+    #[deprecated(since = "1.0.0-alpha0", note = "Use EnsembleKalmanFilterBuilder instead")]
     pub fn new(
         system: S,
         initial_mean: Vec<T>,
@@ -74,6 +75,33 @@ where
         process_noise: Vec<T>,
         measurement_noise: Vec<T>,
         dt: T,
+    ) -> KalmanResult<Self> {
+        Self::initialize(
+            system,
+            initial_mean,
+            initial_spread,
+            ensemble_size,
+            process_noise,
+            measurement_noise,
+            dt,
+            T::from(1.05).unwrap(), // Default 5% inflation
+            T::zero(),              // No localization by default
+            None,
+        )
+    }
+
+    /// Initialize a new Ensemble Kalman Filter (internal method)
+    pub fn initialize(
+        system: S,
+        initial_mean: Vec<T>,
+        initial_spread: Vec<T>,
+        ensemble_size: usize,
+        process_noise: Vec<T>,
+        measurement_noise: Vec<T>,
+        dt: T,
+        inflation_factor: T,
+        localization_radius: T,
+        control: Option<Vec<T>>,
     ) -> KalmanResult<Self> {
         let n = system.state_dim();
         let m = system.measurement_dim();
@@ -137,9 +165,9 @@ where
             ensemble,
             R: measurement_noise,
             Q: process_noise,
-            inflation_factor: T::from(1.05).unwrap(), // Default 5% inflation
-            localization_radius: T::zero(),           // No localization by default
-            control: None,
+            inflation_factor,
+            localization_radius,
+            control,
             dt,
         })
     }

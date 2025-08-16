@@ -122,7 +122,8 @@ where
     T: KalmanScalar,
     S: NonlinearSystem<T>,
 {
-    /// Create a new Unscented Kalman Filter
+    /// Create a new Unscented Kalman Filter (prefer using UnscentedKalmanFilterBuilder)
+    #[deprecated(since = "1.0.0", note = "Use UnscentedKalmanFilterBuilder instead")]
     pub fn new(
         system: S,
         initial_state: Vec<T>,
@@ -130,6 +131,30 @@ where
         process_noise: Vec<T>,
         measurement_noise: Vec<T>,
         dt: T,
+    ) -> KalmanResult<Self> {
+        Self::initialize(
+            system,
+            initial_state,
+            initial_covariance,
+            process_noise,
+            measurement_noise,
+            dt,
+            UKFParameters::default(),
+            None,
+        )
+    }
+
+    /// Initialize a new Unscented Kalman Filter with validation
+    /// This method performs all validation and is called by the builder
+    pub fn initialize(
+        system: S,
+        initial_state: Vec<T>,
+        initial_covariance: Vec<T>,
+        process_noise: Vec<T>,
+        measurement_noise: Vec<T>,
+        dt: T,
+        params: UKFParameters<T>,
+        control: Option<Vec<T>>,
     ) -> KalmanResult<Self> {
         let n = system.state_dim();
         let m = system.measurement_dim();
@@ -162,7 +187,6 @@ where
             });
         }
 
-        let params = UKFParameters::default();
         let augmented_dim = n + n + m; // state + process noise + measurement noise
         let num_sigma_points = 2 * n + 1;
 
@@ -198,7 +222,7 @@ where
             weights_mean,
             weights_cov,
             sigma_points: vec![T::zero(); n * num_sigma_points],
-            control: None,
+            control,
             dt,
         })
     }

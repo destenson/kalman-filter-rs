@@ -69,7 +69,29 @@ where
     T: KalmanScalar,
 {
     /// Create a new Particle Filter
+    #[deprecated(since = "1.0.0-alpha0", note = "Use ParticleFilterBuilder instead")]
     pub fn new(
+        state_dim: usize,
+        num_particles: usize,
+        initial_mean: Vec<T>,
+        initial_std: Vec<T>,
+        process_noise_std: Vec<T>,
+        measurement_noise_std: Vec<T>,
+        dt: T,
+    ) -> KalmanResult<Self> {
+        Self::initialize(
+            state_dim,
+            num_particles,
+            initial_mean,
+            initial_std,
+            process_noise_std,
+            measurement_noise_std,
+            dt,
+        )
+    }
+
+    /// Initialize a new Particle Filter (internal method)
+    pub fn initialize(
         state_dim: usize,
         num_particles: usize,
         initial_mean: Vec<T>,

@@ -100,6 +100,8 @@ where
     S: NonlinearSystem<T>,
 {
     /// Create a new Extended Kalman Filter
+    /// Create a new Extended Kalman Filter (prefer using ExtendedKalmanFilterBuilder)
+    #[deprecated(since = "1.0.0", note = "Use ExtendedKalmanFilterBuilder instead")]
     pub fn new(
         system: S,
         initial_state: Vec<T>,
@@ -107,6 +109,30 @@ where
         process_noise: Vec<T>,
         measurement_noise: Vec<T>,
         dt: T,
+    ) -> KalmanResult<Self> {
+        Self::initialize(
+            system,
+            initial_state,
+            initial_covariance,
+            process_noise,
+            measurement_noise,
+            dt,
+            JacobianStrategy::Analytical,
+            None,
+        )
+    }
+
+    /// Initialize a new Extended Kalman Filter with validation
+    /// This method performs all validation and is called by the builder
+    pub fn initialize(
+        system: S,
+        initial_state: Vec<T>,
+        initial_covariance: Vec<T>,
+        process_noise: Vec<T>,
+        measurement_noise: Vec<T>,
+        dt: T,
+        jacobian_strategy: JacobianStrategy,
+        control: Option<Vec<T>>,
     ) -> KalmanResult<Self> {
         let n = system.state_dim();
         let m = system.measurement_dim();
@@ -161,8 +187,8 @@ where
             P: initial_covariance,
             Q: process_noise,
             R: measurement_noise,
-            jacobian_strategy: JacobianStrategy::Analytical,
-            control: None,
+            jacobian_strategy,
+            control,
             dt,
         })
     }

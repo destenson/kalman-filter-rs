@@ -70,6 +70,7 @@ where
     S: NonlinearSystem<T>,
 {
     /// Create a new Cubature Kalman Filter
+    #[deprecated(since = "1.0.0-alpha0", note = "Use CubatureKalmanFilterBuilder instead")]
     pub fn new(
         system: S,
         initial_state: Vec<T>,
@@ -77,6 +78,19 @@ where
         process_noise: Vec<T>,
         measurement_noise: Vec<T>,
         dt: T,
+    ) -> KalmanResult<Self> {
+        Self::initialize(system, initial_state, initial_covariance, process_noise, measurement_noise, dt, None)
+    }
+
+    /// Initialize a new Cubature Kalman Filter (internal method)
+    pub fn initialize(
+        system: S,
+        initial_state: Vec<T>,
+        initial_covariance: Vec<T>,
+        process_noise: Vec<T>,
+        measurement_noise: Vec<T>,
+        dt: T,
+        control: Option<Vec<T>>,
     ) -> KalmanResult<Self> {
         let n = system.state_dim();
         let m = system.measurement_dim();
@@ -116,7 +130,7 @@ where
         // Cubature weight is always 1/(2n)
         let weight = T::one() / T::from(2 * n).unwrap();
 
-        Ok(Self {
+        let mut filter = Self {
             system,
             state_dim: n,
             measurement_dim: m,
@@ -126,9 +140,11 @@ where
             R: measurement_noise,
             cubature_points: vec![T::zero(); n * 2 * n],
             weight,
-            control: None,
+            control,
             dt,
-        })
+        };
+
+        Ok(filter)
     }
 
     /// Set control input

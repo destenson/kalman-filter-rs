@@ -40,6 +40,7 @@
 #![allow(unused, non_snake_case)] // DO NOT CHANGE
 
 pub mod builder;
+pub mod builders;
 pub mod ensemble;
 pub mod error;
 pub mod extended;
@@ -58,6 +59,10 @@ pub mod validation;
 
 // Re-export main types for convenience
 pub use builder::KalmanFilterBuilder;
+pub use builders::{
+    CubatureKalmanFilterBuilder, EnsembleKalmanFilterBuilder, ExtendedKalmanFilterBuilder,
+    InformationFilterBuilder, ParticleFilterBuilder, UnscentedKalmanFilterBuilder,
+};
 pub use ensemble::{EnsembleKalmanFilter, EnsembleStatistics};
 pub use error::KalmanError;
 pub use extended::ExtendedKalmanFilter;
@@ -70,6 +75,7 @@ pub use filter::KalmanFilter;
 #[cfg(feature = "legacy")]
 pub use filter::KalmanFilter as ModernKalmanFilter;
 
+pub use information::filter::InformationFilter;
 pub use particle::{ParticleFilter, Particle, ResamplingStrategy};
 pub use scented::CubatureKalmanFilter;
 pub use types::{JacobianStrategy, KalmanResult, KalmanScalar, NonlinearSystem};
