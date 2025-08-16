@@ -2,6 +2,7 @@
 
 use crate::filter::KalmanFilter;
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
+use log::{debug, error, info, warn};
 
 /// Builder for constructing Kalman filters
 ///
@@ -41,6 +42,10 @@ where
 {
     /// Create a new builder with specified dimensions
     pub fn new(state_dim: usize, measurement_dim: usize) -> Self {
+        debug!(
+            "Creating KalmanFilterBuilder: state_dim={}, measurement_dim={}",
+            state_dim, measurement_dim
+        );
         Self {
             state_dim,
             measurement_dim,
@@ -91,43 +96,68 @@ where
 
     /// Build the Kalman filter
     pub fn build(self) -> KalmanResult<KalmanFilter<T>> {
-        let initial_state = self
-            .initial_state
-            .ok_or_else(|| KalmanError::BuilderIncomplete("initial_state".to_string()))?;
+        info!(
+            "Building Kalman filter: state_dim={}, measurement_dim={}",
+            self.state_dim, self.measurement_dim
+        );
+        let initial_state = self.initial_state.ok_or_else(|| {
+            error!("KalmanFilterBuilder: missing initial_state");
+            KalmanError::BuilderIncomplete("initial_state".to_string())
+        })?;
 
-        let initial_covariance = self
-            .initial_covariance
-            .ok_or_else(|| KalmanError::BuilderIncomplete("initial_covariance".to_string()))?;
+        let initial_covariance = self.initial_covariance.ok_or_else(|| {
+            error!("KalmanFilterBuilder: missing initial_covariance");
+            KalmanError::BuilderIncomplete("initial_covariance".to_string())
+        })?;
 
-        let transition_matrix = self
-            .transition_matrix
-            .ok_or_else(|| KalmanError::BuilderIncomplete("transition_matrix".to_string()))?;
+        let transition_matrix = self.transition_matrix.ok_or_else(|| {
+            error!("KalmanFilterBuilder: missing transition_matrix");
+            KalmanError::BuilderIncomplete("transition_matrix".to_string())
+        })?;
 
-        let process_noise = self
-            .process_noise
-            .ok_or_else(|| KalmanError::BuilderIncomplete("process_noise".to_string()))?;
+        let process_noise = self.process_noise.ok_or_else(|| {
+            error!("KalmanFilterBuilder: missing process_noise");
+            KalmanError::BuilderIncomplete("process_noise".to_string())
+        })?;
 
-        let observation_matrix = self
-            .observation_matrix
-            .ok_or_else(|| KalmanError::BuilderIncomplete("observation_matrix".to_string()))?;
+        let observation_matrix = self.observation_matrix.ok_or_else(|| {
+            error!("KalmanFilterBuilder: missing observation_matrix");
+            KalmanError::BuilderIncomplete("observation_matrix".to_string())
+        })?;
 
-        let measurement_noise = self
-            .measurement_noise
-            .ok_or_else(|| KalmanError::BuilderIncomplete("measurement_noise".to_string()))?;
+        let measurement_noise = self.measurement_noise.ok_or_else(|| {
+            error!("KalmanFilterBuilder: missing measurement_noise");
+            KalmanError::BuilderIncomplete("measurement_noise".to_string())
+        })?;
 
         // Validate covariance matrices are symmetric
         let n = self.state_dim;
         let m = self.measurement_dim;
 
         if !is_symmetric(&initial_covariance, n) {
+            error!(
+                "KalmanFilterBuilder: initial_covariance is not symmetric (size={}x{})",
+                n, n
+            );
             return Err(KalmanError::InvalidCovariance);
         }
+        debug!("Initial covariance matrix validated as symmetric");
         if !is_symmetric(&process_noise, n) {
+            error!(
+                "KalmanFilterBuilder: process_noise is not symmetric (size={}x{})",
+                n, n
+            );
             return Err(KalmanError::InvalidNoiseCovariance);
         }
+        debug!("Process noise matrix validated as symmetric");
         if !is_symmetric(&measurement_noise, m) {
+            error!(
+                "KalmanFilterBuilder: measurement_noise is not symmetric (size={}x{})",
+                m, m
+            );
             return Err(KalmanError::InvalidNoiseCovariance);
         }
+        debug!("Measurement noise matrix validated as symmetric");
 
         KalmanFilter::initialize(
             self.state_dim,
@@ -159,6 +189,14 @@ where
         for j in i + 1..size {
             let diff = (matrix[i * size + j] - matrix[j * size + i]).abs();
             if diff > <T as KalmanScalar>::epsilon() {
+                warn!(
+                    "Matrix symmetry check failed at ({},{}) and ({},{}): diff={:.6e}",
+                    i,
+                    j,
+                    j,
+                    i,
+                    KalmanScalar::to_f64(&diff)
+                );
                 return false;
             }
         }

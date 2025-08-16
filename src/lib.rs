@@ -17,18 +17,18 @@
 //! ## Example
 //!
 //! ```
-//! use kalman_filter::{KalmanFilter, KalmanFilterBuilder};
+//! use kalman_filter::KalmanFilterBuilder;
 //!
-//! // Create a simple 1D Kalman filter
-//! let mut kf = KalmanFilter::<f64>::initialize(
-//!     1, 1,                // 1 state, 1 measurement
-//!     vec![0.0],           // initial state
-//!     vec![1.0],           // initial covariance
-//!     vec![1.0],           // state transition matrix
-//!     vec![0.001],         // process noise
-//!     vec![1.0],           // observation matrix
-//!     vec![0.1],           // measurement noise
-//! ).unwrap();
+//! // Create a simple 1D Kalman filter using the builder
+//! let mut kf = KalmanFilterBuilder::new(1, 1)
+//!     .initial_state(vec![0.0])
+//!     .initial_covariance(vec![1.0])
+//!     .transition_matrix(vec![1.0])
+//!     .process_noise(vec![0.001])
+//!     .observation_matrix(vec![1.0])
+//!     .measurement_noise(vec![0.1])
+//!     .build()
+//!     .unwrap();
 //!
 //! // Predict step
 //! kf.predict();

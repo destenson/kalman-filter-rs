@@ -17,7 +17,7 @@
 //! cargo run --example logging_demo --features tracing-subscriber
 //! ```
 
-use kalman_filter::{KalmanFilter, ExtendedKalmanFilter, NonlinearSystem, KalmanScalar};
+use kalman_filter::{KalmanFilterBuilder, ExtendedKalmanFilter, NonlinearSystem};
 use log::{info, debug, warn};
 
 #[cfg(feature = "tracing-subscriber")]
@@ -47,7 +47,7 @@ impl NonlinearSystem<f64> for PendulumSystem {
         let theta = state[0];
         vec![
             1.0, dt,
-            -(self.g / self.l) * theta.cos() * dt, 1.0,
+            -(self.g / self.l) * theta.cos() * dt, 1.0
         ]
     }
     
@@ -55,8 +55,13 @@ impl NonlinearSystem<f64> for PendulumSystem {
         vec![1.0, 0.0]
     }
     
-    fn state_dim(&self) -> usize { 2 }
-    fn measurement_dim(&self) -> usize { 1 }
+    fn state_dim(&self) -> usize {
+        2
+    }
+
+    fn measurement_dim(&self) -> usize {
+        1
+    }
 }
 
 fn main() {
@@ -94,16 +99,16 @@ fn main() {
 fn demo_linear_kf() {
     info!("=== Linear Kalman Filter Demo ===");
     
-    // Create a simple 1D Kalman filter
-    let mut kf = KalmanFilter::<f64>::initialize(
-        1, 1,                // 1 state, 1 measurement
-        vec![0.0],           // initial state
-        vec![1.0],           // initial covariance
-        vec![1.0],           // state transition matrix
-        vec![0.001],         // process noise
-        vec![1.0],           // observation matrix
-        vec![0.1],           // measurement noise
-    ).unwrap();
+    // Create a simple 1D Kalman filter using the builder
+    let mut kf = KalmanFilterBuilder::<f64>::new(1, 1)
+        .initial_state(vec![0.0])
+        .initial_covariance(vec![1.0])
+        .transition_matrix(vec![1.0])
+        .process_noise(vec![0.001])
+        .observation_matrix(vec![1.0])
+        .measurement_noise(vec![0.1])
+        .build()
+        .unwrap();
     
     debug!("Running predict/update cycle");
     
@@ -128,7 +133,7 @@ fn demo_extended_kf() {
         l: 1.0,
     };
     
-    let mut ekf = ExtendedKalmanFilter::new(
+    let mut ekf: ExtendedKalmanFilter<f64, PendulumSystem> = ExtendedKalmanFilter::new(
         system,
         vec![0.1, 0.0],      // initial state [angle, angular_velocity]
         vec![0.01, 0.0,      // initial covariance
@@ -158,18 +163,15 @@ fn demo_numerical_issues() {
     info!("=== Numerical Stability Demo ===");
     
     // Create a filter with near-singular covariance
-    let mut kf = KalmanFilter::<f64>::initialize(
-        2, 1,
-        vec![0.0, 0.0],      // initial state
-        vec![1e-12, 0.0,     // near-singular initial covariance
-             0.0, 1e-12],
-        vec![1.0, 0.1,       // state transition
-             0.0, 1.0],
-        vec![0.001, 0.0,     // process noise
-             0.0, 0.001],
-        vec![1.0, 0.0],      // observation matrix
-        vec![0.1],           // measurement noise
-    ).unwrap();
+    let mut kf = KalmanFilterBuilder::<f64>::new(2, 1)
+        .initial_state(vec![0.0, 0.0])
+        .initial_covariance(vec![1e-12, 0.0, 0.0, 1e-12])  // near-singular
+        .transition_matrix(vec![1.0, 0.1, 0.0, 1.0])
+        .process_noise(vec![0.001, 0.0, 0.0, 0.001])
+        .observation_matrix(vec![1.0, 0.0])
+        .measurement_noise(vec![0.1])
+        .build()
+        .unwrap();
     
     warn!("Created filter with near-singular covariance to trigger warnings");
     
@@ -180,20 +182,15 @@ fn demo_numerical_issues() {
     let _ = kf.update(&[1.0]);
     
     // Create a filter that will have a singular innovation covariance
-    let mut bad_kf = KalmanFilter::<f64>::initialize(
-        2, 2,
-        vec![0.0, 0.0],      // initial state
-        vec![0.0, 0.0,       // zero initial covariance (will cause issues)
-             0.0, 0.0],
-        vec![1.0, 0.0,       // state transition
-             0.0, 1.0],
-        vec![0.0, 0.0,       // zero process noise
-             0.0, 0.0],
-        vec![1.0, 0.0,       // observation matrix
-             0.0, 1.0],
-        vec![0.0, 0.0,       // zero measurement noise (singular!)
-             0.0, 0.0],
-    ).unwrap();
+    let mut bad_kf = KalmanFilterBuilder::<f64>::new(2, 2)
+        .initial_state(vec![0.0, 0.0])
+        .initial_covariance(vec![0.0, 0.0, 0.0, 0.0])  // zero covariance!
+        .transition_matrix(vec![1.0, 0.0, 0.0, 1.0])
+        .process_noise(vec![0.0, 0.0, 0.0, 0.0])  // zero process noise
+        .observation_matrix(vec![1.0, 0.0, 0.0, 1.0])
+        .measurement_noise(vec![0.0, 0.0, 0.0, 0.0])  // zero measurement noise!
+        .build()
+        .unwrap();
     
     warn!("Created filter with zero covariances to demonstrate error logging");
     

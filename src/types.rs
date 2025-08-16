@@ -13,6 +13,11 @@ pub trait KalmanScalar: Float + Default + fmt::Debug + fmt::Display + 'static {
     fn Epsilon(&self) -> Self {
         <Self as KalmanScalar>::epsilon()
     }
+
+    /// Convert to f64 for logging purposes
+    fn to_f64(&self) -> f64 {
+        num_traits::cast::ToPrimitive::to_f64(self).unwrap_or(f64::NAN)
+    }
 }
 
 impl KalmanScalar for f32 {

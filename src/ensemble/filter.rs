@@ -117,10 +117,10 @@ where
         for j in 0..ensemble_size {
             for i in 0..n {
                 // Sample from N(mean, spread²)
-                let mean_f64 = initial_mean[i].to_f64().unwrap();
-                let spread_f64 = initial_spread[i].to_f64().unwrap();
+                let mean_f64 = KalmanScalar::to_f64(&initial_mean[i]);
+                let spread_f64 = KalmanScalar::to_f64(&initial_spread[i]);
 
-                if spread_f64 > 0.0 {
+                if spread_f64 > 0.0f64 {
                     let normal = Normal::new(mean_f64, spread_f64).unwrap();
                     ensemble[i * ensemble_size + j] = T::from(normal.sample(&mut rng)).unwrap();
                 } else {
@@ -230,7 +230,7 @@ where
         if self.inflation_factor > T::one() {
             debug!(
                 "EnKF forecast: Applying multiplicative inflation factor={:.4}",
-                self.inflation_factor.to_f64()
+                KalmanScalar::to_f64(&self.inflation_factor)
             );
             let stats = self.compute_statistics();
             for i in 0..n {
@@ -282,10 +282,10 @@ where
         for j in 0..m_state {
             for i in 0..m_obs {
                 // Sample observation noise
-                let obs_f64 = observation[i].to_f64().unwrap();
-                let noise_var = self.R[i * m_obs + i].to_f64().unwrap().sqrt();
+                let obs_f64 = KalmanScalar::to_f64(&observation[i]);
+                let noise_var = KalmanScalar::to_f64(&self.R[i * m_obs + i]).sqrt();
 
-                if noise_var > 0.0 {
+                if noise_var > 0.0f64 {
                     let normal = Normal::new(obs_f64, noise_var).unwrap();
                     obs_ensemble[i * m_state + j] = T::from(normal.sample(&mut rng)).unwrap();
                 } else {
@@ -408,7 +408,7 @@ where
                     "EnKF matrix inversion: Singular matrix encountered at pivot ({}, {}) = {:.6e}",
                     i,
                     i,
-                    pivot.to_f64()
+                    KalmanScalar::to_f64(&pivot)
                 );
                 return Err(KalmanError::SingularMatrix);
             }

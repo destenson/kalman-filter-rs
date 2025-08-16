@@ -8,7 +8,7 @@ use crate::types::KalmanScalar;
 use core::fmt;
 
 /// Format a matrix for logging with lazy evaluation
-/// 
+///
 /// Only computes the string representation if the log level is enabled
 pub fn format_matrix<'a, T: KalmanScalar>(
     matrix: &'a [T],
@@ -36,7 +36,7 @@ impl<T: KalmanScalar> fmt::Display for MatrixFormatter<'_, T> {
         if self.matrix.is_empty() {
             return write!(f, "{}=[empty]", self.name);
         }
-        
+
         write!(f, "{}=[", self.name)?;
         for i in 0..self.rows {
             if i > 0 {
@@ -47,7 +47,7 @@ impl<T: KalmanScalar> fmt::Display for MatrixFormatter<'_, T> {
                     write!(f, ", ")?;
                 }
                 let idx = i * self.cols + j;
-                write!(f, "{:.4}", self.matrix[idx].to_f64())?;
+                write!(f, "{:.4}", KalmanScalar::to_f64(&self.matrix[idx]))?;
             }
         }
         write!(f, "]")
@@ -71,7 +71,7 @@ impl<T: KalmanScalar> fmt::Display for StateFormatter<'_, T> {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{:.4}", val.to_f64())?;
+            write!(f, "{:.4}", KalmanScalar::to_f64(val))?;
         }
         write!(f, "]")
     }
@@ -79,9 +79,10 @@ impl<T: KalmanScalar> fmt::Display for StateFormatter<'_, T> {
 
 /// Calculate the Frobenius norm of a state vector
 pub fn state_norm<T: KalmanScalar>(state: &[T]) -> f64 {
-    state.iter()
+    state
+        .iter()
         .map(|x| {
-            let val = x.to_f64();
+            let val = KalmanScalar::to_f64(x);
             val * val
         })
         .sum::<f64>()
@@ -94,32 +95,33 @@ pub fn matrix_condition_estimate<T: KalmanScalar>(matrix: &[T], size: usize) -> 
     if matrix.is_empty() || size == 0 {
         return f64::INFINITY;
     }
-    
+
     // Calculate Frobenius norm as an estimate
-    let norm: f64 = matrix.iter()
+    let norm: f64 = matrix
+        .iter()
         .map(|x| {
-            let val = x.to_f64();
+            let val = KalmanScalar::to_f64(x);
             val * val
         })
         .sum::<f64>()
         .sqrt();
-    
+
     // Find minimum diagonal element as estimate of smallest eigenvalue
     let mut min_diag = f64::MAX;
     for i in 0..size {
         let idx = i * size + i;
         if idx < matrix.len() {
-            let val = matrix[idx].to_f64().abs();
-            if val < min_diag && val > 0.0 {
+            let val = KalmanScalar::to_f64(&matrix[idx]).abs();
+            if val < min_diag && val > 0.0f64 {
                 min_diag = val;
             }
         }
     }
-    
+
     if min_diag == 0.0 || min_diag == f64::MAX {
         return f64::INFINITY;
     }
-    
+
     norm / min_diag
 }
 
@@ -129,13 +131,13 @@ pub fn is_near_singular<T: KalmanScalar>(matrix: &[T], size: usize, epsilon: f64
     for i in 0..size {
         let idx = i * size + i;
         if idx < matrix.len() {
-            let val = matrix[idx].to_f64().abs();
+            let val = KalmanScalar::to_f64(&matrix[idx]).abs();
             if val < epsilon {
                 return true;
             }
         }
     }
-    
+
     // Check condition number estimate
     let cond = matrix_condition_estimate(matrix, size);
     cond > 1.0 / epsilon
@@ -146,17 +148,17 @@ pub fn small_determinant<T: KalmanScalar>(matrix: &[T], size: usize) -> Option<f
     match size {
         1 => {
             if !matrix.is_empty() {
-                Some(matrix[0].to_f64())
+                Some(KalmanScalar::to_f64(&matrix[0]))
             } else {
                 None
             }
         }
         2 => {
             if matrix.len() >= 4 {
-                let a = matrix[0].to_f64();
-                let b = matrix[1].to_f64();
-                let c = matrix[2].to_f64();
-                let d = matrix[3].to_f64();
+                let a = KalmanScalar::to_f64(&matrix[0]);
+                let b = KalmanScalar::to_f64(&matrix[1]);
+                let c = KalmanScalar::to_f64(&matrix[2]);
+                let d = KalmanScalar::to_f64(&matrix[3]);
                 Some(a * d - b * c)
             } else {
                 None
@@ -164,16 +166,16 @@ pub fn small_determinant<T: KalmanScalar>(matrix: &[T], size: usize) -> Option<f
         }
         3 => {
             if matrix.len() >= 9 {
-                let a = matrix[0].to_f64();
-                let b = matrix[1].to_f64();
-                let c = matrix[2].to_f64();
-                let d = matrix[3].to_f64();
-                let e = matrix[4].to_f64();
-                let f = matrix[5].to_f64();
-                let g = matrix[6].to_f64();
-                let h = matrix[7].to_f64();
-                let i = matrix[8].to_f64();
-                
+                let a = KalmanScalar::to_f64(&matrix[0]);
+                let b = KalmanScalar::to_f64(&matrix[1]);
+                let c = KalmanScalar::to_f64(&matrix[2]);
+                let d = KalmanScalar::to_f64(&matrix[3]);
+                let e = KalmanScalar::to_f64(&matrix[4]);
+                let f = KalmanScalar::to_f64(&matrix[5]);
+                let g = KalmanScalar::to_f64(&matrix[6]);
+                let h = KalmanScalar::to_f64(&matrix[7]);
+                let i = KalmanScalar::to_f64(&matrix[8]);
+
                 Some(a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g))
             } else {
                 None
@@ -199,7 +201,7 @@ impl<T: KalmanScalar> fmt::Display for InnovationFormatter<'_, T> {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{:.4}", val.to_f64())?;
+            write!(f, "{:.4}", KalmanScalar::to_f64(val))?;
         }
         write!(f, "], norm={:.4}", state_norm(self.innovation))
     }
@@ -210,31 +212,30 @@ pub fn log_filter_dimensions(state_dim: usize, measurement_dim: usize, control_d
     if let Some(control) = control_dim {
         log::info!(
             "Initializing Kalman filter: state_dim={}, measurement_dim={}, control_dim={}",
-            state_dim, measurement_dim, control
+            state_dim,
+            measurement_dim,
+            control
         );
     } else {
         log::info!(
             "Initializing Kalman filter: state_dim={}, measurement_dim={}",
-            state_dim, measurement_dim
+            state_dim,
+            measurement_dim
         );
     }
 }
 
 /// Check and log numerical stability warnings
-pub fn check_numerical_stability<T: KalmanScalar>(
-    covariance: &[T],
-    size: usize,
-    context: &str,
-) {
+pub fn check_numerical_stability<T: KalmanScalar>(covariance: &[T], size: usize, context: &str) {
     const EPSILON: f64 = 1e-10;
-    
+
     if is_near_singular(covariance, size, EPSILON) {
         log::warn!(
             "{}: Covariance matrix may be near-singular (condition number > {:.2e})",
             context,
             1.0 / EPSILON
         );
-        
+
         if log::log_enabled!(log::Level::Debug) {
             if let Some(det) = small_determinant(covariance, size) {
                 log::debug!("{}: Determinant = {:.6e}", context, det);
@@ -246,7 +247,7 @@ pub fn check_numerical_stability<T: KalmanScalar>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_matrix_formatter() {
         let matrix = vec![1.0, 2.0, 3.0, 4.0];
@@ -254,24 +255,24 @@ mod tests {
         assert!(formatted.contains("test=["));
         assert!(formatted.contains("1.0"));
     }
-    
+
     #[test]
     fn test_state_norm() {
         let state = vec![3.0, 4.0];
         assert_eq!(state_norm(&state), 5.0);
     }
-    
+
     #[test]
     fn test_determinant_2x2() {
         let matrix = vec![1.0, 2.0, 3.0, 4.0];
         assert_eq!(small_determinant(&matrix, 2), Some(-2.0));
     }
-    
+
     #[test]
     fn test_near_singular_detection() {
         let singular = vec![1.0, 0.0, 0.0, 0.0];
         assert!(is_near_singular(&singular, 2, 1e-10));
-        
+
         let regular = vec![1.0, 0.0, 0.0, 1.0];
         assert!(!is_near_singular(&regular, 2, 1e-10));
     }

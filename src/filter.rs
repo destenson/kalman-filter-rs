@@ -1,10 +1,13 @@
 //! Core Kalman filter implementation
 #![allow(unused)]
 
+use crate::logging::{
+    check_numerical_stability, format_innovation, format_matrix, format_state,
+    log_filter_dimensions, state_norm,
+};
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
-use crate::logging::{format_matrix, format_state, format_innovation, state_norm, check_numerical_stability, log_filter_dimensions};
+use log::{debug, error, info, trace, warn};
 use num_traits::{One, Zero};
-use log::{trace, debug, info, warn, error};
 
 #[cfg(feature = "nalgebra")]
 use nalgebra::{RealField, SMatrix, SVector};
@@ -54,7 +57,7 @@ where
     pub fn new(state_dim: usize, measurement_dim: usize) -> Self {
         let n = state_dim;
         let m = measurement_dim;
-        
+
         Self {
             state_dim: n,
             measurement_dim: m,
@@ -80,19 +83,28 @@ where
     ) -> KalmanResult<Self> {
         let n = state_dim;
         let m = measurement_dim;
-        
+
         log_filter_dimensions(n, m, None);
-        
+
         // Validate dimensions
         if initial_state.len() != n {
-            error!("Initial state dimension mismatch: expected {}x1, got {}x1", n, initial_state.len());
+            error!(
+                "Initial state dimension mismatch: expected {}x1, got {}x1",
+                n,
+                initial_state.len()
+            );
             return Err(KalmanError::DimensionMismatch {
                 expected: (n, 1),
                 actual: (initial_state.len(), 1),
             });
         }
         if initial_covariance.len() != n * n {
-            error!("Initial covariance dimension mismatch: expected {}x{}, got len={}", n, n, initial_covariance.len());
+            error!(
+                "Initial covariance dimension mismatch: expected {}x{}, got len={}",
+                n,
+                n,
+                initial_covariance.len()
+            );
             return Err(KalmanError::DimensionMismatch {
                 expected: (n, n),
                 actual: (initial_covariance.len() / n, n),
@@ -122,17 +134,26 @@ where
                 actual: (measurement_noise.len() / m, m),
             });
         }
-        
+
         // Check numerical stability of initial covariance
         check_numerical_stability(&initial_covariance, n, "Initial covariance");
-        
-        debug!("Kalman filter initialized: {}", format_state(&initial_state, "initial_state"));
-        
+
+        debug!(
+            "Kalman filter initialized: {}",
+            format_state(&initial_state, "initial_state")
+        );
+
         if log::log_enabled!(log::Level::Trace) {
-            trace!("Initial covariance: {}", format_matrix(&initial_covariance, n, n, "P0"));
-            trace!("Process noise: {}", format_matrix(&process_noise, n, n, "Q"));
+            trace!(
+                "Initial covariance: {}",
+                format_matrix(&initial_covariance, n, n, "P0")
+            );
+            trace!(
+                "Process noise: {}",
+                format_matrix(&process_noise, n, n, "Q")
+            );
         }
-        
+
         Ok(Self {
             state_dim: n,
             measurement_dim: m,
@@ -148,13 +169,13 @@ where
     /// Predict step: propagate state and covariance forward
     pub fn predict(&mut self) {
         let n = self.state_dim;
-        
+
         debug!("Predict step: state_norm={:.6}", state_norm(&self.x));
-        
+
         if log::log_enabled!(log::Level::Trace) {
             trace!("Before predict: {}", format_state(&self.x, "x"));
         }
-        
+
         // x = F * x
         let mut new_x = vec![T::zero(); n];
         for i in 0..n {
@@ -163,7 +184,7 @@ where
             }
         }
         self.x = new_x;
-        
+
         // P = F * P * F^T + Q
         // First compute F * P
         let mut fp = vec![T::zero(); n * n];
@@ -174,7 +195,7 @@ where
                 }
             }
         }
-        
+
         // Then compute (F * P) * F^T + Q
         let mut new_p = self.Q.clone();
         for i in 0..n {
@@ -185,9 +206,9 @@ where
             }
         }
         self.P = new_p;
-        
+
         check_numerical_stability(&self.P, n, "Predicted covariance");
-        
+
         debug!("Predict complete: state_norm={:.6}", state_norm(&self.x));
     }
 
@@ -195,17 +216,24 @@ where
     pub fn update(&mut self, measurement: &[T]) -> KalmanResult<()> {
         let n = self.state_dim;
         let m = self.measurement_dim;
-        
-        debug!("Update step: measurement_norm={:.6}", state_norm(measurement));
-        
+
+        debug!(
+            "Update step: measurement_norm={:.6}",
+            state_norm(measurement)
+        );
+
         if measurement.len() != m {
-            error!("Measurement dimension mismatch: expected {}, got {}", m, measurement.len());
+            error!(
+                "Measurement dimension mismatch: expected {}, got {}",
+                m,
+                measurement.len()
+            );
             return Err(KalmanError::DimensionMismatch {
                 expected: (m, 1),
                 actual: (measurement.len(), 1),
             });
         }
-        
+
         // Innovation: y = z - H * x
         let mut y = measurement.to_vec();
         for i in 0..m {
@@ -215,9 +243,9 @@ where
             }
             y[i] = y[i] - hx;
         }
-        
+
         debug!("Innovation: {}", format_innovation(&y));
-        
+
         // Innovation covariance: S = H * P * H^T + R
         // First compute H * P
         let mut hp = vec![T::zero(); m * n];
@@ -228,7 +256,7 @@ where
                 }
             }
         }
-        
+
         // Then compute S = (H * P) * H^T + R
         let mut s = self.R.clone();
         for i in 0..m {
@@ -238,7 +266,7 @@ where
                 }
             }
         }
-        
+
         // Invert S
         trace!("Computing innovation covariance inverse");
         let s_inv = match Self::invert_matrix(&s, m) {
@@ -249,7 +277,7 @@ where
                 return Err(e);
             }
         };
-        
+
         // Kalman gain: K = P * H^T * S^-1
         // First compute P * H^T
         let mut ph_t = vec![T::zero(); n * m];
@@ -260,7 +288,7 @@ where
                 }
             }
         }
-        
+
         // Then compute K = (P * H^T) * S^-1
         let mut k = vec![T::zero(); n * m];
         for i in 0..n {
@@ -270,14 +298,14 @@ where
                 }
             }
         }
-        
+
         // State update: x = x + K * y
         for i in 0..n {
             for j in 0..m {
                 self.x[i] = self.x[i] + k[i * m + j] * y[j];
             }
         }
-        
+
         // Covariance update: P = (I - K * H) * P
         // First compute K * H
         let mut kh = vec![T::zero(); n * n];
@@ -288,7 +316,7 @@ where
                 }
             }
         }
-        
+
         // Compute I - K * H
         let mut i_kh = vec![T::zero(); n * n];
         for i in 0..n {
@@ -296,7 +324,7 @@ where
                 i_kh[i * n + j] = if i == j { T::one() } else { T::zero() } - kh[i * n + j];
             }
         }
-        
+
         // Finally compute P = (I - K * H) * P
         let mut new_p = vec![T::zero(); n * n];
         for i in 0..n {
@@ -306,22 +334,22 @@ where
                 }
             }
         }
-        
+
         // Ensure symmetry
         for i in 0..n {
-            for j in i+1..n {
+            for j in i + 1..n {
                 let avg = (new_p[i * n + j] + new_p[j * n + i]) * T::from(0.5).unwrap();
                 new_p[i * n + j] = avg;
                 new_p[j * n + i] = avg;
             }
         }
-        
+
         self.P = new_p;
-        
+
         check_numerical_stability(&self.P, n, "Updated covariance");
-        
+
         debug!("Update complete: state_norm={:.6}", state_norm(&self.x));
-        
+
         Ok(())
     }
 
@@ -339,26 +367,26 @@ where
     pub(crate) fn invert_matrix(matrix: &[T], size: usize) -> KalmanResult<Vec<T>> {
         let mut a = matrix.to_vec();
         let mut inv = vec![T::zero(); size * size];
-        
+
         // Initialize inverse as identity matrix
         for i in 0..size {
             inv[i * size + i] = T::one();
         }
-        
+
         // Gauss-Jordan elimination
         for i in 0..size {
             // Find pivot
             let mut pivot = a[i * size + i];
             if pivot.abs() < <T as KalmanScalar>::epsilon() {
                 // Find a non-zero element in the column
-                for j in i+1..size {
+                for j in i + 1..size {
                     if a[j * size + i].abs() > <T as KalmanScalar>::epsilon() {
                         // Swap rows
                         for k in 0..size {
                             let temp = a[i * size + k];
                             a[i * size + k] = a[j * size + k];
                             a[j * size + k] = temp;
-                            
+
                             let temp = inv[i * size + k];
                             inv[i * size + k] = inv[j * size + k];
                             inv[j * size + k] = temp;
@@ -368,18 +396,23 @@ where
                     }
                 }
             }
-            
+
             if pivot.abs() < <T as KalmanScalar>::epsilon() {
-                warn!("Matrix inversion failed: pivot {:.6e} at position ({}, {})", pivot.to_f64(), i, i);
+                warn!(
+                    "Matrix inversion failed: pivot {:.6e} at position ({}, {})",
+                    KalmanScalar::to_f64(&pivot),
+                    i,
+                    i
+                );
                 return Err(KalmanError::SingularMatrix);
             }
-            
+
             // Scale row
             for j in 0..size {
                 a[i * size + j] = a[i * size + j] / pivot;
                 inv[i * size + j] = inv[i * size + j] / pivot;
             }
-            
+
             // Eliminate column
             for j in 0..size {
                 if i != j {
@@ -391,7 +424,7 @@ where
                 }
             }
         }
-        
+
         Ok(inv)
     }
 }
@@ -444,7 +477,7 @@ where
     pub fn predict(&mut self) {
         // x = F * x
         self.x = &self.F * &self.x;
-        
+
         // P = F * P * F^T + Q
         self.P = &self.F * &self.P * self.F.transpose() + &self.Q;
     }
@@ -453,27 +486,26 @@ where
     pub fn update(&mut self, measurement: &SVector<T, M>) -> KalmanResult<()> {
         // Innovation: y = z - H * x
         let y = measurement - &self.H * &self.x;
-        
+
         // Innovation covariance: S = H * P * H^T + R
         let S = &self.H * &self.P * self.H.transpose() + &self.R;
-        
+
         // Check if S is invertible
-        let S_inv = S.try_inverse()
-            .ok_or(KalmanError::SingularMatrix)?;
-        
+        let S_inv = S.try_inverse().ok_or(KalmanError::SingularMatrix)?;
+
         // Kalman gain: K = P * H^T * S^-1
         let K = &self.P * self.H.transpose() * S_inv;
-        
+
         // State update: x = x + K * y
         self.x = &self.x + &K * y;
-        
+
         // Covariance update: P = (I - K * H) * P
         let I = SMatrix::<T, N, N>::identity();
         self.P = (I - &K * &self.H) * &self.P;
-        
+
         // Ensure symmetry and positive semi-definiteness
         self.P = (&self.P + self.P.transpose()) * T::from(0.5).unwrap();
-        
+
         Ok(())
     }
 
@@ -496,14 +528,16 @@ mod tests {
     fn test_kalman_filter_1d() {
         // Simple 1D constant position model
         let mut kf = KalmanFilter::<f64>::initialize(
-            1, 1,
-            vec![0.0],           // initial state
-            vec![1.0],           // initial covariance
-            vec![1.0],           // F
-            vec![0.001],         // Q
-            vec![1.0],           // H
-            vec![0.1],           // R
-        ).unwrap();
+            1,
+            1,
+            vec![0.0],   // initial state
+            vec![1.0],   // initial covariance
+            vec![1.0],   // F
+            vec![0.001], // Q
+            vec![1.0],   // H
+            vec![0.1],   // R
+        )
+        .unwrap();
 
         // Predict
         kf.predict();
@@ -511,7 +545,7 @@ mod tests {
 
         // Update with measurement
         kf.update(&[1.0]).unwrap();
-        
+
         // State should have moved toward measurement
         assert!(kf.state()[0] > 0.0);
         assert!(kf.state()[0] < 1.0);
@@ -522,17 +556,25 @@ mod tests {
         // 2D position-velocity model
         // State: [position, velocity]
         let mut kf = KalmanFilter::<f64>::initialize(
-            2, 1,
-            vec![0.0, 0.0],      // initial state
-            vec![1.0, 0.0,       // initial covariance
-                 0.0, 1.0],
-            vec![1.0, 1.0,       // F (dt = 1.0)
-                 0.0, 1.0],
-            vec![0.001, 0.0,     // Q
-                 0.0, 0.001],
-            vec![1.0, 0.0],      // H (observe position only)
-            vec![0.1],           // R
-        ).unwrap();
+            2,
+            1,
+            vec![0.0, 0.0], // initial state
+            vec![
+                1.0, 0.0, // initial covariance
+                0.0, 1.0,
+            ],
+            vec![
+                1.0, 1.0, // F (dt = 1.0)
+                0.0, 1.0,
+            ],
+            vec![
+                0.001, 0.0, // Q
+                0.0, 0.001,
+            ],
+            vec![1.0, 0.0], // H (observe position only)
+            vec![0.1],      // R
+        )
+        .unwrap();
 
         // Simulate multiple steps
         for i in 1..=5 {
@@ -551,7 +593,7 @@ mod tests {
         // Test 2x2 matrix inversion
         let matrix = vec![4.0, 7.0, 2.0, 6.0];
         let inv = KalmanFilter::<f64>::invert_matrix(&matrix, 2).unwrap();
-        
+
         // Verify A * A^-1 = I
         let mut product = vec![0.0; 4];
         for i in 0..2 {
@@ -561,7 +603,7 @@ mod tests {
                 }
             }
         }
-        
+
         // Check if product is identity
         assert!((product[0] - 1.0).abs() < 1e-10);
         assert!((product[1] - 0.0).abs() < 1e-10);
@@ -589,7 +631,7 @@ mod tests {
         // Update with measurement
         let z = SVector::<f64, 1>::from([1.0]);
         kf.update(&z).unwrap();
-        
+
         // State should have moved toward measurement
         assert!(kf.state()[0] > 0.0);
         assert!(kf.state()[0] < 1.0);

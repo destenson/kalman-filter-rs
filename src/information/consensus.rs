@@ -2,6 +2,7 @@
 
 use crate::information::InformationState;
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
+use log::{debug, info, trace, warn};
 use num_traits::Zero;
 use std::collections::HashMap;
 
@@ -38,6 +39,11 @@ pub struct AverageConsensus<T: KalmanScalar> {
 impl<T: KalmanScalar> AverageConsensus<T> {
     /// Create new average consensus with Metropolis weights
     pub fn new_metropolis(topology: &HashMap<usize, Vec<usize>>, state_dim: usize) -> Self {
+        info!(
+            "Creating AverageConsensus with Metropolis weights: {} nodes, state_dim={}",
+            topology.len(),
+            state_dim
+        );
         let mut weights = HashMap::new();
 
         // Compute degrees
@@ -63,6 +69,11 @@ impl<T: KalmanScalar> AverageConsensus<T> {
 
             weights.insert((*node, *node), self_weight);
         }
+
+        debug!(
+            "Metropolis weights computed: {} weight entries",
+            weights.len()
+        );
 
         Self {
             weights,
@@ -92,6 +103,11 @@ impl<T: KalmanScalar> ConsensusAlgorithm<T> for AverageConsensus<T> {
         topology: &HashMap<usize, Vec<usize>>,
     ) -> KalmanResult<()> {
         let n = self.state_dim;
+        debug!(
+            "AverageConsensus iteration {}: {} nodes",
+            self.iterations + 1,
+            local_states.len()
+        );
 
         // Save current states
         self.prev_states = local_states.clone();
@@ -154,11 +170,30 @@ impl<T: KalmanScalar> ConsensusAlgorithm<T> for AverageConsensus<T> {
         *local_states = new_states;
         self.iterations += 1;
 
+        debug!(
+            "AverageConsensus iteration {} complete: max_change={:.6e}",
+            self.iterations,
+            KalmanScalar::to_f64(&self.max_change)
+        );
+
+        if log::log_enabled!(log::Level::Trace) {
+            trace!(
+                "Consensus states after iteration {}: {} nodes updated",
+                self.iterations,
+                local_states.len()
+            );
+        }
+
         Ok(())
     }
 
     fn is_converged(&self, epsilon: T) -> bool {
-        self.max_change < epsilon && self.iterations > 0
+        let converged = self.max_change < epsilon && self.iterations > 0;
+        if converged {
+            debug!("AverageConsensus converged after {} iterations (max_change={:.6e} < epsilon={:.6e})",
+                   self.iterations, KalmanScalar::to_f64(&self.max_change), KalmanScalar::to_f64(&epsilon));
+        }
+        converged
     }
 
     fn get_consensus(&self) -> Option<InformationState<T>> {
@@ -201,6 +236,7 @@ pub struct WeightedConsensus<T: KalmanScalar> {
 impl<T: KalmanScalar> WeightedConsensus<T> {
     /// Create new weighted consensus
     pub fn new(state_dim: usize) -> Self {
+        info!("Creating WeightedConsensus: state_dim={}", state_dim);
         Self {
             confidence_weights: HashMap::new(),
             prev_states: HashMap::new(),
@@ -212,6 +248,10 @@ impl<T: KalmanScalar> WeightedConsensus<T> {
     /// Update confidence weights based on information matrices
     fn update_confidence_weights(&mut self, local_states: &HashMap<usize, InformationState<T>>) {
         self.confidence_weights.clear();
+        trace!(
+            "Updating confidence weights for {} nodes",
+            local_states.len()
+        );
 
         // Compute trace of each information matrix (measure of confidence)
         let mut total_confidence = T::zero();
@@ -230,6 +270,12 @@ impl<T: KalmanScalar> WeightedConsensus<T> {
             for weight in self.confidence_weights.values_mut() {
                 *weight = *weight / total_confidence;
             }
+            trace!(
+                "Confidence weights normalized with total_confidence={:.6e}",
+                KalmanScalar::to_f64(&total_confidence)
+            );
+        } else {
+            warn!("WeightedConsensus: total confidence is zero, weights not normalized");
         }
     }
 }
@@ -241,18 +287,19 @@ impl<T: KalmanScalar> ConsensusAlgorithm<T> for WeightedConsensus<T> {
         _topology: &HashMap<usize, Vec<usize>>,
     ) -> KalmanResult<()> {
         let n = self.state_dim;
+        debug!("WeightedConsensus iteration: {} nodes", local_states.len());
 
         // Update confidence weights
         self.update_confidence_weights(local_states);
 
-        // Save current states
-        self.prev_states = local_states.clone();
+        // Save current states for computing weighted average
+        let current_states = local_states.clone();
 
         // Compute weighted average (all nodes get same result)
         let mut consensus_Y = vec![T::zero(); n * n];
         let mut consensus_y = vec![T::zero(); n];
 
-        for (node_id, state) in self.prev_states.iter() {
+        for (node_id, state) in current_states.iter() {
             if let Some(weight) = self.confidence_weights.get(node_id) {
                 for i in 0..n * n {
                     consensus_Y[i] = consensus_Y[i] + *weight * state.Y[i];
@@ -267,10 +314,10 @@ impl<T: KalmanScalar> ConsensusAlgorithm<T> for WeightedConsensus<T> {
         let consensus_state = InformationState::from_information(consensus_Y, consensus_y)?;
 
         self.max_change = T::zero();
-        for (node_id, prev_state) in self.prev_states.iter() {
+        for (node_id, state) in current_states.iter() {
             // Compute change
             for i in 0..n * n {
-                let change = (consensus_state.Y[i] - prev_state.Y[i]).abs();
+                let change = (consensus_state.Y[i] - state.Y[i]).abs();
                 if change > self.max_change {
                     self.max_change = change;
                 }
@@ -279,11 +326,26 @@ impl<T: KalmanScalar> ConsensusAlgorithm<T> for WeightedConsensus<T> {
             local_states.insert(*node_id, consensus_state.clone());
         }
 
+        // Save the consensus state for get_consensus()
+        self.prev_states = local_states.clone();
+
+        debug!(
+            "WeightedConsensus iteration complete: max_change={:.6e}",
+            KalmanScalar::to_f64(&self.max_change)
+        );
         Ok(())
     }
 
     fn is_converged(&self, epsilon: T) -> bool {
-        self.max_change < epsilon
+        let converged = self.max_change < epsilon;
+        if converged {
+            debug!(
+                "WeightedConsensus converged (max_change={:.6e} < epsilon={:.6e})",
+                KalmanScalar::to_f64(&self.max_change),
+                KalmanScalar::to_f64(&epsilon)
+            );
+        }
+        converged
     }
 
     fn get_consensus(&self) -> Option<InformationState<T>> {
@@ -306,6 +368,7 @@ pub struct MaxConsensus<T: KalmanScalar> {
 
 impl<T: KalmanScalar> MaxConsensus<T> {
     pub fn new(state_dim: usize) -> Self {
+        info!("Creating MaxConsensus: state_dim={}", state_dim);
         Self {
             max_node: None,
             max_state: None,
@@ -321,6 +384,12 @@ impl<T: KalmanScalar> ConsensusAlgorithm<T> for MaxConsensus<T> {
         local_states: &mut HashMap<usize, InformationState<T>>,
         topology: &HashMap<usize, Vec<usize>>,
     ) -> KalmanResult<()> {
+        debug!(
+            "MaxConsensus iteration {}: {} nodes",
+            self.iterations + 1,
+            local_states.len()
+        );
+
         // Find node with maximum information (trace of Y)
         let mut max_trace = T::zero();
         let mut max_node_id = None;
@@ -341,6 +410,12 @@ impl<T: KalmanScalar> ConsensusAlgorithm<T> for MaxConsensus<T> {
             self.max_node = Some(node_id);
             self.max_state = local_states.get(&node_id).cloned();
 
+            debug!(
+                "MaxConsensus: node {} has maximum information (trace={:.6e})",
+                node_id,
+                KalmanScalar::to_f64(&max_trace)
+            );
+
             // Propagate max to neighbors
             let max_state = self.max_state.as_ref().unwrap().clone();
 
@@ -352,6 +427,7 @@ impl<T: KalmanScalar> ConsensusAlgorithm<T> for MaxConsensus<T> {
         }
 
         self.iterations += 1;
+        debug!("MaxConsensus iteration {} complete", self.iterations);
         Ok(())
     }
 

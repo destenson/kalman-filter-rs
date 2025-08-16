@@ -118,10 +118,10 @@ where
         for _ in 0..num_particles {
             let mut state = vec![T::zero(); state_dim];
             for i in 0..state_dim {
-                let mean_f64 = initial_mean[i].to_f64().unwrap();
-                let std_f64 = initial_std[i].to_f64().unwrap();
+                let mean_f64 = KalmanScalar::to_f64(&initial_mean[i]);
+                let std_f64 = KalmanScalar::to_f64(&initial_std[i]);
 
-                if std_f64 > 0.0 {
+                if std_f64 > 0.0f64 {
                     let normal = Normal::new(mean_f64, std_f64).unwrap();
                     state[i] = T::from(normal.sample(&mut rng)).unwrap();
                 } else {
@@ -173,8 +173,8 @@ where
 
             // Add process noise
             for i in 0..self.state_dim {
-                let noise_std = self.process_noise_std[i].to_f64().unwrap();
-                if noise_std > 0.0 {
+                let noise_std = KalmanScalar::to_f64(&self.process_noise_std[i]);
+                if noise_std > 0.0f64 {
                     let normal = Normal::new(0.0, noise_std).unwrap();
                     new_state[i] = new_state[i] + T::from(normal.sample(&mut rng)).unwrap();
                 }
@@ -235,9 +235,9 @@ where
         let ess = self.effective_sample_size();
         debug!(
             "Particle Filter update: ESS={:.2}/{}, threshold={:.2}",
-            ess.to_f64(),
+            KalmanScalar::to_f64(&ess),
             self.num_particles,
-            self.ess_threshold.to_f64().unwrap_or_default()
+            KalmanScalar::to_f64(&self.ess_threshold)
         );
 
         if ess < self.ess_threshold {
@@ -416,7 +416,7 @@ where
         let mut residual_sum = 0.0;
 
         for particle in &self.particles {
-            let expected = particle.weight.to_f64().unwrap() * n_f64;
+            let expected = KalmanScalar::to_f64(&particle.weight) * n_f64;
             let deterministic = expected.floor() as usize;
             let residual = expected - deterministic as f64;
 
