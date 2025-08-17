@@ -87,6 +87,13 @@ impl<T: KalmanScalar> InformationFilterBuilder<T> {
         })
     }
 
+    /// Set the initial information matrix Y = P^-1 (row-major), and vector y = Y * x
+    pub fn initial_information(mut self, matrix: Vec<T>, vector: Vec<T>) -> Self {
+        self.initial_information_matrix = Some(matrix);
+        self.initial_information_vector = Some(vector);
+        self
+    }
+
     /// Set the initial information matrix Y = P^-1 (row-major)
     pub fn initial_information_matrix(mut self, matrix: Vec<T>) -> Self {
         self.initial_information_matrix = Some(matrix);
