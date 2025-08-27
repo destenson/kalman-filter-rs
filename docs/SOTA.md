@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document provides a comprehensive analysis of Kalman filter implementations across all major programming languages and platforms as of January 2025. Our Rust implementation (`kalman_filter v1.0.0-alpha0`) is positioned as **the most comprehensive Rust Kalman filter library**, offering 7 filter variants with production-ready features including logging, metrics, and validation.
+This document provides a comprehensive analysis of Kalman filter implementations across all major programming languages and platforms as of January 2025. Our Rust implementation (`kalman_filters v1.0.0-alpha0`) is positioned as **the most comprehensive Rust Kalman filter library**, offering 7 filter variants with production-ready features including logging, metrics, and validation.
 
 ### Key Findings
 - **Our Strengths**: Most complete filter variant coverage in Rust ecosystem (7 variants)
@@ -16,7 +16,7 @@ This document provides a comprehensive analysis of Kalman filter implementations
 
 | Language | Leading Libraries | Filter Variants | Production Ready | Performance |
 |----------|------------------|-----------------|------------------|-------------|
-| **Rust (Ours)** | kalman_filter | 7 (KF, EKF, UKF, PF, EnKF, CKF, IF) | ✅ | Excellent |
+| **Rust (Ours)** | kalman_filters | 7 (KF, EKF, UKF, PF, EnKF, CKF, IF) | ✅ | Excellent |
 | **Rust (Others)** | adskalman | 1 (KF) | ⚠️ | Excellent |
 | **MATLAB** | Control System Toolbox | 8+ | ✅ | Good |
 | **C++** | OpenCV, BFL | 5-6 | ✅ | Excellent |

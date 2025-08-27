@@ -279,7 +279,7 @@ mavlink = { version = "0.12", optional = true }
 #### Physical Sensors
 ```
 // Pseudocode for using sensor plugins
-use kalman_filter::sensors::{GpsSensor, ImuSensor};
+use kalman_filters::sensors::{GpsSensor, ImuSensor};
 
 let gps = GpsSensor::new("/dev/ttyUSB0", 9600)?;
 let imu = ImuSensor::new_i2c("/dev/i2c-1", 0x68)?;
@@ -304,7 +304,7 @@ loop {
 #### System Monitoring
 ```
 // Pseudocode for thermal management tracking
-use kalman_filter::sensors::{CpuTempSensor, GpuTempSensor, FanSensor};
+use kalman_filters::sensors::{CpuTempSensor, GpuTempSensor, FanSensor};
 
 // Initialize system sensors
 let cpu_temp = CpuTempSensor::new()?;
@@ -356,7 +356,7 @@ sudo cargo run --example imu_fusion --features sensors-linux
 # ROS integration test (requires ROS environment)
 source /opt/ros/noetic/setup.bash  # or ros2 setup
 cargo build --features sensors-ros
-roslaunch kalman_filter sensor_test.launch
+roslaunch kalman_filters sensor_test.launch
 cargo run --example ros_sensor_fusion --features sensors-ros
 
 # Cross-compilation for embedded

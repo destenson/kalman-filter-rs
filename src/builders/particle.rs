@@ -8,7 +8,7 @@ use log::{debug, error, info};
 ///
 /// # Example
 /// ```no_run
-/// use kalman_filter::builders::ParticleFilterBuilder;
+/// use kalman_filters::builders::ParticleFilterBuilder;
 /// 
 /// let pf = ParticleFilterBuilder::new(2, 100)
 ///     .initial_mean(vec![0.0, 0.0])

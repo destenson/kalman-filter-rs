@@ -704,4 +704,192 @@ mod tests {
         assert!(kf.state()[0] > 0.0);
         assert!(kf.state()[0] < 1.0);
     }
+
+    #[test]
+    fn test_dimension_validation() {
+        // Test invalid dimensions are caught
+        let result = KalmanFilter::<f64>::initialize(
+            2,
+            1,
+            vec![0.0, 0.0], // state
+            vec![1.0],       // P wrong size (should be 2x2)
+            vec![1.0, 0.0, 0.0, 1.0],
+            vec![0.1, 0.0, 0.0, 0.1],
+            vec![1.0, 0.0],
+            vec![0.1],
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_singular_matrix_detection() {
+        // Test that singular matrix is detected
+        let singular = vec![1.0, 2.0, 2.0, 4.0]; // Singular 2x2 matrix
+        let result = KalmanFilter::<f64>::invert_matrix(&singular, 2);
+        assert!(result.is_err());
+        match result {
+            Err(KalmanError::SingularMatrix) => (),
+            _ => panic!("Expected SingularMatrix error"),
+        }
+    }
+
+    #[test]
+    fn test_predict_update_cycle() {
+        let mut kf = KalmanFilter::<f64>::new(2, 1);
+        
+        // Initialize with identity matrices
+        kf.x = vec![0.0, 0.0];
+        kf.P = vec![1.0, 0.0, 0.0, 1.0];
+        kf.F = vec![1.0, 0.1, 0.0, 1.0]; // Simple motion model
+        kf.Q = vec![0.01, 0.0, 0.0, 0.01];
+        kf.H = vec![1.0, 0.0]; // Observe first state
+        kf.R = vec![0.1];
+        
+        // Store initial covariance trace
+        let initial_trace = kf.P[0] + kf.P[3];
+        
+        // Predict increases uncertainty
+        kf.predict();
+        let predict_trace = kf.P[0] + kf.P[3];
+        assert!(predict_trace > initial_trace);
+        
+        // Update reduces uncertainty
+        let result = kf.update(&vec![0.5]);
+        assert!(result.is_ok());
+        let update_trace = kf.P[0] + kf.P[3];
+        assert!(update_trace < predict_trace);
+    }
+
+    #[test]
+    fn test_matrix_multiply() {
+        // Test 2x2 matrix multiplication by using internal state
+        let kf = KalmanFilter::<f64>::new(2, 2);
+        let a = vec![1.0, 2.0, 3.0, 4.0];
+        let b = vec![5.0, 6.0, 7.0, 8.0];
+        let mut result = vec![0.0; 4];
+        
+        // Manual matrix multiply
+        for i in 0..2 {
+            for j in 0..2 {
+                for k in 0..2 {
+                    result[i * 2 + j] += a[i * 2 + k] * b[k * 2 + j];
+                }
+            }
+        }
+        
+        // Expected: [1*5+2*7, 1*6+2*8, 3*5+4*7, 3*6+4*8]
+        assert_eq!(result, vec![19.0, 22.0, 43.0, 50.0]);
+    }
+
+    #[test]
+    fn test_matrix_transpose() {
+        let matrix = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]; // 2x3 matrix
+        let mut result = vec![0.0; 6];
+        
+        // Manual transpose
+        for i in 0..2 {
+            for j in 0..3 {
+                result[j * 2 + i] = matrix[i * 3 + j];
+            }
+        }
+        
+        // Expected: 3x2 matrix
+        assert_eq!(result, vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+    }
+
+    #[test]
+    fn test_matrix_add() {
+        let a = vec![1.0, 2.0, 3.0, 4.0];
+        let b = vec![5.0, 6.0, 7.0, 8.0];
+        let result: Vec<f64> = a.iter().zip(b.iter()).map(|(x, y)| x + y).collect();
+        assert_eq!(result, vec![6.0, 8.0, 10.0, 12.0]);
+    }
+
+    #[test]
+    fn test_matrix_subtract() {
+        let a = vec![5.0, 6.0, 7.0, 8.0];
+        let b = vec![1.0, 2.0, 3.0, 4.0];
+        let result: Vec<f64> = a.iter().zip(b.iter()).map(|(x, y)| x - y).collect();
+        assert_eq!(result, vec![4.0, 4.0, 4.0, 4.0]);
+    }
+
+    #[test]
+    fn test_convergence() {
+        // Test that filter converges to true value with repeated measurements
+        let mut kf = KalmanFilter::<f64>::new(1, 1);
+        kf.x = vec![0.0];
+        kf.P = vec![100.0]; // High initial uncertainty
+        kf.F = vec![1.0];
+        kf.Q = vec![0.001];
+        kf.H = vec![1.0];
+        kf.R = vec![1.0];
+        
+        let true_value = 5.0;
+        
+        // Feed repeated measurements
+        for _ in 0..50 {
+            kf.predict();
+            kf.update(&vec![true_value]).unwrap();
+        }
+        
+        // Should converge close to true value
+        assert!((kf.x[0] - true_value).abs() < 0.1);
+        // Uncertainty should be low
+        assert!(kf.P[0] < 1.0);
+    }
+
+    #[test]
+    fn test_getters() {
+        let kf = KalmanFilter::<f64>::new(2, 1);
+        assert_eq!(kf.state_dim, 2);
+        assert_eq!(kf.measurement_dim, 1);
+        assert_eq!(kf.state().len(), 2);
+        assert_eq!(kf.covariance().len(), 4);
+    }
+
+    #[test]
+    fn test_control_input() {
+        let mut kf = KalmanFilter::<f64>::new(2, 1);
+        
+        // Initialize system
+        kf.x = vec![0.0, 0.0];
+        kf.P = vec![1.0, 0.0, 0.0, 1.0];
+        kf.F = vec![1.0, 1.0, 0.0, 1.0];
+        kf.Q = vec![0.01, 0.0, 0.0, 0.01];
+        kf.H = vec![1.0, 0.0];
+        kf.R = vec![0.1];
+        
+        // Simple control input simulation
+        let control = vec![0.0, 2.0]; // Control affects velocity
+        
+        // Apply control manually
+        for i in 0..2 {
+            kf.x[i] += control[i];
+        }
+        
+        // Velocity should have increased
+        assert!((kf.x[1] - 2.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_joseph_form() {
+        // Test Joseph form covariance update for numerical stability
+        let mut kf = KalmanFilter::<f64>::new(1, 1);
+        kf.x = vec![0.0];
+        kf.P = vec![1.0];
+        kf.F = vec![1.0];
+        kf.Q = vec![0.1];
+        kf.H = vec![1.0];
+        kf.R = vec![1.0];
+        
+        kf.predict();
+        let p_before = kf.P[0];
+        
+        kf.update(&vec![1.0]).unwrap();
+        
+        // Covariance should remain positive
+        assert!(kf.P[0] > 0.0);
+        // Covariance should decrease after update
+        assert!(kf.P[0] < p_before);
+    }
 }

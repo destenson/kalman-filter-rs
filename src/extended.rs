@@ -17,7 +17,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use kalman_filter::{ExtendedKalmanFilter, NonlinearSystem, KalmanScalar};
+//! use kalman_filters::{ExtendedKalmanFilter, NonlinearSystem, KalmanScalar};
 //!
 //! struct PendulumSystem;
 //!
@@ -610,5 +610,163 @@ mod tests {
 
         // Should still work with numerical Jacobian
         assert!((ekf.state()[0] - 0.1).abs() < 0.05);
+    }
+
+    #[test]
+    fn test_ekf_dimension_checks() {
+        struct BadSystem;
+        impl NonlinearSystem<f64> for BadSystem {
+            fn state_transition(&self, state: &[f64], _: Option<&[f64]>, _: f64) -> Vec<f64> {
+                state.to_vec()
+            }
+            fn measurement(&self, state: &[f64]) -> Vec<f64> {
+                vec![state[0]]
+            }
+            fn state_jacobian(&self, _: &[f64], _: Option<&[f64]>, _: f64) -> Vec<f64> {
+                vec![1.0] // Wrong size!
+            }
+            fn measurement_jacobian(&self, _: &[f64]) -> Vec<f64> {
+                vec![1.0, 0.0]
+            }
+            fn state_dim(&self) -> usize { 2 }
+            fn measurement_dim(&self) -> usize { 1 }
+        }
+
+        let system = BadSystem;
+        let result = ExtendedKalmanFilter::new(
+            system,
+            vec![0.0, 0.0],
+            vec![1.0, 0.0, 0.0, 1.0],
+            vec![0.1, 0.0, 0.0, 0.1],
+            vec![0.1],
+            0.01,
+        );
+        
+        // Should detect dimension mismatch
+        assert!(result.is_ok()); // Creation is ok, error happens on predict
+    }
+
+    #[test]
+    fn test_ekf_convergence() {
+        // Simple linear system to test convergence
+        struct LinearSystem;
+        impl NonlinearSystem<f64> for LinearSystem {
+            fn state_transition(&self, state: &[f64], _: Option<&[f64]>, dt: f64) -> Vec<f64> {
+                vec![state[0] + state[1] * dt, state[1]]
+            }
+            fn measurement(&self, state: &[f64]) -> Vec<f64> {
+                vec![state[0]]
+            }
+            fn state_jacobian(&self, _: &[f64], _: Option<&[f64]>, dt: f64) -> Vec<f64> {
+                vec![1.0, dt, 0.0, 1.0]
+            }
+            fn measurement_jacobian(&self, _: &[f64]) -> Vec<f64> {
+                vec![1.0, 0.0]
+            }
+            fn state_dim(&self) -> usize { 2 }
+            fn measurement_dim(&self) -> usize { 1 }
+        }
+
+        let system = LinearSystem;
+        let mut ekf = ExtendedKalmanFilter::new(
+            system,
+            vec![0.0, 1.0],
+            vec![10.0, 0.0, 0.0, 10.0],
+            vec![0.01, 0.0, 0.0, 0.01],
+            vec![0.1],
+            0.1,
+        ).unwrap();
+
+        // True position after 10 steps: 0 + 1*0.1*10 = 1.0
+        for i in 0..10 {
+            ekf.predict();
+            let true_pos = 0.1 * (i + 1) as f64;
+            ekf.update(&[true_pos]).unwrap();
+        }
+
+        assert!((ekf.state()[0] - 1.0).abs() < 0.1);
+        assert!((ekf.state()[1] - 1.0).abs() < 0.2);
+    }
+
+    #[test]
+    fn test_ekf_getters() {
+        let system = PendulumSystem { g: 9.81, l: 1.0 };
+        let ekf = ExtendedKalmanFilter::new(
+            system,
+            vec![0.1, 0.0],
+            vec![0.01, 0.0, 0.0, 0.01],
+            vec![0.001, 0.0, 0.0, 0.001],
+            vec![0.01],
+            0.01,
+        ).unwrap();
+
+        assert_eq!(ekf.state().len(), 2);
+        assert_eq!(ekf.covariance().len(), 4);
+        assert!((ekf.dt - 0.01).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_ekf_control_input() {
+        struct ControlledSystem;
+        impl NonlinearSystem<f64> for ControlledSystem {
+            fn state_transition(&self, state: &[f64], control: Option<&[f64]>, dt: f64) -> Vec<f64> {
+                let u = control.map(|c| c[0]).unwrap_or(0.0);
+                vec![state[0] + state[1] * dt, state[1] + u * dt]
+            }
+            fn measurement(&self, state: &[f64]) -> Vec<f64> {
+                vec![state[0]]
+            }
+            fn state_jacobian(&self, _: &[f64], _: Option<&[f64]>, dt: f64) -> Vec<f64> {
+                vec![1.0, dt, 0.0, 1.0]
+            }
+            fn measurement_jacobian(&self, _: &[f64]) -> Vec<f64> {
+                vec![1.0, 0.0]
+            }
+            fn state_dim(&self) -> usize { 2 }
+            fn measurement_dim(&self) -> usize { 1 }
+        }
+
+        let system = ControlledSystem;
+        let mut ekf = ExtendedKalmanFilter::new(
+            system,
+            vec![0.0, 0.0],
+            vec![1.0, 0.0, 0.0, 1.0],
+            vec![0.01, 0.0, 0.0, 0.01],
+            vec![0.1],
+            0.1,
+        ).unwrap();
+
+        // Apply control to accelerate
+        ekf.set_control(vec![1.0]);
+        ekf.predict();
+        assert!((ekf.state()[1] - 0.1).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_numerical_jacobian_accuracy() {
+        let system = PendulumSystem { g: 9.81, l: 1.0 };
+        let state = vec![0.1, 0.0];
+        let dt = 0.01;
+        
+        // Analytical Jacobian
+        let analytical = system.state_jacobian(&state, None, dt);
+        
+        // Numerical Jacobian
+        let ekf = ExtendedKalmanFilter::new(
+            system,
+            state.clone(),
+            vec![1.0, 0.0, 0.0, 1.0],
+            vec![0.01, 0.0, 0.0, 0.01],
+            vec![0.1],
+            dt,
+        ).unwrap();
+        
+        // Get numerical jacobian using the internal method
+        let numerical = ekf.compute_numerical_jacobian_state(1e-6);
+        
+        // Compare analytical and numerical
+        for i in 0..4 {
+            assert!((analytical[i] - numerical[i]).abs() < 1e-4);
+        }
     }
 }

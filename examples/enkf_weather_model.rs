@@ -4,7 +4,7 @@
 //! using a simplified weather model (Lorenz-96).
 #![allow(unused, non_snake_case)] // DO NOT CHANGE
 
-use kalman_filter::{EnsembleKalmanFilter, NonlinearSystem};
+use kalman_filters::{EnsembleKalmanFilter, NonlinearSystem};
 
 /// Lorenz-96 model - a simplified weather model
 struct Lorenz96Model {

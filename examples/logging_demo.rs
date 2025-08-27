@@ -17,7 +17,7 @@
 //! cargo run --example logging_demo --features tracing-subscriber
 //! ```
 
-use kalman_filter::{KalmanFilterBuilder, ExtendedKalmanFilter, NonlinearSystem};
+use kalman_filters::{KalmanFilterBuilder, ExtendedKalmanFilter, NonlinearSystem};
 use log::{info, debug, warn};
 
 #[cfg(feature = "tracing-subscriber")]

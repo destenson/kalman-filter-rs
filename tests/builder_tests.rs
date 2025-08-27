@@ -1,6 +1,6 @@
 //! Tests for all filter builders
 
-use kalman_filter::*;
+use kalman_filters::*;
 
 #[derive(Clone)]
 struct TestSystem;

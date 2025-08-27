@@ -1,7 +1,7 @@
 // Property-based testing with QuickCheck for Kalman filter invariants
 use quickcheck::{Arbitrary, Gen};
 use quickcheck_macros::quickcheck;
-use kalman_filter::filter::KalmanFilter;
+use kalman_filters::filter::KalmanFilter;
 
 // Custom type for generating valid covariance matrices
 #[derive(Clone, Debug)]

@@ -1,6 +1,6 @@
 // Algorithm validation tests for Kalman filter correctness
 use approx::assert_abs_diff_eq;
-use kalman_filter::filter::KalmanFilter;
+use kalman_filters::filter::KalmanFilter;
 
 // Test 1: Static system convergence - simplest validation
 // A constant value should converge when measured repeatedly

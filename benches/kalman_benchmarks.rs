@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use kalman_filter::{
+use kalman_filters::{
     information::InformationFilter, ExtendedKalmanFilter, KalmanFilterBuilder, NonlinearSystem,
     ParticleFilter, UnscentedKalmanFilter,
 };
@@ -85,7 +85,7 @@ fn bench_filter_variants(c: &mut Criterion) {
 
     // Kalman Filter
     let mut kf = create_test_kalman_filter(state_dim, measurement_dim);
-    group.bench_function("kalman_filter", |b| {
+    group.bench_function("kalman_filters", |b| {
         b.iter(|| {
             kf.predict();
             black_box(kf.update(black_box(&measurement)).unwrap());
@@ -471,7 +471,7 @@ fn bench_precision_comparison(c: &mut Criterion) {
 fn create_test_kalman_filter(
     state_dim: usize,
     measurement_dim: usize,
-) -> kalman_filter::KalmanFilter<f64> {
+) -> kalman_filters::KalmanFilter<f64> {
     KalmanFilterBuilder::new(state_dim, measurement_dim)
         .initial_state(vec![0.0; state_dim])
         .initial_covariance(create_identity_matrix(state_dim))
@@ -486,7 +486,7 @@ fn create_test_kalman_filter(
 fn create_test_kalman_filter_f32(
     state_dim: usize,
     measurement_dim: usize,
-) -> kalman_filter::KalmanFilter<f32> {
+) -> kalman_filters::KalmanFilter<f32> {
     KalmanFilterBuilder::new(state_dim, measurement_dim)
         .initial_state(vec![0.0f32; state_dim])
         .initial_covariance(create_identity_matrix_f32(state_dim))

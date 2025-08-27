@@ -11,10 +11,10 @@
 use rand::Rng;
 
 #[cfg(not(feature = "nalgebra"))]
-use kalman_filter::{KalmanFilter, KalmanFilterBuilder};
+use kalman_filters::{KalmanFilter, KalmanFilterBuilder};
 
 #[cfg(feature = "nalgebra")]
-use kalman_filter::StaticKalmanFilter;
+use kalman_filters::StaticKalmanFilter;
 #[cfg(feature = "nalgebra")]
 use nalgebra::{SMatrix, SVector};
 

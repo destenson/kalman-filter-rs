@@ -1,7 +1,7 @@
-# kalman_filter
+# kalman_filters
 
-[![Crates.io](https://img.shields.io/crates/v/kalman_filter.svg)](https://crates.io/crates/kalman_filter)
-[![Documentation](https://docs.rs/kalman_filter/badge.svg)](https://docs.rs/kalman_filter)
+[![Crates.io](https://img.shields.io/crates/v/kalman_filters.svg)](https://crates.io/crates/kalman_filters)
+[![Documentation](https://docs.rs/kalman_filters/badge.svg)](https://docs.rs/kalman_filters)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A comprehensive Kalman filter library in Rust, providing multiple filter variants for state estimation in noisy systems.
@@ -36,13 +36,13 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-kalman_filter = "1.0.0-alpha0"
+kalman_filters = "1.0.0-alpha0"
 ```
 
 ### Basic Example
 
 ```rust
-use kalman_filter::KalmanFilterBuilder;
+use kalman_filters::KalmanFilterBuilder;
 
 // Create a 2D position/velocity tracker
 let mut kf = KalmanFilterBuilder::new(2, 1)  // 2 states, 1 measurement
@@ -77,7 +77,7 @@ println!("Position: {:.2}, Velocity: {:.2}", state[0], state[1]);
 ### Non-linear Example (EKF)
 
 ```rust
-use kalman_filter::{ExtendedKalmanFilter, NonlinearSystem};
+use kalman_filters::{ExtendedKalmanFilter, NonlinearSystem};
 
 // Define your non-linear system
 struct PendulumSystem {
@@ -136,7 +136,7 @@ Enable features in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-kalman_filter = { version = "1.0.0-alpha0", features = ["nalgebra", "parallel"] }
+kalman_filters = { version = "1.0.0-alpha0", features = ["nalgebra", "parallel"] }
 ```
 
 | Feature | Description |
@@ -155,7 +155,7 @@ kalman_filter = { version = "1.0.0-alpha0", features = ["nalgebra", "parallel"] 
 ### Information Filter for Sensor Networks
 
 ```rust
-use kalman_filter::information::{InformationFilter, DistributedFilter};
+use kalman_filters::information::{InformationFilter, DistributedFilter};
 
 // Create distributed filter for sensor network
 let mut network = DistributedFilter::new(4, 2);  // 4 states, 2 measurements
@@ -174,7 +174,7 @@ network.consensus_update(10, 1e-6).unwrap();
 ### Particle Filter for Non-Gaussian Systems
 
 ```rust
-use kalman_filter::{ParticleFilter, ResamplingStrategy};
+use kalman_filters::{ParticleFilter, ResamplingStrategy};
 
 let mut pf = ParticleFilter::new(
     state_dim: 2,
@@ -240,7 +240,7 @@ RUST_LOG=debug cargo run --example logging_demo
 
 ## Documentation
 
-Full API documentation is available at [docs.rs/kalman_filter](https://docs.rs/kalman_filter).
+Full API documentation is available at [docs.rs/kalman_filters](https://docs.rs/kalman_filters).
 
 ## Contributing
 

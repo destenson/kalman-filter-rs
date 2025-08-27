@@ -1,7 +1,7 @@
 # Kalman Filter PRPs (Project Requirements and Planning)
 
 ## Overview
-This directory contains detailed implementation plans for enhancing the kalman_filter crate from a working implementation to a production-ready, well-documented, and thoroughly validated library.
+This directory contains detailed implementation plans for enhancing the kalman_filters crate from a working implementation to a production-ready, well-documented, and thoroughly validated library.
 
 ## PRPs Created
 

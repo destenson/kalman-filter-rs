@@ -8,8 +8,8 @@ use log::{debug, error, info};
 ///
 /// # Example
 /// ```no_run
-/// use kalman_filter::builders::UnscentedKalmanFilterBuilder;
-/// use kalman_filter::NonlinearSystem;
+/// use kalman_filters::builders::UnscentedKalmanFilterBuilder;
+/// use kalman_filters::NonlinearSystem;
 /// 
 /// # struct MySystem;
 /// # impl NonlinearSystem<f64> for MySystem {

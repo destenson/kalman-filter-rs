@@ -2,7 +2,7 @@
 // Compares our Kalman filter with known good results from Python/MATLAB
 
 use approx::assert_abs_diff_eq;
-use kalman_filter::filter::KalmanFilter;
+use kalman_filters::filter::KalmanFilter;
 use serde::{Deserialize, Serialize};
 use std::fs;
 

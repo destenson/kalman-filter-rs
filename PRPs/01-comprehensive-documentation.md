@@ -1,7 +1,7 @@
 # PRP: Comprehensive Documentation for Kalman Filter Library
 
 ## Goal
-Transform the kalman_filter crate from undocumented to the most well-documented Kalman filter library in the Rust ecosystem, enabling immediate adoption and understanding by users of all expertise levels.
+Transform the kalman_filters crate from undocumented to the most well-documented Kalman filter library in the Rust ecosystem, enabling immediate adoption and understanding by users of all expertise levels.
 
 ## Why
 - **Current State**: Empty README.md (1 line), sparse rustdoc comments

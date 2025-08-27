@@ -3,7 +3,7 @@
 ## Status: NOT FEASIBLE AS AUTOMATIC SOLUTION
 
 ## Summary
-Initial goal was to provide Python bindings for the kalman_filter Rust crate with automatic binding generation during the build process. Research has shown this is not feasible without significant manual wrapper code.
+Initial goal was to provide Python bindings for the kalman_filters Rust crate with automatic binding generation during the build process. Research has shown this is not feasible without significant manual wrapper code.
 
 ## Research Findings
 
@@ -144,7 +144,7 @@ Initial goal was to provide Python bindings for the kalman_filter Rust crate wit
 A custom proc macro could solve the automatic binding problem:
 
 ```rust
-// In kalman_filter crate with new "python" feature
+// In kalman_filters crate with new "python" feature
 #[cfg_attr(feature = "python", python_binding::class)]
 pub struct KalmanFilter<T> {
     // ...

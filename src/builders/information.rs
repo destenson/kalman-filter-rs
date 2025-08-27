@@ -8,7 +8,7 @@ use log::{debug, error, info};
 ///
 /// # Example
 /// ```no_run
-/// use kalman_filter::builders::InformationFilterBuilder;
+/// use kalman_filters::builders::InformationFilterBuilder;
 /// 
 /// let if_filter = InformationFilterBuilder::new(2, 1)
 ///     .initial_information_matrix(vec![1.0, 0.0, 0.0, 1.0])

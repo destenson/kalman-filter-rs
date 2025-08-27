@@ -5,7 +5,7 @@
 //! The Information Filter enables efficient distributed fusion.
 #![allow(unused, non_snake_case)] // DO NOT CHANGE!
 
-use kalman_filter::information::{
+use kalman_filters::information::{
     DistributedInformationFilter, 
     AverageConsensus, 
     ConsensusAlgorithm,

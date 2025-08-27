@@ -10,7 +10,7 @@ use log::{debug, error, info, warn};
 ///
 /// # Example
 /// ```
-/// use kalman_filter::KalmanFilterBuilder;
+/// use kalman_filters::KalmanFilterBuilder;
 ///
 /// let kf = KalmanFilterBuilder::<f64>::new(2, 1)  // 2 states, 1 measurement
 ///     .initial_state(vec![0.0, 0.0])

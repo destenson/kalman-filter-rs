@@ -1,7 +1,7 @@
 //! Legacy API example
 //! Run with: cargo run --example legacy --features legacy
 
-use kalman_filter::legacy::KalmanFilter;
+use kalman_filters::legacy::KalmanFilter;
 
 fn main() {
     let mut kf = KalmanFilter::new(2, 1, 0);

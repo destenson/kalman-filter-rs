@@ -4,7 +4,7 @@
 //! for higher-dimensional systems compared to UKF.
 #![allow(unused, non_snake_case)] // DO NOT CHANGE
 
-use kalman_filter::{CubatureKalmanFilter, NonlinearSystem};
+use kalman_filters::{CubatureKalmanFilter, NonlinearSystem};
 
 /// High-dimensional nonlinear system (6D state)
 struct HighDimensionalSystem;

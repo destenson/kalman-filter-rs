@@ -12,13 +12,13 @@
 //!
 //! ```toml
 //! [dependencies]
-//! kalman_filter = { version = "1.0", features = ["prometheus-metrics"] }
+//! kalman_filters = { version = "1.0", features = ["prometheus-metrics"] }
 //! ```
 //!
 //! Then initialize metrics and access the registry:
 //!
 //! ```rust
-//! use kalman_filter::metrics;
+//! use kalman_filters::metrics;
 //!
 //! // Initialize metrics (call once at startup)
 //! metrics::init();

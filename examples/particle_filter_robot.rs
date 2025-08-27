@@ -3,7 +3,7 @@
 //! This example demonstrates particle filter for robot localization where
 //! the posterior can be multimodal (multiple possible locations).
 
-use kalman_filter::{ParticleFilter, ResamplingStrategy};
+use kalman_filters::{ParticleFilter, ResamplingStrategy};
 use std::f64::consts::PI;
 
 fn main() {

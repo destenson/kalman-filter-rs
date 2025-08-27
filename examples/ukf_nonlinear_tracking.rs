@@ -5,7 +5,7 @@
 //! requiring Jacobian calculations.
 #![allow(unused, non_snake_case)] // DO NOT CHANGE
 
-use kalman_filter::{UnscentedKalmanFilter, UKFParameters, NonlinearSystem};
+use kalman_filters::{UnscentedKalmanFilter, UKFParameters, NonlinearSystem};
 
 /// Nonlinear target dynamics with coordinated turn model
 struct CoordinatedTurnModel {

@@ -17,13 +17,13 @@ fn main() {
 
 #[cfg(feature = "prometheus-metrics")]
 fn main() {
-    use kalman_filter::KalmanFilterBuilder;
+    use kalman_filters::KalmanFilterBuilder;
     use std::thread;
     use std::time::Duration;
     use std::net::TcpListener;
 
     // Initialize metrics system
-    kalman_filter::metrics::init();
+    kalman_filters::metrics::init();
     println!("Metrics system initialized");
 
     // Create a thread to run filters and generate metrics
@@ -105,7 +105,7 @@ fn handle_request(mut stream: std::net::TcpStream) {
     // Check if this is a request for /metrics
     if request.starts_with("GET /metrics") {
         // Get the metrics registry
-        let registry = kalman_filter::metrics::registry();
+        let registry = kalman_filters::metrics::registry();
         
         // Encode metrics in Prometheus text format
         let mut buffer = String::new();
@@ -151,7 +151,7 @@ fn handle_request(mut stream: std::net::TcpStream) {
     <h2>Example Prometheus Configuration</h2>
     <pre>
 scrape_configs:
-  - job_name: 'kalman_filter'
+  - job_name: 'kalman_filters'
     static_configs:
       - targets: ['localhost:9090']
     </pre>

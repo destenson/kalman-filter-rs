@@ -1,8 +1,8 @@
 //! Comprehensive tests for Information Filter implementation
 #![allow(unused, non_snake_case)]
 
-use kalman_filter::filter::KalmanFilter;
-use kalman_filter::information::{
+use kalman_filters::filter::KalmanFilter;
+use kalman_filters::information::{
     InformationFilter, InformationState, InformationForm,
     kalman_to_information, information_to_kalman,
     SparseInformationFilter,
@@ -11,7 +11,7 @@ use kalman_filter::information::{
     DistributedInformationFilter,
     consensus::{AverageConsensus, WeightedConsensus, ConsensusAlgorithm},
 };
-use kalman_filter::types::NonlinearSystem;
+use kalman_filters::types::NonlinearSystem;
 use rand::Rng;
 use std::collections::HashMap;
 
