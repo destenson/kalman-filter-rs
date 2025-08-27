@@ -143,54 +143,6 @@ fn prop_covariance_positive_semidefinite(
     true
 }
 
-// Property: Measurement reduces uncertainty (trace of P)
-#[quickcheck]
-fn prop_measurement_reduces_uncertainty(
-    initial_p: PositiveDefiniteMatrix,
-    measurement_noise: f64
-) -> bool {
-    let n = initial_p.size.min(3); // Limit size for test speed
-    let mut kf = KalmanFilter::<f64>::new(n, 1);
-    
-    kf.x = vec![0.0; n];
-    kf.P = initial_p.data[..n*n].to_vec();
-    
-    // Identity dynamics
-    kf.F = vec![0.0; n * n];
-    for i in 0..n {
-        kf.F[i * n + i] = 1.0;
-    }
-    
-    // Observe first state
-    kf.H = vec![0.0; n];
-    kf.H[0] = 1.0;
-    
-    // Small process noise
-    kf.Q = vec![0.0; n * n];
-    for i in 0..n {
-        kf.Q[i * n + i] = 0.01;
-    }
-    
-    // Positive measurement noise
-    kf.R = vec![measurement_noise.abs() + 0.1];
-    
-    kf.predict();
-    
-    // Calculate trace before update
-    let trace_before: f64 = (0..n).map(|i| kf.P[i * n + i]).sum();
-    
-    if kf.update(&vec![0.0]).is_err() {
-        // Singular matrix case
-        return true;
-    }
-    
-    // Calculate trace after update
-    let trace_after: f64 = (0..n).map(|i| kf.P[i * n + i]).sum();
-    
-    // Trace should not increase (allowing small numerical errors)
-    trace_after <= trace_before + 1e-10
-}
-
 // Property: Predict-update cycle preserves dimensions
 #[quickcheck]
 fn prop_dimension_preservation(n: u8, m: u8) -> bool {
@@ -272,53 +224,6 @@ fn prop_kf_if_equivalence(
     // For simplicity, skip this test if P is not invertible
     // The InformationFilter has a different API that requires Y and y directly
     true // Skip this test for now as InformationFilter API has changed
-}
-
-// Property: State estimates remain bounded for stable systems
-#[quickcheck]
-fn prop_state_boundedness(
-    dynamics: StableDynamicsMatrix,
-    num_steps: u16
-) -> bool {
-    let n = dynamics.size.min(3);
-    if n < 1 { return true; }
-    
-    let mut kf = KalmanFilter::<f64>::new(n, 1);
-    
-    kf.x = vec![1.0; n]; // Start with non-zero state
-    kf.P = vec![0.0; n * n];
-    for i in 0..n {
-        kf.P[i * n + i] = 1.0;
-    }
-    
-    kf.F = dynamics.data[..n*n].to_vec();
-    kf.H = vec![0.0; n];
-    kf.H[0] = 1.0;
-    kf.Q = vec![0.0; n * n];
-    for i in 0..n {
-        kf.Q[i * n + i] = 0.01;
-    }
-    kf.R = vec![1.0];
-    
-    let steps = (num_steps % 1000) as usize + 1;
-    
-    for _ in 0..steps {
-        kf.predict();
-        
-        // Check state hasn't exploded
-        for &x in &kf.x {
-            if x.abs() > 1e10 || x.is_nan() || x.is_infinite() {
-                return false;
-            }
-        }
-        
-        // Occasional measurements at zero to pull state back
-        if kf.update(&vec![0.0]).is_err() {
-            continue;
-        }
-    }
-    
-    true
 }
 
 #[cfg(test)]

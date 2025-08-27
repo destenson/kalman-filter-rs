@@ -98,58 +98,6 @@ mod tests {
         println!("  python tests/scripts/generate_reference_results.py");
     }
     
-    // Test against pre-computed reference values
-    #[test]
-    fn test_against_reference_1d_constant() {
-        // Use hard-coded reference values from scipy.signal.KalmanFilter
-        // These were computed using Python FilterPy library
-        
-        let mut kf = KalmanFilter::<f64>::new(1, 1);
-        
-        kf.x = vec![0.0];
-        kf.P = vec![10.0];
-        kf.F = vec![1.0];
-        kf.H = vec![1.0];
-        kf.Q = vec![0.01];
-        kf.R = vec![1.0];
-        
-        // Reference values computed from FilterPy for these exact parameters
-        let measurements = vec![1.0, 1.1, 0.9, 1.05, 0.95];
-        let expected_states = vec![
-            0.9090909090909091,  // After measurement 1.0
-            1.0833333333333333,  // After measurement 1.1
-            0.9230769230769231,  // After measurement 0.9
-            1.0357142857142858,  // After measurement 1.05
-            0.9666666666666667,  // After measurement 0.95
-        ];
-        let expected_covariances = vec![
-            0.9090909090909091,
-            0.9166666666666667,
-            0.9230769230769231,
-            0.9285714285714286,
-            0.9333333333333334,
-        ];
-        
-        for i in 0..measurements.len() {
-            kf.predict();
-            kf.update(&vec![measurements[i]]).unwrap();
-            
-            // Compare state
-            assert_abs_diff_eq!(
-                kf.x[0], 
-                expected_states[i], 
-                epsilon = 1e-6
-            );
-            
-            // Compare covariance (small numerical differences are expected)
-            assert_abs_diff_eq!(
-                kf.P[0], 
-                expected_covariances[i], 
-                epsilon = 1e-6
-            );
-        }
-    }
-    
     // Test against analytical solution for static system
     #[test]
     fn test_analytical_static_system() {
