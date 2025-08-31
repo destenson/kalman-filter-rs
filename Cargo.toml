@@ -8,6 +8,7 @@ repository = "https://github.com/destenson/kalman-filter-rs"
 description = "Comprehensive Kalman filter library with multiple variants (EKF, UKF, Information Filter, Particle Filter, etc.)"
 keywords = ["kalman", "filter", "estimation", "tracking", "sensor-fusion"]
 categories = ["algorithms", "mathematics", "science", "simulation"]
+readme = "README.md"
 
 
 [features]
