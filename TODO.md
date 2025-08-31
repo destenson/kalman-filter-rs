@@ -1,15 +1,21 @@
 # TODO List for kalman_filters
 
-Last updated: 2025-08-27
+Last updated: 2025-08-31
 
 ## Critical (Blocking v0.9.0/v1.0.0 Release)
 
-### Crate Publication
-- [ ] **Prepare for crates.io publication** (New PRPs: 13-17)
+### Documentation & Publication
+- [ ] **Write comprehensive README.md** - Currently only 1 line!
+  - [ ] Add project description, features, and usage examples
+  - [ ] Include installation instructions
+  - [ ] Add badges for crates.io, docs.rs, CI status
+  - [ ] Document all 7 filter variants
+  
+- [ ] **Prepare for crates.io publication** (PRPs 13-15)
   - [ ] Create LICENSE file with MIT text (PRP-14)
   - [ ] Update Cargo.toml with `readme = "README.md"` field (PRP-14)
-  - [ ] Update README.md badges/references to use `kalman_filters` name (PRP-15)
-  - [ ] Fix feature flag propagation to dependencies (PRP-17)
+  - [ ] Fix feature flag propagation to dependencies (PRP-16)
+  - [ ] Set up automated release pipeline (PRP-15)
   - [ ] Run `cargo publish --dry-run` to verify
 
 ### Error Handling
@@ -36,11 +42,11 @@ Last updated: 2025-08-27
   - Prove mathematical equivalence
 
 ### Performance
-- [ ] **Implement performance benchmarks** (PRP-02)
-  - File `benches/kalman_benchmarks.rs` exists but appears incomplete
-  - Add criterion benchmarks for all filter variants
-  - Benchmark matrix operations (main bottleneck)
-  - Compare with adskalman reference implementation
+- [ ] **Complete performance benchmarks implementation** (PRP-02)
+  - File `benches/kalman_benchmarks.rs` has comprehensive benchmark structure
+  - Missing helper functions: `create_test_kalman_filter`, `create_test_kalman_filter_f32`, etc.
+  - Need to implement test data generators and matrix operation helpers
+  - Framework ready for filter variant comparisons and scaling tests
 
 ### Infrastructure
 - [ ] **Set up CI/CD pipeline**
@@ -104,24 +110,26 @@ Last updated: 2025-08-27
 
 ## Completed
 ✅ Basic filter implementations (all 7 variants)
-✅ Builder pattern for filter construction
-✅ Examples for each filter type
+✅ Builder pattern for filter construction  
+✅ Examples for each filter type (15+ examples)
 ✅ Basic error types and handling
+✅ Information Filter with sparse/distributed support
+✅ Particle Filter with resampling strategies
+✅ Ensemble Kalman Filter with perturbation methods
 
-## Recent Changes (2025-08-27)
-- **Version changed to 0.9.0-alpha0** in Cargo.toml (was 1.0.0-alpha1)
-- **Crate name changed to `kalman_filters`** (plural) to avoid naming conflict
-- **Edition changed to 2021** (was incorrectly set to 2024)
-- **New PRPs added (13-17)** for crates.io publication and automation
+## Recent Changes (2025-08-31)
+- **Version at 1.0.0-alpha0** - Ready for initial publication
+- **Crate name is `kalman_filters`** (plural) to avoid naming conflict
+- **Edition 2021** - Current stable edition
+- **17 PRPs defined** covering publication, testing, performance, and advanced features
 
 ## Notes
 
 ### From Code Comments  
 - **TODO in tests/quickcheck_invariants.rs:222** - Fix InformationFilter API to allow setting state in covariance form
-- **TODO in docs/SOTA.md:101** - Benchmarks section needs implementation
-- Missing `_timer` metrics collection points throughout codebase
-  - Variables created but unused (in filter.rs, unscented.rs, particle/filter.rs)
-  - Suggests incomplete metrics implementation
+- **Benchmarks incomplete** - `benches/kalman_benchmarks.rs` exists with comprehensive structure but helper functions missing
+- **docs/SOTA.md:101** - Benchmarks section marked as TODO, awaiting actual benchmark results
+- **Metrics timer placeholders** - `_timer` variables in unscented.rs and particle/filter.rs unused (future metrics implementation)
 
 ### Validation Criteria References
 - CLAUDE.md mentions validation against established algorithms
