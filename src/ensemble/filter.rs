@@ -91,6 +91,7 @@ where
     }
 
     /// Initialize a new Ensemble Kalman Filter (internal method)
+    #[allow(clippy::too_many_arguments)]
     pub fn initialize(
         system: S,
         initial_mean: Vec<T>,
