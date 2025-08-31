@@ -43,8 +43,7 @@ where
     /// Create a new builder with specified dimensions
     pub fn new(state_dim: usize, measurement_dim: usize) -> Self {
         debug!(
-            "Creating KalmanFilterBuilder: state_dim={}, measurement_dim={}",
-            state_dim, measurement_dim
+            "Creating KalmanFilterBuilder: state_dim={state_dim}, measurement_dim={measurement_dim}"
         );
         Self {
             state_dim,
@@ -136,24 +135,21 @@ where
 
         if !is_symmetric(&initial_covariance, n) {
             error!(
-                "KalmanFilterBuilder: initial_covariance is not symmetric (size={}x{})",
-                n, n
+                "KalmanFilterBuilder: initial_covariance is not symmetric (size={n}x{n})"
             );
             return Err(KalmanError::InvalidCovariance);
         }
         debug!("Initial covariance matrix validated as symmetric");
         if !is_symmetric(&process_noise, n) {
             error!(
-                "KalmanFilterBuilder: process_noise is not symmetric (size={}x{})",
-                n, n
+                "KalmanFilterBuilder: process_noise is not symmetric (size={n}x{n})"
             );
             return Err(KalmanError::InvalidNoiseCovariance);
         }
         debug!("Process noise matrix validated as symmetric");
         if !is_symmetric(&measurement_noise, m) {
             error!(
-                "KalmanFilterBuilder: measurement_noise is not symmetric (size={}x{})",
-                m, m
+                "KalmanFilterBuilder: measurement_noise is not symmetric (size={m}x{m})"
             );
             return Err(KalmanError::InvalidNoiseCovariance);
         }
