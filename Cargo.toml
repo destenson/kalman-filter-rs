@@ -1,6 +1,6 @@
 [package]
 name = "kalman_filters"
-version = "0.9.0-alpha0"
+version = "1.0.0-alpha2"
 authors = ["Dennis E <kalman-filters@destenson.digital>", "Claude AI Assistant"]
 license = "MIT"
 edition = "2021"
