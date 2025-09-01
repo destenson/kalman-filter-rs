@@ -36,7 +36,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-kalman_filters = "1.0.0-alpha0"
+kalman_filters = "1.0.0"
 ```
 
 ### Basic Example
@@ -136,7 +136,7 @@ Enable features in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-kalman_filters = { version = "1.0.0-alpha0", features = ["nalgebra", "parallel"] }
+kalman_filters = { version = "1.0.0", features = ["nalgebra", "parallel"] }
 ```
 
 | Feature | Description |
