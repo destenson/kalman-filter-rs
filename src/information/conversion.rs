@@ -71,9 +71,12 @@ pub struct HybridFilter<T: KalmanScalar> {
     current_form: FilterForm,
 }
 
+/// Representation form for hybrid Kalman/Information filter
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum FilterForm {
+    /// Standard Kalman filter form using covariance matrix P
     Covariance,
+    /// Information filter form using information matrix Y = P^-1
     Information,
 }
 

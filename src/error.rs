@@ -8,7 +8,9 @@ pub type KalmanResult<T> = Result<T, KalmanError>;
 pub enum KalmanError {
     /// Matrix dimension mismatch
     DimensionMismatch {
+        /// Expected matrix dimensions (rows, columns)
         expected: (usize, usize),
+        /// Actual matrix dimensions (rows, columns)
         actual: (usize, usize),
     },
     /// Singular matrix (not invertible)

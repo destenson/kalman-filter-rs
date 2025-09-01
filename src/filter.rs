@@ -497,7 +497,15 @@ where
     }
 }
 
-// Optimized implementation using nalgebra when available
+/// Optimized Kalman filter implementation using static matrices from nalgebra
+/// 
+/// This provides compile-time dimension checking and better performance
+/// for filters with known dimensions at compile time.
+/// 
+/// Type parameters:
+/// - `T`: Scalar type (f32 or f64)
+/// - `M`: Measurement dimension
+/// - `N`: State dimension
 #[cfg(feature = "nalgebra")]
 pub struct StaticKalmanFilter<T, const M: usize, const N: usize>
 where

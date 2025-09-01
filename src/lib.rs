@@ -42,6 +42,7 @@
 pub mod builder;
 pub mod builders;
 pub mod ensemble;
+/// Error types and result definitions for the Kalman filter library
 pub mod error;
 pub mod extended;
 pub mod filter;
@@ -55,6 +56,7 @@ pub mod particle;
 pub mod scented;
 pub mod types;
 pub mod unscented;
+/// Validation utilities for matrices and numerical stability checks
 pub mod validation;
 
 // Re-export main types for convenience

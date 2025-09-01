@@ -31,6 +31,48 @@ pub struct EnsembleStatistics<T: KalmanScalar> {
 /// The EnKF is particularly suited for systems with dimensions >> 1000 where
 /// storing and manipulating full covariance matrices becomes prohibitive.
 /// It uses Monte Carlo sampling to represent uncertainty.
+/// 
+/// # Example
+/// 
+/// ```no_run
+/// use kalman_filters::{EnsembleKalmanFilterBuilder, NonlinearSystem};
+/// 
+/// struct SimpleSystem;
+/// 
+/// impl NonlinearSystem<f64> for SimpleSystem {
+///     fn state_transition(&self, state: &[f64], _control: Option<&[f64]>, dt: f64) -> Vec<f64> {
+///         vec![state[0] + dt * state[1], state[1]]
+///     }
+///     
+///     fn measurement(&self, state: &[f64]) -> Vec<f64> {
+///         vec![state[0]] // Measure position only
+///     }
+///     
+///     fn state_jacobian(&self, _state: &[f64], _control: Option<&[f64]>, dt: f64) -> Vec<f64> {
+///         vec![1.0, dt, 0.0, 1.0]
+///     }
+///     
+///     fn measurement_jacobian(&self, _state: &[f64]) -> Vec<f64> {
+///         vec![1.0, 0.0]
+///     }
+///     
+///     fn state_dim(&self) -> usize { 2 }
+///     fn measurement_dim(&self) -> usize { 1 }
+/// }
+/// 
+/// let mut enkf = EnsembleKalmanFilterBuilder::new(SimpleSystem)
+///     .initial_mean(vec![0.0, 0.0])
+///     .initial_spread(vec![1.0, 0.1])
+///     .ensemble_size(100)
+///     .process_noise(vec![0.01, 0.0, 0.0, 0.01])
+///     .measurement_noise(vec![0.1])
+///     .dt(0.1)
+///     .build()
+///     .unwrap();
+///     
+/// enkf.forecast();  // Predict step
+/// enkf.assimilate(&[1.0]).unwrap(); // Update step
+/// ```
 pub struct EnsembleKalmanFilter<T, S>
 where
     T: KalmanScalar,

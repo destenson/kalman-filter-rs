@@ -390,12 +390,16 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
     }
 }
 
-/// Network statistics
+/// Network statistics for distributed filter topology
 #[derive(Debug, Clone)]
 pub struct NetworkStats {
+    /// Number of nodes in the network
     pub num_nodes: usize,
+    /// Number of edges (connections) in the network
     pub num_edges: usize,
+    /// Average degree (connections per node)
     pub avg_degree: f64,
+    /// Maximum degree (most connected node)
     pub max_degree: usize,
 }
 

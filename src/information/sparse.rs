@@ -16,6 +16,7 @@ pub struct SparseMatrix<T: KalmanScalar> {
     pub row_ptr: Vec<usize>,
     /// Matrix dimensions
     pub rows: usize,
+    /// Number of columns
     pub cols: usize,
 }
 

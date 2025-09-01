@@ -367,6 +367,7 @@ pub struct MaxConsensus<T: KalmanScalar> {
 }
 
 impl<T: KalmanScalar> MaxConsensus<T> {
+    /// Create a new max-consensus algorithm instance
     pub fn new(state_dim: usize) -> Self {
         info!("Creating MaxConsensus: state_dim={}", state_dim);
         Self {

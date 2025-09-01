@@ -10,6 +10,7 @@ pub use crate::error::{KalmanError, KalmanResult};
 pub trait KalmanScalar: Float + Default + fmt::Debug + fmt::Display + 'static {
     /// Small epsilon value for numerical stability
     fn epsilon() -> Self;
+    /// Deprecated: Use epsilon() instead
     fn Epsilon(&self) -> Self {
         <Self as KalmanScalar>::epsilon()
     }
@@ -58,7 +59,10 @@ pub enum JacobianStrategy {
     /// User provides analytical Jacobian functions
     Analytical,
     /// Compute Jacobian using finite differences
-    Numerical { step_size: f64 },
+    Numerical { 
+        /// Step size for finite difference approximation
+        step_size: f64 
+    },
     /// Use automatic differentiation (future enhancement)
     #[allow(dead_code)]
     Automatic,
