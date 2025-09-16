@@ -101,7 +101,7 @@ where
         dt: T,
     ) -> KalmanResult<Self> {
         log_filter_dimensions(state_dim, measurement_noise_std.len(), None);
-        info!(
+        debug!(
             "Particle Filter: Initializing with {} particles",
             num_particles
         );

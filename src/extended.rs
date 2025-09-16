@@ -138,7 +138,7 @@ where
         let m = system.measurement_dim();
 
         log_filter_dimensions(n, m, None);
-        info!("Initializing Extended Kalman Filter");
+        debug!("Initializing Extended Kalman Filter");
 
         // Validate dimensions
         if initial_state.len() != n {

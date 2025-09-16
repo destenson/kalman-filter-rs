@@ -95,7 +95,7 @@ where
 
     /// Build the Kalman filter
     pub fn build(self) -> KalmanResult<KalmanFilter<T>> {
-        info!(
+        debug!(
             "Building Kalman filter: state_dim={}, measurement_dim={}",
             self.state_dim, self.measurement_dim
         );

@@ -153,7 +153,7 @@ where
         let m = system.measurement_dim();
 
         log_filter_dimensions(n, m, None);
-        info!(
+        debug!(
             "Ensemble Kalman Filter: Initializing with {} ensemble members",
             ensemble_size
         );

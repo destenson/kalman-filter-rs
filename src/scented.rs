@@ -107,7 +107,7 @@ where
         let m = system.measurement_dim();
 
         log_filter_dimensions(n, m, None);
-        info!(
+        debug!(
             "Cubature Kalman Filter: Initializing with {} cubature points",
             2 * n
         );

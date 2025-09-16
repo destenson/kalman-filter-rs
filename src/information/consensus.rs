@@ -39,7 +39,7 @@ pub struct AverageConsensus<T: KalmanScalar> {
 impl<T: KalmanScalar> AverageConsensus<T> {
     /// Create new average consensus with Metropolis weights
     pub fn new_metropolis(topology: &HashMap<usize, Vec<usize>>, state_dim: usize) -> Self {
-        info!(
+        debug!(
             "Creating AverageConsensus with Metropolis weights: {} nodes, state_dim={}",
             topology.len(),
             state_dim
@@ -236,7 +236,7 @@ pub struct WeightedConsensus<T: KalmanScalar> {
 impl<T: KalmanScalar> WeightedConsensus<T> {
     /// Create new weighted consensus
     pub fn new(state_dim: usize) -> Self {
-        info!("Creating WeightedConsensus: state_dim={}", state_dim);
+        debug!("Creating WeightedConsensus: state_dim={}", state_dim);
         Self {
             confidence_weights: HashMap::new(),
             prev_states: HashMap::new(),
@@ -369,7 +369,7 @@ pub struct MaxConsensus<T: KalmanScalar> {
 impl<T: KalmanScalar> MaxConsensus<T> {
     /// Create a new max-consensus algorithm instance
     pub fn new(state_dim: usize) -> Self {
-        info!("Creating MaxConsensus: state_dim={}", state_dim);
+        debug!("Creating MaxConsensus: state_dim={}", state_dim);
         Self {
             max_node: None,
             max_state: None,

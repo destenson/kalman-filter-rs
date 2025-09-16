@@ -93,7 +93,7 @@ impl<T: KalmanScalar> HybridFilter<T> {
         R: Vec<T>,
         sparsity_threshold: f64,
     ) -> KalmanResult<Self> {
-        info!(
+        debug!(
             "Creating HybridFilter: state_dim={}, measurement_dim={}, sparsity_threshold={:.2}",
             state_dim, measurement_dim, sparsity_threshold
         );
@@ -129,7 +129,7 @@ impl<T: KalmanScalar> HybridFilter<T> {
             self.inf = Some(kalman_to_information(kf)?);
             self.kf = None;
             self.current_form = FilterForm::Information;
-            info!("HybridFilter: successfully switched to information form");
+            debug!("HybridFilter: successfully switched to information form");
         }
 
         Ok(())
@@ -148,7 +148,7 @@ impl<T: KalmanScalar> HybridFilter<T> {
             self.kf = Some(information_to_kalman(inf)?);
             self.inf = None;
             self.current_form = FilterForm::Covariance;
-            info!("HybridFilter: successfully switched to covariance form");
+            debug!("HybridFilter: successfully switched to covariance form");
         }
 
         Ok(())
