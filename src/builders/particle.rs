@@ -95,7 +95,7 @@ impl<T: KalmanScalar> ParticleFilterBuilder<T> {
 
     /// Build the Particle Filter
     pub fn build(self) -> KalmanResult<ParticleFilter<T>> {
-        info!(
+        debug!(
             "Building Particle Filter: state_dim={}, num_particles={}",
             self.state_dim, self.num_particles
         );

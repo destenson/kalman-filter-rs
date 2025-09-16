@@ -134,7 +134,7 @@ where
         let n = self.system.state_dim();
         let m = self.system.measurement_dim();
 
-        info!(
+        debug!(
             "Building Unscented Kalman Filter: state_dim={}, measurement_dim={}",
             n, m
         );

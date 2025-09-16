@@ -132,7 +132,7 @@ impl<T: KalmanScalar> InformationFilterBuilder<T> {
 
     /// Build the Information Filter
     pub fn build(self) -> KalmanResult<InformationFilter<T>> {
-        info!(
+        debug!(
             "Building Information Filter: state_dim={}, measurement_dim={}",
             self.state_dim, self.measurement_dim
         );

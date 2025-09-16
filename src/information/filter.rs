@@ -27,7 +27,7 @@ impl<T: KalmanScalar> InformationState<T> {
     /// Create new information state
     pub fn new(dim: usize) -> Self {
         log_filter_dimensions(dim, 0, None);
-        info!(
+        debug!(
             "Information Filter: Initializing information state with dimension {}",
             dim
         );
@@ -204,7 +204,7 @@ impl<T: KalmanScalar> InformationFilter<T> {
         R: Vec<T>,
     ) -> KalmanResult<Self> {
         log_filter_dimensions(state_dim, measurement_dim, None);
-        info!(
+        debug!(
             "Information Filter: Initializing filter with state_dim={}, measurement_dim={}",
             state_dim, measurement_dim
         );
@@ -417,7 +417,7 @@ impl<T: KalmanScalar> InformationFilter<T> {
         // measurements: Vec<(z_i, H_i, R_i)>
         let n = self.state_dim;
 
-        info!(
+        debug!(
             "Information Filter: Fusing {} measurements simultaneously",
             measurements.len()
         );
