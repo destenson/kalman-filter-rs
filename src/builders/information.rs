@@ -9,7 +9,7 @@ use log::{debug, error, info};
 /// # Example
 /// ```no_run
 /// use kalman_filters::builders::InformationFilterBuilder;
-/// 
+///
 /// let if_filter = InformationFilterBuilder::new(2, 1)
 ///     .initial_information_matrix(vec![1.0, 0.0, 0.0, 1.0])
 ///     .initial_information_vector(vec![0.0, 0.0])
@@ -57,7 +57,7 @@ impl<T: KalmanScalar> InformationFilterBuilder<T> {
         measurement_dim: usize,
     ) -> KalmanResult<Self> {
         let state_dim = initial_state.len();
-        
+
         debug!(
             "Creating InformationFilterBuilder from state/covariance: state_dim={}, measurement_dim={}",
             state_dim, measurement_dim
@@ -66,7 +66,7 @@ impl<T: KalmanScalar> InformationFilterBuilder<T> {
         // Convert to information form using matrix inversion
         use crate::filter::KalmanFilter;
         let Y = KalmanFilter::<T>::invert_matrix(&initial_covariance, state_dim)?;
-        
+
         // y = Y * x
         let mut y = vec![T::zero(); state_dim];
         for i in 0..state_dim {

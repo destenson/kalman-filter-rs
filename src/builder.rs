@@ -134,23 +134,17 @@ where
         let m = self.measurement_dim;
 
         if !is_symmetric(&initial_covariance, n) {
-            error!(
-                "KalmanFilterBuilder: initial_covariance is not symmetric (size={n}x{n})"
-            );
+            error!("KalmanFilterBuilder: initial_covariance is not symmetric (size={n}x{n})");
             return Err(KalmanError::InvalidCovariance);
         }
         debug!("Initial covariance matrix validated as symmetric");
         if !is_symmetric(&process_noise, n) {
-            error!(
-                "KalmanFilterBuilder: process_noise is not symmetric (size={n}x{n})"
-            );
+            error!("KalmanFilterBuilder: process_noise is not symmetric (size={n}x{n})");
             return Err(KalmanError::InvalidNoiseCovariance);
         }
         debug!("Process noise matrix validated as symmetric");
         if !is_symmetric(&measurement_noise, m) {
-            error!(
-                "KalmanFilterBuilder: measurement_noise is not symmetric (size={m}x{m})"
-            );
+            error!("KalmanFilterBuilder: measurement_noise is not symmetric (size={m}x{m})");
             return Err(KalmanError::InvalidNoiseCovariance);
         }
         debug!("Measurement noise matrix validated as symmetric");

@@ -1,8 +1,8 @@
 //! Builder for Extended Kalman Filter
 
 use crate::extended::ExtendedKalmanFilter;
-use crate::types::{JacobianStrategy, KalmanError, KalmanResult, KalmanScalar, NonlinearSystem};
 use crate::logging::{check_numerical_stability, log_filter_dimensions};
+use crate::types::{JacobianStrategy, KalmanError, KalmanResult, KalmanScalar, NonlinearSystem};
 use log::{debug, error, info};
 
 /// Builder for constructing Extended Kalman Filters
@@ -11,7 +11,7 @@ use log::{debug, error, info};
 /// ```no_run
 /// use kalman_filters::builders::ExtendedKalmanFilterBuilder;
 /// use kalman_filters::NonlinearSystem;
-/// 
+///
 /// # struct MySystem;
 /// # impl NonlinearSystem<f64> for MySystem {
 /// #     fn state_dim(&self) -> usize { 2 }
@@ -116,7 +116,7 @@ where
     pub fn build(self) -> KalmanResult<ExtendedKalmanFilter<T, S>> {
         let n = self.system.state_dim();
         let m = self.system.measurement_dim();
-        
+
         info!(
             "Building Extended Kalman Filter: state_dim={}, measurement_dim={}",
             n, m

@@ -70,7 +70,10 @@ where
     S: NonlinearSystem<T>,
 {
     /// Create a new Cubature Kalman Filter
-    #[deprecated(since = "1.0.0-alpha0", note = "Use CubatureKalmanFilterBuilder instead")]
+    #[deprecated(
+        since = "1.0.0-alpha0",
+        note = "Use CubatureKalmanFilterBuilder instead"
+    )]
     pub fn new(
         system: S,
         initial_state: Vec<T>,
@@ -79,7 +82,15 @@ where
         measurement_noise: Vec<T>,
         dt: T,
     ) -> KalmanResult<Self> {
-        Self::initialize(system, initial_state, initial_covariance, process_noise, measurement_noise, dt, None)
+        Self::initialize(
+            system,
+            initial_state,
+            initial_covariance,
+            process_noise,
+            measurement_noise,
+            dt,
+            None,
+        )
     }
 
     /// Initialize a new Cubature Kalman Filter (internal method)

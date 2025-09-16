@@ -45,14 +45,12 @@ fn generate_reference_test_cases() {
         measurement_matrix: vec![1.0],
         process_noise: vec![0.01],
         measurement_noise: vec![1.0],
-        measurements: vec![
-            vec![1.0], vec![1.1], vec![0.9], vec![1.05], vec![0.95]
-        ],
+        measurements: vec![vec![1.0], vec![1.1], vec![0.9], vec![1.05], vec![0.95]],
         expected_states: vec![], // To be filled by reference implementation
         expected_covariances: vec![], // To be filled by reference implementation
         tolerance: 1e-6,
     };
-    
+
     // Test case 2: 2D constant velocity
     let test2 = KalmanTestCase {
         name: "2D_constant_velocity".to_string(),
@@ -64,21 +62,19 @@ fn generate_reference_test_cases() {
         measurement_matrix: vec![1.0, 0.0],
         process_noise: vec![0.01, 0.0, 0.0, 0.01],
         measurement_noise: vec![0.1],
-        measurements: vec![
-            vec![0.1], vec![0.2], vec![0.3], vec![0.4], vec![0.5]
-        ],
+        measurements: vec![vec![0.1], vec![0.2], vec![0.3], vec![0.4], vec![0.5]],
         expected_states: vec![], // To be filled by reference implementation
         expected_covariances: vec![], // To be filled by reference implementation
         tolerance: 1e-6,
     };
-    
+
     // Save test cases for Python script to process
     let _ = fs::create_dir_all("tests/data");
-    
+
     if let Ok(json) = serde_json::to_string_pretty(&test1) {
         let _ = fs::write("tests/data/test_1d_constant.json", json);
     }
-    
+
     if let Ok(json) = serde_json::to_string_pretty(&test2) {
         let _ = fs::write("tests/data/test_2d_velocity.json", json);
     }
@@ -87,7 +83,7 @@ fn generate_reference_test_cases() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     // This test generates reference test cases
     #[test]
     #[ignore] // Run with --ignored to generate test files
@@ -97,64 +93,64 @@ mod tests {
         println!("Run the Python script to generate expected results:");
         println!("  python tests/scripts/generate_reference_results.py");
     }
-    
+
     // Test against analytical solution for static system
     #[test]
     fn test_analytical_static_system() {
         // For a static system with no process noise and repeated measurements,
         // the Kalman filter converges to the weighted average
-        
+
         let mut kf = KalmanFilter::<f64>::new(1, 1);
-        
+
         kf.x = vec![0.0];
         kf.P = vec![100.0]; // Large initial uncertainty
         kf.F = vec![1.0];
         kf.H = vec![1.0];
         kf.Q = vec![0.0]; // No process noise
         kf.R = vec![1.0];
-        
+
         let true_value = 5.0;
         let num_measurements = 100;
-        
+
         for _ in 0..num_measurements {
             kf.predict();
             kf.update(&vec![true_value]).unwrap();
         }
-        
+
         // Should converge to the true value
         assert_abs_diff_eq!(kf.x[0], true_value, epsilon = 1e-3);
-        
+
         // Covariance should converge to near zero
         assert!(kf.P[0] < 0.01, "Covariance didn't converge: {}", kf.P[0]);
     }
-    
+
     // Test against analytical solution for steady-state
     #[test]
     fn test_analytical_steady_state() {
         // For time-invariant systems, the Kalman filter reaches a steady-state
         // where the covariance converges to a fixed value (algebraic Riccati equation)
-        
+
         let mut kf = KalmanFilter::<f64>::new(1, 1);
-        
+
         kf.x = vec![0.0];
         kf.P = vec![1.0];
         kf.F = vec![1.0];
         kf.H = vec![1.0];
         kf.Q = vec![0.1];
         kf.R = vec![1.0];
-        
+
         // Run until steady-state
         let mut prev_p = 0.0;
         for i in 0..1000 {
             kf.predict();
             kf.update(&vec![0.0]).unwrap();
-            
+
             if i > 100 && (kf.P[0] - prev_p).abs() < 1e-10 {
                 break;
             }
             prev_p = kf.P[0];
         }
-        
+
         // Analytical steady-state solution for this system
         // At steady state: P = (P + Q) - (P + Q)²/((P + Q) + R)
         // Let S = P + Q, then: P = S - S²/(S + R)
@@ -168,18 +164,18 @@ mod tests {
         let r = 1.0f64;
         let s = (q + (q * q + 4.0f64 * q * r).sqrt()) / 2.0;
         let p_steady = s - q;
-        
+
         assert_abs_diff_eq!(kf.P[0], p_steady, epsilon = 1e-6);
     }
-    
+
     // Test with known MATLAB example
     #[test]
     fn test_matlab_example() {
         // Example from MATLAB documentation
         // https://www.mathworks.com/help/control/ref/kalman.html
-        
+
         let mut kf = KalmanFilter::<f64>::new(2, 1);
-        
+
         // Plant model: integrator with noise
         kf.x = vec![0.0, 0.0];
         kf.P = vec![1.0, 0.0, 0.0, 1.0];
@@ -187,18 +183,24 @@ mod tests {
         kf.H = vec![1.0, 0.0]; // Measure position
         kf.Q = vec![0.01, 0.01, 0.01, 0.02]; // Process noise
         kf.R = vec![1.0]; // Measurement noise
-        
+
         // Run a few steps
         let measurements = vec![0.5, 1.0, 1.5, 2.0, 2.5];
-        
+
         for &z in &measurements {
             kf.predict();
             kf.update(&vec![z]).unwrap();
         }
-        
+
         // Should track the ramping input
-        assert!(kf.x[0] > 1.5 && kf.x[0] < 3.0, "Position estimate out of range");
-        assert!(kf.x[1] > 0.3 && kf.x[1] < 0.7, "Velocity estimate out of range");
+        assert!(
+            kf.x[0] > 1.5 && kf.x[0] < 3.0,
+            "Position estimate out of range"
+        );
+        assert!(
+            kf.x[1] > 0.3 && kf.x[1] < 0.7,
+            "Velocity estimate out of range"
+        );
     }
 }
 
@@ -206,7 +208,7 @@ mod tests {
 #[cfg(test)]
 mod python_generator {
     use std::fs;
-    
+
     #[test]
     #[ignore]
     fn generate_python_comparison_script() {
@@ -275,7 +277,7 @@ def main():
 if __name__ == '__main__':
     main()
 "#;
-        
+
         let _ = fs::create_dir_all("tests/scripts");
         let _ = fs::write("tests/scripts/generate_reference_results.py", python_script);
         println!("Python script created at tests/scripts/generate_reference_results.py");

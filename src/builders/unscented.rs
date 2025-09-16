@@ -1,7 +1,7 @@
 //! Builder for Unscented Kalman Filter
 
-use crate::unscented::{UnscentedKalmanFilter, UKFParameters};
 use crate::types::{KalmanError, KalmanResult, KalmanScalar, NonlinearSystem};
+use crate::unscented::{UKFParameters, UnscentedKalmanFilter};
 use log::{debug, error, info};
 
 /// Builder for constructing Unscented Kalman Filters
@@ -10,7 +10,7 @@ use log::{debug, error, info};
 /// ```no_run
 /// use kalman_filters::builders::UnscentedKalmanFilterBuilder;
 /// use kalman_filters::NonlinearSystem;
-/// 
+///
 /// # struct MySystem;
 /// # impl NonlinearSystem<f64> for MySystem {
 /// #     fn state_dim(&self) -> usize { 2 }
@@ -133,7 +133,7 @@ where
     pub fn build(self) -> KalmanResult<UnscentedKalmanFilter<T, S>> {
         let n = self.system.state_dim();
         let m = self.system.measurement_dim();
-        
+
         info!(
             "Building Unscented Kalman Filter: state_dim={}, measurement_dim={}",
             n, m
