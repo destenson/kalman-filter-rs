@@ -252,4 +252,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
-This library was originally extracted from the GAI ecosystem to be a standalone crate. Special thanks to all contributors and the Rust scientific computing community.
+This library was originally created in a weekend with Claude Code. Special thanks to all contributors and the Rust scientific computing community.
