@@ -59,9 +59,9 @@ pub enum JacobianStrategy {
     /// User provides analytical Jacobian functions
     Analytical,
     /// Compute Jacobian using finite differences
-    Numerical { 
+    Numerical {
         /// Step size for finite difference approximation
-        step_size: f64 
+        step_size: f64,
     },
     /// Use automatic differentiation (future enhancement)
     #[allow(dead_code)]

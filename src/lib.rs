@@ -1,12 +1,12 @@
 //! # Kalman Filter Implementation
-//! 
+//!
 //! This crate provides a Kalman filter implementation for state estimation
 //! in linear dynamic systems. The Kalman filter is an optimal recursive
 //! estimator that combines predictions from a system model with measurements
 //! to estimate the true state of a system.
 //!
 //! ## Features
-//! 
+//!
 //! - Linear Kalman filter with predict and update steps
 //! - Dynamic dimension support without external dependencies
 //! - Support for both f32 and f64 precision
@@ -78,10 +78,10 @@ pub use filter::KalmanFilter;
 pub use filter::KalmanFilter as ModernKalmanFilter;
 
 pub use information::filter::InformationFilter;
-pub use particle::{ParticleFilter, Particle, ResamplingStrategy};
+pub use particle::{Particle, ParticleFilter, ResamplingStrategy};
 pub use scented::CubatureKalmanFilter;
 pub use types::{JacobianStrategy, KalmanResult, KalmanScalar, NonlinearSystem};
-pub use unscented::{UnscentedKalmanFilter, UKFParameters};
+pub use unscented::{UKFParameters, UnscentedKalmanFilter};
 
 #[cfg(feature = "nalgebra")]
 pub use filter::StaticKalmanFilter;

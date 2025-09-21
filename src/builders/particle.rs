@@ -9,7 +9,7 @@ use log::{debug, error, info};
 /// # Example
 /// ```no_run
 /// use kalman_filters::builders::ParticleFilterBuilder;
-/// 
+///
 /// let pf = ParticleFilterBuilder::new(2, 100)
 ///     .initial_mean(vec![0.0, 0.0])
 ///     .initial_std(vec![1.0, 1.0])
@@ -139,7 +139,7 @@ impl<T: KalmanScalar> ParticleFilterBuilder<T> {
 
         // Set optional parameters
         pf.set_resampling_strategy(self.resampling_strategy);
-        
+
         if let Some(threshold) = self.ess_threshold {
             pf.ess_threshold = threshold;
         }

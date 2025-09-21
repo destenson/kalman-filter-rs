@@ -6,21 +6,25 @@ use kalman_filters::*;
 struct TestSystem;
 
 impl NonlinearSystem<f64> for TestSystem {
-    fn state_dim(&self) -> usize { 2 }
-    fn measurement_dim(&self) -> usize { 1 }
-    
+    fn state_dim(&self) -> usize {
+        2
+    }
+    fn measurement_dim(&self) -> usize {
+        1
+    }
+
     fn state_transition(&self, state: &[f64], _control: Option<&[f64]>, dt: f64) -> Vec<f64> {
         vec![state[0] + state[1] * dt, state[1]]
     }
-    
+
     fn measurement(&self, state: &[f64]) -> Vec<f64> {
         vec![state[0]]
     }
-    
+
     fn state_jacobian(&self, _state: &[f64], _control: Option<&[f64]>, _dt: f64) -> Vec<f64> {
         vec![1.0, 0.0, 0.0, 1.0]
     }
-    
+
     fn measurement_jacobian(&self, _state: &[f64]) -> Vec<f64> {
         vec![1.0, 0.0]
     }
@@ -29,7 +33,7 @@ impl NonlinearSystem<f64> for TestSystem {
 #[test]
 fn test_extended_kalman_filter_builder() {
     let system = TestSystem;
-    
+
     let ekf = ExtendedKalmanFilterBuilder::new(system)
         .initial_state(vec![0.0, 1.0])
         .initial_covariance(vec![1.0, 0.0, 0.0, 1.0])
@@ -38,7 +42,7 @@ fn test_extended_kalman_filter_builder() {
         .dt(0.1)
         .build()
         .unwrap();
-    
+
     assert_eq!(ekf.state().len(), 2);
     assert_eq!(ekf.covariance().len(), 4);
 }
@@ -46,7 +50,7 @@ fn test_extended_kalman_filter_builder() {
 #[test]
 fn test_unscented_kalman_filter_builder() {
     let system = TestSystem;
-    
+
     let ukf = UnscentedKalmanFilterBuilder::new(system)
         .initial_state(vec![0.0, 1.0])
         .initial_covariance(vec![1.0, 0.0, 0.0, 1.0])
@@ -58,7 +62,7 @@ fn test_unscented_kalman_filter_builder() {
         .kappa(0.0)
         .build()
         .unwrap();
-    
+
     assert_eq!(ukf.state().len(), 2);
     assert_eq!(ukf.covariance().len(), 4);
 }
@@ -66,7 +70,7 @@ fn test_unscented_kalman_filter_builder() {
 #[test]
 fn test_cubature_kalman_filter_builder() {
     let system = TestSystem;
-    
+
     let ckf = CubatureKalmanFilterBuilder::new(system)
         .initial_state(vec![0.0, 1.0])
         .initial_covariance(vec![1.0, 0.0, 0.0, 1.0])
@@ -75,7 +79,7 @@ fn test_cubature_kalman_filter_builder() {
         .dt(0.1)
         .build()
         .unwrap();
-    
+
     assert_eq!(ckf.state().len(), 2);
     assert_eq!(ckf.covariance().len(), 4);
 }
@@ -83,7 +87,7 @@ fn test_cubature_kalman_filter_builder() {
 #[test]
 fn test_ensemble_kalman_filter_builder() {
     let system = TestSystem;
-    
+
     let enkf = EnsembleKalmanFilterBuilder::new(system)
         .initial_mean(vec![0.0, 1.0])
         .initial_spread(vec![1.0, 1.0])
@@ -94,7 +98,7 @@ fn test_ensemble_kalman_filter_builder() {
         .inflation_factor(1.05)
         .build()
         .unwrap();
-    
+
     assert_eq!(enkf.mean().len(), 2);
     assert_eq!(enkf.ensemble_size, 50);
 }
@@ -110,7 +114,7 @@ fn test_information_filter_builder() {
         .measurement_noise(vec![0.1])
         .build()
         .unwrap();
-    
+
     let state = if_filter.get_state().unwrap();
     assert_eq!(state.len(), 2);
 }
@@ -119,7 +123,7 @@ fn test_information_filter_builder() {
 fn test_information_filter_builder_from_state_covariance() {
     let initial_state = vec![1.0, 2.0];
     let initial_covariance = vec![2.0, 0.5, 0.5, 1.0];
-    
+
     let if_filter = InformationFilterBuilder::from_state_covariance(
         initial_state.clone(),
         initial_covariance,
@@ -132,7 +136,7 @@ fn test_information_filter_builder_from_state_covariance() {
     .measurement_noise(vec![0.1])
     .build()
     .unwrap();
-    
+
     let recovered_state = if_filter.get_state().unwrap();
     let diff0: f64 = recovered_state[0] - initial_state[0];
     let diff1: f64 = recovered_state[1] - initial_state[1];
@@ -151,7 +155,7 @@ fn test_particle_filter_builder() {
         .ess_threshold(50.0)
         .build()
         .unwrap();
-    
+
     assert_eq!(pf.state_dim, 2);
     assert_eq!(pf.num_particles, 100);
     assert_eq!(pf.ess_threshold, 50.0);
@@ -160,13 +164,13 @@ fn test_particle_filter_builder() {
 #[test]
 fn test_builder_incomplete() {
     let system = TestSystem;
-    
+
     // Test missing required parameter
     let result = ExtendedKalmanFilterBuilder::new(system)
         .initial_state(vec![0.0, 1.0])
         // Missing other required fields
         .build();
-    
+
     assert!(result.is_err());
     if let Err(KalmanError::BuilderIncomplete(field)) = result {
         assert_eq!(field, "initial_covariance");

@@ -498,10 +498,10 @@ where
 }
 
 /// Optimized Kalman filter implementation using static matrices from nalgebra
-/// 
+///
 /// This provides compile-time dimension checking and better performance
 /// for filters with known dimensions at compile time.
-/// 
+///
 /// Type parameters:
 /// - `T`: Scalar type (f32 or f64)
 /// - `M`: Measurement dimension
@@ -720,7 +720,7 @@ mod tests {
             2,
             1,
             vec![0.0, 0.0], // state
-            vec![1.0],       // P wrong size (should be 2x2)
+            vec![1.0],      // P wrong size (should be 2x2)
             vec![1.0, 0.0, 0.0, 1.0],
             vec![0.1, 0.0, 0.0, 0.1],
             vec![1.0, 0.0],
@@ -744,7 +744,7 @@ mod tests {
     #[test]
     fn test_predict_update_cycle() {
         let mut kf = KalmanFilter::<f64>::new(2, 1);
-        
+
         // Initialize with identity matrices
         kf.x = vec![0.0, 0.0];
         kf.P = vec![1.0, 0.0, 0.0, 1.0];
@@ -752,15 +752,15 @@ mod tests {
         kf.Q = vec![0.01, 0.0, 0.0, 0.01];
         kf.H = vec![1.0, 0.0]; // Observe first state
         kf.R = vec![0.1];
-        
+
         // Store initial covariance trace
         let initial_trace = kf.P[0] + kf.P[3];
-        
+
         // Predict increases uncertainty
         kf.predict();
         let predict_trace = kf.P[0] + kf.P[3];
         assert!(predict_trace > initial_trace);
-        
+
         // Update reduces uncertainty
         let result = kf.update(&vec![0.5]);
         assert!(result.is_ok());
@@ -775,7 +775,7 @@ mod tests {
         let a = vec![1.0, 2.0, 3.0, 4.0];
         let b = vec![5.0, 6.0, 7.0, 8.0];
         let mut result = vec![0.0; 4];
-        
+
         // Manual matrix multiply
         for i in 0..2 {
             for j in 0..2 {
@@ -784,7 +784,7 @@ mod tests {
                 }
             }
         }
-        
+
         // Expected: [1*5+2*7, 1*6+2*8, 3*5+4*7, 3*6+4*8]
         assert_eq!(result, vec![19.0, 22.0, 43.0, 50.0]);
     }
@@ -793,14 +793,14 @@ mod tests {
     fn test_matrix_transpose() {
         let matrix = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]; // 2x3 matrix
         let mut result = vec![0.0; 6];
-        
+
         // Manual transpose
         for i in 0..2 {
             for j in 0..3 {
                 result[j * 2 + i] = matrix[i * 3 + j];
             }
         }
-        
+
         // Expected: 3x2 matrix
         assert_eq!(result, vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
     }
@@ -831,15 +831,15 @@ mod tests {
         kf.Q = vec![0.001];
         kf.H = vec![1.0];
         kf.R = vec![1.0];
-        
+
         let true_value = 5.0;
-        
+
         // Feed repeated measurements
         for _ in 0..50 {
             kf.predict();
             kf.update(&vec![true_value]).unwrap();
         }
-        
+
         // Should converge close to true value
         assert!((kf.x[0] - true_value).abs() < 0.1);
         // Uncertainty should be low
@@ -858,7 +858,7 @@ mod tests {
     #[test]
     fn test_control_input() {
         let mut kf = KalmanFilter::<f64>::new(2, 1);
-        
+
         // Initialize system
         kf.x = vec![0.0, 0.0];
         kf.P = vec![1.0, 0.0, 0.0, 1.0];
@@ -866,15 +866,15 @@ mod tests {
         kf.Q = vec![0.01, 0.0, 0.0, 0.01];
         kf.H = vec![1.0, 0.0];
         kf.R = vec![0.1];
-        
+
         // Simple control input simulation
         let control = vec![0.0, 2.0]; // Control affects velocity
-        
+
         // Apply control manually
         for i in 0..2 {
             kf.x[i] += control[i];
         }
-        
+
         // Velocity should have increased
         assert!((kf.x[1] - 2.0).abs() < 1e-10);
     }
@@ -889,12 +889,12 @@ mod tests {
         kf.Q = vec![0.1];
         kf.H = vec![1.0];
         kf.R = vec![1.0];
-        
+
         kf.predict();
         let p_before = kf.P[0];
-        
+
         kf.update(&vec![1.0]).unwrap();
-        
+
         // Covariance should remain positive
         assert!(kf.P[0] > 0.0);
         // Covariance should decrease after update

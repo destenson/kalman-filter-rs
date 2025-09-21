@@ -10,7 +10,7 @@ use log::{debug, error, info};
 /// ```no_run
 /// use kalman_filters::builders::EnsembleKalmanFilterBuilder;
 /// use kalman_filters::NonlinearSystem;
-/// 
+///
 /// # struct MySystem;
 /// # impl NonlinearSystem<f64> for MySystem {
 /// #     fn state_dim(&self) -> usize { 2 }
@@ -132,7 +132,7 @@ where
     pub fn build(self) -> KalmanResult<EnsembleKalmanFilter<T, S>> {
         let n = self.system.state_dim();
         let m = self.system.measurement_dim();
-        
+
         info!(
             "Building Ensemble Kalman Filter: state_dim={}, measurement_dim={}",
             n, m

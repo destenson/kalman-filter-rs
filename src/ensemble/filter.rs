@@ -31,14 +31,14 @@ pub struct EnsembleStatistics<T: KalmanScalar> {
 /// The EnKF is particularly suited for systems with dimensions >> 1000 where
 /// storing and manipulating full covariance matrices becomes prohibitive.
 /// It uses Monte Carlo sampling to represent uncertainty.
-/// 
+///
 /// # Example
-/// 
+///
 /// ```no_run
 /// use kalman_filters::{EnsembleKalmanFilterBuilder, NonlinearSystem};
-/// 
+///
 /// struct SimpleSystem;
-/// 
+///
 /// impl NonlinearSystem<f64> for SimpleSystem {
 ///     fn state_transition(&self, state: &[f64], _control: Option<&[f64]>, dt: f64) -> Vec<f64> {
 ///         vec![state[0] + dt * state[1], state[1]]
@@ -59,7 +59,7 @@ pub struct EnsembleStatistics<T: KalmanScalar> {
 ///     fn state_dim(&self) -> usize { 2 }
 ///     fn measurement_dim(&self) -> usize { 1 }
 /// }
-/// 
+///
 /// let mut enkf = EnsembleKalmanFilterBuilder::new(SimpleSystem)
 ///     .initial_mean(vec![0.0, 0.0])
 ///     .initial_spread(vec![1.0, 0.1])
@@ -108,7 +108,10 @@ where
     S: NonlinearSystem<T>,
 {
     /// Create a new Ensemble Kalman Filter
-    #[deprecated(since = "1.0.0-alpha0", note = "Use EnsembleKalmanFilterBuilder instead")]
+    #[deprecated(
+        since = "1.0.0-alpha0",
+        note = "Use EnsembleKalmanFilterBuilder instead"
+    )]
     pub fn new(
         system: S,
         initial_mean: Vec<T>,

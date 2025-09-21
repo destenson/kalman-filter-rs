@@ -756,11 +756,12 @@ mod tests {
             vec![0.01, 0.0, 0.0, 0.01],
             vec![0.1],
             0.01,
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         // Generate sigma points internally
         ukf.generate_sigma_points().unwrap();
-        
+
         // Should have 2*n+1 = 5 sigma points(?) for n=2
         assert_eq!(ukf.sigma_points.len(), 10);
     }
@@ -774,15 +775,16 @@ mod tests {
             vec![0.01, 0.0, 0.0, 0.01],
             vec![0.1],
             0.01,
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         // Weights should sum to 1 (testing with known default parameters)
         let n = 2;
         let lambda = ukf.params.alpha.powi(2) * (n as f64 + ukf.params.kappa) - n as f64;
         let weight_0_mean = lambda / (n as f64 + lambda);
         let weight_0_cov = weight_0_mean + (1.0 - ukf.params.alpha.powi(2) + ukf.params.beta);
         let weight_i = 0.5 / (n as f64 + lambda);
-        
+
         // Check first weight
         // assert!(weight_0_mean.abs() < 10.0); // Just sanity check
         assert!(weight_i > 0.0);
@@ -797,8 +799,9 @@ mod tests {
             vec![0.01, 0.0, 0.0, 0.01],
             vec![0.1],
             0.01,
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         // Test parameter setters
         use crate::unscented::UKFParameters;
         let params = UKFParameters {
@@ -822,16 +825,17 @@ mod tests {
             vec![0.001, 0.0, 0.0, 0.001],
             vec![0.1],
             0.01,
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         let true_state = vec![1.0, 0.5];
-        
+
         // Feed measurements
         for _ in 0..50 {
             ukf.predict().unwrap();
             ukf.update(&[true_state[0]]).unwrap();
         }
-        
+
         // // Should converge close to true state
         // assert!((ukf.state()[0] - true_state[0]).abs() < 0.2);
     }
@@ -840,12 +844,14 @@ mod tests {
     fn test_ukf_control_input() {
         struct ControlledNonlinear;
         impl NonlinearSystem<f64> for ControlledNonlinear {
-            fn state_transition(&self, state: &[f64], control: Option<&[f64]>, dt: f64) -> Vec<f64> {
+            fn state_transition(
+                &self,
+                state: &[f64],
+                control: Option<&[f64]>,
+                dt: f64,
+            ) -> Vec<f64> {
                 let u = control.map(|c| c[0]).unwrap_or(0.0);
-                vec![
-                    state[0] + state[1] * dt,
-                    state[1] + u * dt
-                ]
+                vec![state[0] + state[1] * dt, state[1] + u * dt]
             }
             fn measurement(&self, state: &[f64]) -> Vec<f64> {
                 vec![state[0]]
@@ -856,10 +862,14 @@ mod tests {
             fn measurement_jacobian(&self, _: &[f64]) -> Vec<f64> {
                 vec![1.0, 0.0]
             }
-            fn state_dim(&self) -> usize { 2 }
-            fn measurement_dim(&self) -> usize { 1 }
+            fn state_dim(&self) -> usize {
+                2
+            }
+            fn measurement_dim(&self) -> usize {
+                1
+            }
         }
-        
+
         let mut ukf = UnscentedKalmanFilter::new(
             ControlledNonlinear,
             vec![0.0, 0.0],
@@ -867,8 +877,9 @@ mod tests {
             vec![0.01, 0.0, 0.0, 0.01],
             vec![0.1],
             0.1,
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         // Apply control
         ukf.set_control(vec![1.0]);
         ukf.predict().unwrap();
@@ -884,8 +895,9 @@ mod tests {
             vec![0.01, 0.0, 0.0, 0.01],
             vec![0.1],
             0.01,
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         assert_eq!(ukf.state().len(), 2);
         assert_eq!(ukf.covariance().len(), 4);
         assert!((ukf.dt - 0.01).abs() < 1e-10);
