@@ -71,7 +71,7 @@ pub struct EnsembleStatistics<T: KalmanScalar> {
 ///     .unwrap();
 ///     
 /// enkf.forecast();  // Predict step
-/// enkf.assimilate(&[1.0]).unwrap(); // Update step
+/// enkf.update(&[1.0]).unwrap(); // Update step
 /// ```
 pub struct EnsembleKalmanFilter<T, S>
 where
