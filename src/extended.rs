@@ -99,7 +99,6 @@ where
     T: KalmanScalar,
     S: NonlinearSystem<T>,
 {
-    /// Create a new Extended Kalman Filter
     /// Create a new Extended Kalman Filter (prefer using ExtendedKalmanFilterBuilder)
     #[deprecated(since = "1.0.0", note = "Use ExtendedKalmanFilterBuilder instead")]
     pub fn new(
