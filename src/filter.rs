@@ -154,12 +154,11 @@ where
         // Check numerical stability of initial covariance
         check_numerical_stability(&initial_covariance, n, "Initial covariance");
 
-        trace!(
-            "Kalman filter initialized: {}",
-            format_state(&initial_state, "initial_state")
-        );
-
         if log::log_enabled!(log::Level::Trace) {
+            trace!(
+                "Kalman filter initialized: {}",
+                format_state(&initial_state, "initial_state")
+            );
             trace!(
                 "Initial covariance: {}",
                 format_matrix(&initial_covariance, n, n, "P0")
@@ -186,14 +185,13 @@ where
     pub fn predict(&mut self) {
         let n = self.state_dim;
 
-        trace!("Predict step: state_norm={:.6}", state_norm(&self.x));
-
-        #[cfg(feature = "prometheus-metrics")]
-        let _timer = crate::metrics::MetricsTimer::start();
-
         if log::log_enabled!(log::Level::Trace) {
+            trace!("Predict step: state_norm={:.6}", state_norm(&self.x));
             trace!("Before predict: {}", format_state(&self.x, "x"));
         }
+        
+        #[cfg(feature = "prometheus-metrics")]
+        let _timer = crate::metrics::MetricsTimer::start();
 
         // x = F * x
         let mut new_x = vec![T::zero(); n];
@@ -228,8 +226,6 @@ where
 
         check_numerical_stability(&self.P, n, "Predicted covariance");
 
-        trace!("Predict complete: state_norm={:.6}", state_norm(&self.x));
-
         #[cfg(feature = "prometheus-metrics")]
         {
             _timer.finish_predict("kf");
@@ -242,17 +238,24 @@ where
                 .sum();
             crate::metrics::set_covariance_trace("kf", trace);
         }
+
+        if log::log_enabled!(log::Level::Trace) {
+            trace!("Predict complete: state_norm={:.6}", state_norm(&self.x));
+        }
     }
 
     /// Update step: incorporate measurement to correct state estimate
+    /// TODO: Don't do matrix multiplication by hand. Use a proper linear algebra library with optimized routines, better numerical stability, and GPU support
     pub fn update(&mut self, measurement: &[T]) -> KalmanResult<()> {
         let n = self.state_dim;
         let m = self.measurement_dim;
 
-        trace!(
-            "Update step: measurement_norm={:.6}",
-            state_norm(measurement)
-        );
+        if log::log_enabled!(log::Level::Trace) {
+            trace!(
+                "Update step: measurement_norm={:.6}",
+                state_norm(measurement)
+            );
+        }
 
         #[cfg(feature = "prometheus-metrics")]
         let _timer = crate::metrics::MetricsTimer::start();
@@ -281,7 +284,9 @@ where
             *y_i = *y_i - hx;
         }
 
-        trace!("Innovation: {}", format_innovation(&y));
+        if log::log_enabled!(log::Level::Trace) {
+            trace!("Innovation: {}", format_innovation(&y));
+        }
 
         // Calculate innovation norm for metrics
         #[cfg(feature = "prometheus-metrics")]
@@ -397,7 +402,9 @@ where
 
         check_numerical_stability(&self.P, n, "Updated covariance");
 
-        trace!("Update complete: state_norm={:.6}", state_norm(&self.x));
+        if log::log_enabled!(log::Level::Trace) {
+            trace!("Update complete: state_norm={:.6}", state_norm(&self.x));
+        }
 
         #[cfg(feature = "prometheus-metrics")]
         {

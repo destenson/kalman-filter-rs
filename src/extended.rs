@@ -172,11 +172,13 @@ where
 
         check_numerical_stability(&initial_covariance, n, "EKF initial covariance");
 
-        trace!(
-            "EKF initialized: {}",
-            format_state(&initial_state, "initial_state")
-        );
-        trace!("EKF time step dt={:.6}", KalmanScalar::to_f64(&dt));
+        if log::log_enabled!(log::Level::Trace) {
+            trace!(
+                "EKF initialized: {}",
+                format_state(&initial_state, "initial_state")
+            );
+            trace!("EKF time step dt={:.6}", KalmanScalar::to_f64(&dt));
+        }
 
         Ok(Self {
             system,
@@ -206,7 +208,9 @@ where
     pub fn predict(&mut self) {
         let n = self.state_dim;
 
-        trace!("EKF predict step: state_norm={:.6}", state_norm(&self.x));
+        if log::log_enabled!(log::Level::Trace) {
+            trace!("EKF predict step: state_norm={:.6}", state_norm(&self.x));
+        }
 
         #[cfg(feature = "prometheus-metrics")]
         let _timer = crate::metrics::MetricsTimer::start();
@@ -333,7 +337,9 @@ where
             y[i] = measurement[i] - h_x[i];
         }
 
-        trace!("EKF innovation: {}", format_innovation(&y));
+        if log::log_enabled!(log::Level::Trace) {
+            trace!("EKF innovation: {}", format_innovation(&y));
+        }
 
         // Get measurement Jacobian at predicted state
         let H = match self.jacobian_strategy {
@@ -445,7 +451,9 @@ where
         self.P = new_p;
 
         check_numerical_stability(&self.P, n, "EKF updated covariance");
-        trace!("EKF update complete: state_norm={:.6}", state_norm(&self.x));
+        if log::log_enabled!(log::Level::Trace) {
+            trace!("EKF update complete: state_norm={:.6}", state_norm(&self.x));
+        }
 
         Ok(())
     }

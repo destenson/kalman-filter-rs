@@ -209,19 +209,21 @@ impl<T: KalmanScalar> fmt::Display for InnovationFormatter<'_, T> {
 
 /// Log filter dimensions for initialization
 pub fn log_filter_dimensions(state_dim: usize, measurement_dim: usize, control_dim: Option<usize>) {
-    if let Some(control) = control_dim {
-        log::trace!(
-            "Initializing Kalman filter: state_dim={}, measurement_dim={}, control_dim={}",
-            state_dim,
-            measurement_dim,
-            control
-        );
-    } else {
-        log::trace!(
-            "Initializing Kalman filter: state_dim={}, measurement_dim={}",
-            state_dim,
-            measurement_dim
-        );
+    if log::log_enabled!(log::Level::Trace) {
+        if let Some(control) = control_dim {
+            log::trace!(
+                "Initializing Kalman filter: state_dim={}, measurement_dim={}, control_dim={}",
+                state_dim,
+                measurement_dim,
+                control
+            );
+        } else {
+            log::trace!(
+                "Initializing Kalman filter: state_dim={}, measurement_dim={}",
+                state_dim,
+                measurement_dim
+            );
+        }
     }
 }
 
