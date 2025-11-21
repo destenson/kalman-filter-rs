@@ -595,27 +595,245 @@ mod tests {
     }
 
     #[test]
-    fn test_enkf_ensemble_size() {
+    fn test_enkf_ensemble_covariance_consistency() {
+        // The sample covariance of ensemble members should match reported spread
         let system = SimpleNonlinearSystem;
 
-        let initial_mean = vec![1.0, 0.5];
-        let initial_spread = vec![0.1, 0.1];
-        let ensemble_size = 100;
-        let process_noise = vec![0.01, 0.0, 0.0, 0.01];
-        let measurement_noise = vec![0.1];
+        let initial_mean = vec![5.0, 2.0];
+        let initial_spread = vec![1.0, 0.5];
+        let ensemble_size = 200; // Large ensemble for statistical accuracy
 
         let enkf = EnsembleKalmanFilter::new(
             system,
-            initial_mean,
-            initial_spread,
+            initial_mean.clone(),
+            initial_spread.clone(),
             ensemble_size,
-            process_noise,
-            measurement_noise,
+            vec![0.01, 0.0, 0.0, 0.01],
+            vec![0.1],
             0.01,
         )
         .unwrap();
 
-        assert_eq!(enkf.ensemble_size, 100);
-        assert_eq!(enkf.ensemble.len(), 2 * 100); // state_dim * ensemble_size
+        // Compute sample statistics from ensemble
+        // Note: Ensemble is stored as (N x M) where N=state_dim, M=ensemble_size
+        // Each column is a member, so indexing is: ensemble[state_idx * ensemble_size + member_idx]
+        let state_dim = 2;
+        let mut sample_mean = vec![0.0; state_dim];
+        let mut sample_var = vec![0.0; state_dim];
+
+        // Compute mean for each state dimension
+        for state_idx in 0..state_dim {
+            for member_idx in 0..ensemble_size {
+                sample_mean[state_idx] += enkf.ensemble[state_idx * ensemble_size + member_idx];
+            }
+            sample_mean[state_idx] /= ensemble_size as f64;
+        }
+
+        // Compute variance for each state dimension
+        for state_idx in 0..state_dim {
+            for member_idx in 0..ensemble_size {
+                let diff = enkf.ensemble[state_idx * ensemble_size + member_idx] - sample_mean[state_idx];
+                sample_var[state_idx] += diff * diff;
+            }
+            sample_var[state_idx] /= (ensemble_size - 1) as f64;
+        }
+
+        // Sample mean should be reasonably close to initial mean (within 3 sigma)
+        for j in 0..state_dim {
+            let std_err = initial_spread[j] / (ensemble_size as f64).sqrt();
+            let error = (sample_mean[j] - initial_mean[j]).abs();
+            assert!(error < 3.0 * std_err + 0.1,
+                "Sample mean {} too far from initial mean {}. Error: {}, 3*std_err: {}",
+                sample_mean[j], initial_mean[j], error, 3.0 * std_err);
+            assert!(sample_mean[j].is_finite(), "Sample mean is not finite");
+        }
+
+        // Sample std should be reasonably close to initial spread
+        for j in 0..state_dim {
+            let sample_std = sample_var[j].sqrt();
+            let relative_error = (sample_std - initial_spread[j]).abs() / initial_spread[j];
+            // For large ensemble, std should be within ~20% of specified spread
+            assert!(relative_error < 0.3,
+                "Sample std {} too far from initial spread {}. Relative error: {}",
+                sample_std, initial_spread[j], relative_error);
+        }
+    }
+
+    #[test]
+    fn test_enkf_ensemble_size_effect() {
+        // Larger ensemble should give more stable estimates
+        let process_noise = vec![0.01, 0.0, 0.0, 0.01];
+        let measurement_noise = vec![0.1];
+        let initial_mean = vec![1.0, 0.5];
+        let initial_spread = vec![0.1, 0.1];
+
+        // Run with small ensemble
+        let system_small = SimpleNonlinearSystem;
+        let mut enkf_small = EnsembleKalmanFilter::new(
+            system_small,
+            initial_mean.clone(),
+            initial_spread.clone(),
+            20, // Small ensemble
+            process_noise.clone(),
+            measurement_noise.clone(),
+            0.01,
+        )
+        .unwrap();
+
+        // Run with large ensemble
+        let system_large = SimpleNonlinearSystem;
+        let mut enkf_large = EnsembleKalmanFilter::new(
+            system_large,
+            initial_mean.clone(),
+            initial_spread.clone(),
+            200, // Large ensemble
+            process_noise.clone(),
+            measurement_noise.clone(),
+            0.01,
+        )
+        .unwrap();
+
+        // Update both with same measurement
+        let measurement = vec![1.25];
+        for _ in 0..10 {
+            enkf_small.forecast();
+            enkf_small.update(&measurement).unwrap();
+
+            enkf_large.forecast();
+            enkf_large.update(&measurement).unwrap();
+        }
+
+        // Both should have positive spread
+        assert!(enkf_small.spread()[0] > 0.0);
+        assert!(enkf_large.spread()[0] > 0.0);
+
+        // Both means should be finite and reasonable
+        for i in 0..2 {
+            assert!(enkf_small.mean()[i].is_finite());
+            assert!(enkf_large.mean()[i].is_finite());
+        }
+    }
+
+    #[test]
+    fn test_enkf_update_reduces_spread() {
+        // Measurement update should reduce ensemble spread
+        let system = SimpleNonlinearSystem;
+
+        let mut enkf = EnsembleKalmanFilter::new(
+            system,
+            vec![1.0, 0.5],
+            vec![1.0, 1.0], // Large initial spread
+            100,
+            vec![0.01, 0.0, 0.0, 0.01],
+            vec![0.01], // Small measurement noise
+            0.01,
+        )
+        .unwrap();
+
+        let spread_before = enkf.spread().to_vec();
+
+        // Forecast increases spread
+        enkf.forecast();
+        let spread_after_forecast = enkf.spread().to_vec();
+
+        // Update should reduce spread (with informative measurement)
+        enkf.update(&[1.25]).unwrap();
+        let spread_after_update = enkf.spread().to_vec();
+
+        // At least one dimension should have reduced spread after update
+        let reduced = spread_after_update[0] < spread_after_forecast[0]
+            || spread_after_update[1] < spread_after_forecast[1];
+        assert!(reduced,
+            "Update should reduce spread. Before: {:?}, After: {:?}",
+            spread_after_forecast, spread_after_update);
+    }
+
+    #[test]
+    fn test_enkf_convergence_to_static_target() {
+        // EnKF should converge when measuring a static target
+        struct StaticSystem;
+        impl NonlinearSystem<f64> for StaticSystem {
+            fn state_transition(&self, state: &[f64], _: Option<&[f64]>, _: f64) -> Vec<f64> {
+                state.to_vec() // Static state
+            }
+            fn measurement(&self, state: &[f64]) -> Vec<f64> {
+                vec![state[0]] // Directly observe first state
+            }
+            fn state_jacobian(&self, _: &[f64], _: Option<&[f64]>, _: f64) -> Vec<f64> {
+                unreachable!()
+            }
+            fn measurement_jacobian(&self, _: &[f64]) -> Vec<f64> {
+                unreachable!()
+            }
+            fn state_dim(&self) -> usize {
+                2
+            }
+            fn measurement_dim(&self) -> usize {
+                1
+            }
+        }
+
+        let mut enkf = EnsembleKalmanFilter::new(
+            StaticSystem,
+            vec![0.0, 0.0], // Start far from target
+            vec![2.0, 2.0],
+            100,
+            vec![0.001, 0.0, 0.0, 0.001],
+            vec![0.1],
+            0.01,
+        )
+        .unwrap();
+
+        let true_value = 5.0;
+
+        for _ in 0..50 {
+            enkf.forecast();
+            enkf.update(&[true_value]).unwrap();
+        }
+
+        // Should converge close to true value
+        let error = (enkf.mean()[0] - true_value).abs();
+        assert!(error < 1.0,
+            "EnKF should converge to static target. Error: {}, Mean: {}",
+            error, enkf.mean()[0]);
+
+        // Spread should have decreased
+        assert!(enkf.spread()[0] < 1.0,
+            "Spread should decrease with repeated observations. Spread: {}",
+            enkf.spread()[0]);
+    }
+
+    #[test]
+    fn test_enkf_no_ensemble_collapse() {
+        // Ensemble should not collapse (all members identical)
+        let system = SimpleNonlinearSystem;
+
+        let mut enkf = EnsembleKalmanFilter::new(
+            system,
+            vec![1.0, 0.5],
+            vec![0.5, 0.5],
+            50,
+            vec![0.01, 0.0, 0.0, 0.01],
+            vec![0.1],
+            0.01,
+        )
+        .unwrap();
+
+        // Run many cycles
+        for _ in 0..100 {
+            enkf.forecast();
+            enkf.update(&[1.25]).unwrap();
+        }
+
+        // Spread should remain positive (not collapsed)
+        assert!(enkf.spread()[0] > 1e-6,
+            "Ensemble collapsed in dim 0. Spread: {}", enkf.spread()[0]);
+        assert!(enkf.spread()[1] > 1e-6,
+            "Ensemble collapsed in dim 1. Spread: {}", enkf.spread()[1]);
+
+        // All members should be finite
+        for val in enkf.ensemble.iter() {
+            assert!(val.is_finite(), "Ensemble member became non-finite");
+        }
     }
 }

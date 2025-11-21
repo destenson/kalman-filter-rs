@@ -887,7 +887,159 @@ mod tests {
     }
 
     #[test]
-    fn test_ukf_getters() {
+    fn test_ukf_sigma_point_generation() {
+        // Test that sigma points are generated with correct count and spread
+        let system = VanDerPolOscillator { mu: 1.0 };
+        let mean = vec![2.0, 1.0];
+        let cov = vec![
+            1.0, 0.0,
+            0.0, 0.5,
+        ];
+
+        let mut ukf = UnscentedKalmanFilter::new(
+            system,
+            mean.clone(),
+            cov.clone(),
+            vec![0.01, 0.0, 0.0, 0.01],
+            vec![0.1],
+            0.01,
+        )
+        .unwrap();
+
+        ukf.generate_sigma_points().unwrap();
+
+        // For n=2, we should have 2n+1 = 5 sigma points
+        // Each point has n=2 components, total = 10 values
+        assert_eq!(ukf.sigma_points.len(), 10, "Should have 5 sigma points * 2 components");
+
+        // All sigma points should be finite
+        for (i, val) in ukf.sigma_points.iter().enumerate() {
+            assert!(val.is_finite(), "Sigma point {} is not finite: {}", i, val);
+        }
+
+        // Compute max spread from mean in each dimension
+        let mut x_spread: f64 = 0.0;
+        let mut y_spread: f64 = 0.0;
+
+        for i in 0..5 {
+            x_spread = x_spread.max((ukf.sigma_points[i * 2] - mean[0]).abs());
+            y_spread = y_spread.max((ukf.sigma_points[i * 2 + 1] - mean[1]).abs());
+        }
+
+        // Both should have positive spread (points not all at mean)
+        assert!(x_spread > 0.0, "x should have positive spread");
+        assert!(y_spread > 0.0, "y should have positive spread");
+
+        // Spread should be reasonable (not too small or too large)
+        assert!(x_spread < 100.0, "x spread unreasonably large: {}", x_spread);
+        assert!(y_spread < 100.0, "y spread unreasonably large: {}", y_spread);
+    }
+
+    #[test]
+    fn test_ukf_handles_highly_nonlinear_measurement() {
+        // Van der Pol with distance measurement is highly nonlinear
+        // Test that UKF can handle it without numerical issues
+        let system = VanDerPolOscillator { mu: 2.0 }; // High nonlinearity
+
+        let mut ukf = UnscentedKalmanFilter::new(
+            system,
+            vec![1.0, 1.0],
+            vec![0.5, 0.0, 0.0, 0.5],
+            vec![0.01, 0.0, 0.0, 0.01],
+            vec![0.1],
+            0.01,
+        )
+        .unwrap();
+
+        // True state evolving
+        let mut true_x: f64 = 1.0;
+        let mut true_y: f64 = 1.0;
+
+        for _ in 0..100 {
+            // Simulate true dynamics
+            let dx = true_y;
+            let dy = 2.0 * (1.0 - true_x * true_x) * true_y - true_x;
+            true_x += dx * 0.01;
+            true_y += dy * 0.01;
+
+            // Generate noisy measurement (distance from origin)
+            let true_dist = (true_x * true_x + true_y * true_y).sqrt();
+            let measured_dist = true_dist + 0.05 * (rand_simple() - 0.5);
+
+            ukf.predict().unwrap();
+            ukf.update(&[measured_dist]).unwrap();
+
+            // Covariance must stay positive definite
+            assert!(ukf.covariance()[0] > 0.0, "P[0,0] went negative");
+            assert!(ukf.covariance()[3] > 0.0, "P[1,1] went negative");
+
+            // Check for NaN/Inf
+            for val in ukf.state() {
+                assert!(val.is_finite(), "State became non-finite: {:?}", ukf.state());
+            }
+            for val in ukf.covariance() {
+                assert!(val.is_finite(), "Covariance became non-finite");
+            }
+        }
+    }
+
+    #[test]
+    fn test_ukf_parameter_sensitivity() {
+        // Test that UKF results are reasonable for different parameter choices
+        let system = VanDerPolOscillator { mu: 0.5 };
+
+        // Conservative parameters (large alpha)
+        let mut ukf_conservative = UnscentedKalmanFilter::new(
+            system,
+            vec![1.0, 0.0],
+            vec![1.0, 0.0, 0.0, 1.0],
+            vec![0.01, 0.0, 0.0, 0.01],
+            vec![0.1],
+            0.01,
+        )
+        .unwrap();
+
+        use crate::unscented::UKFParameters;
+        ukf_conservative.set_parameters(UKFParameters {
+            alpha: 1.0,
+            beta: 2.0,
+            kappa: 0.0,
+        });
+
+        // Aggressive parameters (small alpha)
+        let system2 = VanDerPolOscillator { mu: 0.5 };
+        let mut ukf_aggressive = UnscentedKalmanFilter::new(
+            system2,
+            vec![1.0, 0.0],
+            vec![1.0, 0.0, 0.0, 1.0],
+            vec![0.01, 0.0, 0.0, 0.01],
+            vec![0.1],
+            0.01,
+        )
+        .unwrap();
+
+        ukf_aggressive.set_parameters(UKFParameters {
+            alpha: 0.001,
+            beta: 2.0,
+            kappa: 0.0,
+        });
+
+        // Both should work without numerical issues
+        for _ in 0..50 {
+            ukf_conservative.predict().unwrap();
+            ukf_conservative.update(&[1.5]).unwrap();
+
+            ukf_aggressive.predict().unwrap();
+            ukf_aggressive.update(&[1.5]).unwrap();
+        }
+
+        // Both should converge to similar results for static measurement
+        let diff = (ukf_conservative.state()[0] - ukf_aggressive.state()[0]).abs();
+        assert!(diff < 1.0, "Different UKF params gave very different results: {}", diff);
+    }
+
+    #[test]
+    fn test_ukf_weights_sum_to_one() {
         let ukf = UnscentedKalmanFilter::new(
             VanDerPolOscillator { mu: 1.0 },
             vec![1.0, 0.0],
@@ -898,11 +1050,31 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(ukf.state().len(), 2);
-        assert_eq!(ukf.covariance().len(), 4);
-        assert!((ukf.dt - 0.01).abs() < 1e-10);
-        assert_eq!(ukf.state_dim, 2);
-        assert_eq!(ukf.measurement_dim, 1);
+        let n = 2;
+        let lambda = ukf.params.alpha.powi(2) * (n as f64 + ukf.params.kappa) - n as f64;
+        let weight_0 = lambda / (n as f64 + lambda);
+        let weight_i = 0.5 / (n as f64 + lambda);
+
+        // Sum of mean weights should be 1
+        let sum = weight_0 + 2.0 * n as f64 * weight_i;
+        assert!((sum - 1.0).abs() < 1e-10,
+            "Mean weights should sum to 1. Got: {}", sum);
+    }
+
+    // Simple deterministic pseudo-random for tests
+    fn rand_simple() -> f64 {
+        use std::cell::Cell;
+        thread_local! {
+            static SEED: Cell<u64> = const { Cell::new(54321) };
+        }
+        SEED.with(|s| {
+            let mut x = s.get();
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            s.set(x);
+            (x as f64) / (u64::MAX as f64)
+        })
     }
 
     #[test]

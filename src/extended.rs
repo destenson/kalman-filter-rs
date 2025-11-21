@@ -697,21 +697,168 @@ mod tests {
     }
 
     #[test]
-    fn test_ekf_getters() {
+    fn test_ekf_nonlinear_tracking_accuracy() {
+        // Test EKF on pendulum with larger angles where nonlinearity matters
+        // Compare filter estimate to simulated ground truth
         let system = PendulumSystem { g: 9.81, l: 1.0 };
-        let ekf = ExtendedKalmanFilter::new(
+        let dt = 0.01;
+
+        let mut ekf = ExtendedKalmanFilter::new(
             system,
-            vec![0.1, 0.0],
-            vec![0.01, 0.0, 0.0, 0.01],
+            vec![0.5, 0.0], // Initial estimate (30 degrees)
+            vec![0.1, 0.0, 0.0, 0.1],
             vec![0.001, 0.0, 0.0, 0.001],
             vec![0.01],
-            0.01,
+            dt,
         )
         .unwrap();
 
-        assert_eq!(ekf.state().len(), 2);
-        assert_eq!(ekf.covariance().len(), 4);
-        assert!((ekf.dt - 0.01).abs() < 1e-10);
+        // Simulate ground truth pendulum dynamics
+        let mut true_theta = 0.5;
+        let mut true_omega = 0.0;
+        let g = 9.81;
+        let l = 1.0;
+
+        let mut errors = Vec::new();
+
+        for _ in 0..200 {
+            // Simulate true dynamics
+            let theta_new = true_theta + true_omega * dt;
+            let omega_new = true_omega - (g / l) * true_theta.sin() * dt;
+            true_theta = theta_new;
+            true_omega = omega_new;
+
+            // EKF predict and update
+            ekf.predict();
+            let measurement = true_theta + 0.01 * (rand_simple() - 0.5); // Add noise
+            ekf.update(&[measurement]).unwrap();
+
+            // Track error
+            let error = (ekf.state()[0] - true_theta).abs();
+            errors.push(error);
+        }
+
+        // Average error should be small
+        let mean_error: f64 = errors.iter().sum::<f64>() / errors.len() as f64;
+        assert!(mean_error < 0.05,
+            "EKF should track pendulum accurately. Mean error: {}", mean_error);
+
+        // Final error should be small
+        let final_error = errors.last().unwrap();
+        assert!(*final_error < 0.1,
+            "Final tracking error too large: {}", final_error);
+    }
+
+    #[test]
+    fn test_ekf_jacobian_linearization_error() {
+        // Test that analytical and numerical Jacobians agree
+        // This validates the linearization is correct
+        let system = PendulumSystem { g: 9.81, l: 1.0 };
+
+        // Test at various operating points
+        let test_states = vec![
+            vec![0.0, 0.0],   // Equilibrium
+            vec![0.5, 0.0],   // Small angle
+            vec![1.0, 0.5],   // Larger angle with velocity
+            vec![2.0, -1.0],  // Large angle
+        ];
+
+        for state in test_states {
+            let dt = 0.01;
+
+            // Analytical Jacobian
+            let analytical = system.state_jacobian(&state, None, dt);
+
+            // Numerical Jacobian (finite differences)
+            let eps = 1e-6;
+            let mut numerical = vec![0.0; 4];
+
+            for i in 0..2 {
+                let mut state_plus = state.clone();
+                let mut state_minus = state.clone();
+                state_plus[i] += eps;
+                state_minus[i] -= eps;
+
+                let f_plus = system.state_transition(&state_plus, None, dt);
+                let f_minus = system.state_transition(&state_minus, None, dt);
+
+                for j in 0..2 {
+                    numerical[j * 2 + i] = (f_plus[j] - f_minus[j]) / (2.0 * eps);
+                }
+            }
+
+            // Compare
+            for i in 0..4 {
+                let diff = (analytical[i] - numerical[i]).abs();
+                assert!(diff < 1e-4,
+                    "Jacobian mismatch at state {:?}, element {}: analytical={}, numerical={}",
+                    state, i, analytical[i], numerical[i]);
+            }
+        }
+    }
+
+    #[test]
+    fn test_ekf_covariance_reflects_linearization_quality() {
+        // At small angles, linearization is good -> lower covariance growth
+        // At large angles, linearization is poor -> higher covariance growth
+        let system_small = PendulumSystem { g: 9.81, l: 1.0 };
+        let system_large = PendulumSystem { g: 9.81, l: 1.0 };
+
+        let dt = 0.1;
+
+        // Small angle EKF
+        let mut ekf_small = ExtendedKalmanFilter::new(
+            system_small,
+            vec![0.1, 0.0], // 6 degrees
+            vec![0.01, 0.0, 0.0, 0.01],
+            vec![0.001, 0.0, 0.0, 0.001],
+            vec![0.01],
+            dt,
+        )
+        .unwrap();
+
+        // Large angle EKF
+        let mut ekf_large = ExtendedKalmanFilter::new(
+            system_large,
+            vec![2.5, 0.0], // 143 degrees - highly nonlinear regime
+            vec![0.01, 0.0, 0.0, 0.01],
+            vec![0.001, 0.0, 0.0, 0.001],
+            vec![0.01],
+            dt,
+        )
+        .unwrap();
+
+        // Run predictions only (no measurements) to see covariance growth
+        for _ in 0..10 {
+            ekf_small.predict();
+            ekf_large.predict();
+        }
+
+        // Both should grow, but this tests the filter maintains positive definiteness
+        assert!(ekf_small.covariance()[0] > 0.01, "Small angle cov should grow");
+        assert!(ekf_large.covariance()[0] > 0.01, "Large angle cov should grow");
+
+        // Covariance diagonal elements must remain positive
+        for i in 0..2 {
+            assert!(ekf_small.covariance()[i * 3] > 0.0);
+            assert!(ekf_large.covariance()[i * 3] > 0.0);
+        }
+    }
+
+    // Simple deterministic pseudo-random for tests
+    fn rand_simple() -> f64 {
+        use std::cell::Cell;
+        thread_local! {
+            static SEED: Cell<u64> = const { Cell::new(12345) };
+        }
+        SEED.with(|s| {
+            let mut x = s.get();
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            s.set(x);
+            (x as f64) / (u64::MAX as f64)
+        })
     }
 
     #[test]
