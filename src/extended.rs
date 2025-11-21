@@ -137,7 +137,7 @@ where
         let m = system.measurement_dim();
 
         log_filter_dimensions(n, m, None);
-        debug!("Initializing Extended Kalman Filter");
+        trace!("Initializing Extended Kalman Filter");
 
         // Validate dimensions
         if initial_state.len() != n {
@@ -172,11 +172,11 @@ where
 
         check_numerical_stability(&initial_covariance, n, "EKF initial covariance");
 
-        debug!(
+        trace!(
             "EKF initialized: {}",
             format_state(&initial_state, "initial_state")
         );
-        debug!("EKF time step dt={:.6}", KalmanScalar::to_f64(&dt));
+        trace!("EKF time step dt={:.6}", KalmanScalar::to_f64(&dt));
 
         Ok(Self {
             system,
@@ -206,7 +206,7 @@ where
     pub fn predict(&mut self) {
         let n = self.state_dim;
 
-        debug!("EKF predict step: state_norm={:.6}", state_norm(&self.x));
+        trace!("EKF predict step: state_norm={:.6}", state_norm(&self.x));
 
         #[cfg(feature = "prometheus-metrics")]
         let _timer = crate::metrics::MetricsTimer::start();
@@ -284,10 +284,12 @@ where
         self.P = new_p;
 
         check_numerical_stability(&self.P, n, "EKF predicted covariance");
-        debug!(
-            "EKF predict complete: state_norm={:.6}",
-            state_norm(&self.x)
-        );
+        if log::log_enabled!(log::Level::Trace) {
+            trace!(
+                "EKF predict complete: state_norm={:.6}",
+                state_norm(&self.x)
+            );
+        }
 
         #[cfg(feature = "prometheus-metrics")]
         {
@@ -303,10 +305,12 @@ where
         let n = self.state_dim;
         let m = self.measurement_dim;
 
-        debug!(
-            "EKF update step: measurement_norm={:.6}",
-            state_norm(measurement)
-        );
+        if log::log_enabled!(log::Level::Trace) {
+            trace!(
+                "EKF update step: measurement_norm={:.6}",
+                state_norm(measurement)
+            );
+        }
 
         if measurement.len() != m {
             error!(
@@ -329,7 +333,7 @@ where
             y[i] = measurement[i] - h_x[i];
         }
 
-        debug!("EKF innovation: {}", format_innovation(&y));
+        trace!("EKF innovation: {}", format_innovation(&y));
 
         // Get measurement Jacobian at predicted state
         let H = match self.jacobian_strategy {
@@ -441,7 +445,7 @@ where
         self.P = new_p;
 
         check_numerical_stability(&self.P, n, "EKF updated covariance");
-        debug!("EKF update complete: state_norm={:.6}", state_norm(&self.x));
+        trace!("EKF update complete: state_norm={:.6}", state_norm(&self.x));
 
         Ok(())
     }

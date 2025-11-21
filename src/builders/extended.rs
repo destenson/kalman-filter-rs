@@ -3,7 +3,7 @@
 use crate::extended::ExtendedKalmanFilter;
 use crate::logging::{check_numerical_stability, log_filter_dimensions};
 use crate::types::{JacobianStrategy, KalmanError, KalmanResult, KalmanScalar, NonlinearSystem};
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 
 /// Builder for constructing Extended Kalman Filters
 ///
@@ -53,11 +53,13 @@ where
 {
     /// Create a new builder with the nonlinear system
     pub fn new(system: S) -> Self {
-        debug!(
-            "Creating ExtendedKalmanFilterBuilder: state_dim={}, measurement_dim={}",
-            system.state_dim(),
-            system.measurement_dim()
-        );
+        if log::log_enabled!(log::Level::Trace) {
+            trace!(
+                "Creating ExtendedKalmanFilterBuilder: state_dim={}, measurement_dim={}",
+                system.state_dim(),
+                system.measurement_dim()
+            );
+        }
         Self {
             system,
             initial_state: None,
@@ -117,7 +119,7 @@ where
         let n = self.system.state_dim();
         let m = self.system.measurement_dim();
 
-        debug!(
+        trace!(
             "Building Extended Kalman Filter: state_dim={}, measurement_dim={}",
             n, m
         );

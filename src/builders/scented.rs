@@ -2,7 +2,7 @@
 
 use crate::scented::CubatureKalmanFilter;
 use crate::types::{KalmanError, KalmanResult, KalmanScalar, NonlinearSystem};
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 
 /// Builder for constructing Cubature Kalman Filters
 ///
@@ -51,7 +51,7 @@ where
 {
     /// Create a new builder with the nonlinear system
     pub fn new(system: S) -> Self {
-        debug!(
+        trace!(
             "Creating CubatureKalmanFilterBuilder: state_dim={}, measurement_dim={}",
             system.state_dim(),
             system.measurement_dim()
@@ -108,7 +108,7 @@ where
         let n = self.system.state_dim();
         let m = self.system.measurement_dim();
 
-        debug!(
+        trace!(
             "Building Cubature Kalman Filter: state_dim={}, measurement_dim={}",
             n, m
         );

@@ -2,7 +2,7 @@
 
 use crate::information::InformationFilter;
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 
 /// Builder for constructing Information Filters
 ///
@@ -34,10 +34,12 @@ pub struct InformationFilterBuilder<T: KalmanScalar> {
 impl<T: KalmanScalar> InformationFilterBuilder<T> {
     /// Create a new builder with the given dimensions
     pub fn new(state_dim: usize, measurement_dim: usize) -> Self {
-        debug!(
-            "Creating InformationFilterBuilder: state_dim={}, measurement_dim={}",
-            state_dim, measurement_dim
-        );
+        if log::log_enabled!(log::Level::Trace) {
+            trace!(
+                "Creating InformationFilterBuilder: state_dim={}, measurement_dim={}",
+                state_dim, measurement_dim
+            );
+        }
         Self {
             state_dim,
             measurement_dim,
@@ -58,7 +60,7 @@ impl<T: KalmanScalar> InformationFilterBuilder<T> {
     ) -> KalmanResult<Self> {
         let state_dim = initial_state.len();
 
-        debug!(
+        trace!(
             "Creating InformationFilterBuilder from state/covariance: state_dim={}, measurement_dim={}",
             state_dim, measurement_dim
         );
@@ -132,7 +134,7 @@ impl<T: KalmanScalar> InformationFilterBuilder<T> {
 
     /// Build the Information Filter
     pub fn build(self) -> KalmanResult<InformationFilter<T>> {
-        debug!(
+        trace!(
             "Building Information Filter: state_dim={}, measurement_dim={}",
             self.state_dim, self.measurement_dim
         );

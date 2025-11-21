@@ -107,7 +107,7 @@ where
         let m = system.measurement_dim();
 
         log_filter_dimensions(n, m, None);
-        debug!(
+        trace!(
             "Cubature Kalman Filter: Initializing with {} cubature points",
             2 * n
         );
@@ -231,7 +231,7 @@ where
         let n = self.state_dim;
         let num_points = 2 * n;
 
-        debug!(
+        trace!(
             "CKF predict: {} prior={:.4}",
             format_state(&self.x, "state"),
             state_norm(&self.x)
@@ -289,7 +289,7 @@ where
             }
         }
 
-        debug!(
+        trace!(
             "CKF predict: {} posterior={:.4}",
             format_state(&new_x, "state"),
             state_norm(&new_x)
@@ -321,7 +321,7 @@ where
             });
         }
 
-        debug!("CKF update: {}", format_state(measurement, "measurement"));
+        trace!("CKF update: {}", format_state(measurement, "measurement"));
 
         // Transform cubature points through measurement function
         let mut measurement_points = vec![T::zero(); m * num_points];
@@ -398,7 +398,7 @@ where
             y[i] = measurement[i] - z_pred[i];
         }
 
-        debug!("CKF update: {}", format_innovation(&y));
+        trace!("CKF update: {}", format_innovation(&y));
         trace!(
             "CKF update: predicted measurement {}",
             format_state(&z_pred, "z_pred")

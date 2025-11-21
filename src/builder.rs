@@ -2,7 +2,7 @@
 
 use crate::filter::KalmanFilter;
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 
 /// Builder for constructing Kalman filters
 ///
@@ -42,7 +42,7 @@ where
 {
     /// Create a new builder with specified dimensions
     pub fn new(state_dim: usize, measurement_dim: usize) -> Self {
-        debug!(
+        trace!(
             "Creating KalmanFilterBuilder: state_dim={state_dim}, measurement_dim={measurement_dim}"
         );
         Self {
@@ -95,7 +95,7 @@ where
 
     /// Build the Kalman filter
     pub fn build(self) -> KalmanResult<KalmanFilter<T>> {
-        debug!(
+        trace!(
             "Building Kalman filter: state_dim={}, measurement_dim={}",
             self.state_dim, self.measurement_dim
         );
@@ -137,17 +137,17 @@ where
             error!("KalmanFilterBuilder: initial_covariance is not symmetric (size={n}x{n})");
             return Err(KalmanError::InvalidCovariance);
         }
-        debug!("Initial covariance matrix validated as symmetric");
+        trace!("Initial covariance matrix validated as symmetric");
         if !is_symmetric(&process_noise, n) {
             error!("KalmanFilterBuilder: process_noise is not symmetric (size={n}x{n})");
             return Err(KalmanError::InvalidNoiseCovariance);
         }
-        debug!("Process noise matrix validated as symmetric");
+        trace!("Process noise matrix validated as symmetric");
         if !is_symmetric(&measurement_noise, m) {
             error!("KalmanFilterBuilder: measurement_noise is not symmetric (size={m}x{m})");
             return Err(KalmanError::InvalidNoiseCovariance);
         }
-        debug!("Measurement noise matrix validated as symmetric");
+        trace!("Measurement noise matrix validated as symmetric");
 
         KalmanFilter::initialize(
             self.state_dim,

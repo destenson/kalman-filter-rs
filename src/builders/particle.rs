@@ -2,7 +2,7 @@
 
 use crate::particle::{ParticleFilter, ResamplingStrategy};
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 
 /// Builder for constructing Particle Filters
 ///
@@ -34,7 +34,7 @@ pub struct ParticleFilterBuilder<T: KalmanScalar> {
 impl<T: KalmanScalar> ParticleFilterBuilder<T> {
     /// Create a new builder with the given state dimension and number of particles
     pub fn new(state_dim: usize, num_particles: usize) -> Self {
-        debug!(
+        trace!(
             "Creating ParticleFilterBuilder: state_dim={}, num_particles={}",
             state_dim, num_particles
         );
@@ -95,7 +95,7 @@ impl<T: KalmanScalar> ParticleFilterBuilder<T> {
 
     /// Build the Particle Filter
     pub fn build(self) -> KalmanResult<ParticleFilter<T>> {
-        debug!(
+        trace!(
             "Building Particle Filter: state_dim={}, num_particles={}",
             self.state_dim, self.num_particles
         );

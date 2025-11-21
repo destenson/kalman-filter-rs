@@ -107,7 +107,7 @@ fn demo_linear_kf() {
         .build()
         .unwrap();
 
-    debug!("Running predict/update cycle");
+    println!("Running predict/update cycle");
 
     // Run a few cycles
     for i in 1..=3 {

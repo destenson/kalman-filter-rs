@@ -101,7 +101,7 @@ where
         dt: T,
     ) -> KalmanResult<Self> {
         log_filter_dimensions(state_dim, measurement_noise_std.len(), None);
-        debug!(
+        trace!(
             "Particle Filter: Initializing with {} particles",
             num_particles
         );
@@ -184,7 +184,7 @@ where
         let _timer = crate::metrics::MetricsTimer::start();
 
         let mean_state = self.mean();
-        debug!(
+        trace!(
             "Particle Filter predict: {} prior={:.4}",
             format_state(&mean_state, "mean_state"),
             state_norm(&mean_state)
@@ -209,7 +209,7 @@ where
         }
 
         let new_mean_state = self.mean();
-        debug!(
+        trace!(
             "Particle Filter predict: {} posterior={:.4}",
             format_state(&new_mean_state, "mean_state"),
             state_norm(&new_mean_state)
@@ -231,7 +231,7 @@ where
         #[cfg(feature = "prometheus-metrics")]
         let _timer = crate::metrics::MetricsTimer::start();
 
-        debug!(
+        trace!(
             "Particle Filter update: {}",
             format_state(measurement, "measurement")
         );
@@ -268,7 +268,7 @@ where
 
         // Check for particle degeneracy and resample if needed
         let ess = self.effective_sample_size();
-        debug!(
+        trace!(
             "Particle Filter update: ESS={:.2}/{}, threshold={:.2}",
             KalmanScalar::to_f64(&ess),
             self.num_particles,
@@ -276,12 +276,12 @@ where
         );
 
         if ess < self.ess_threshold {
-            debug!("Particle Filter: Resampling triggered (ESS below threshold)");
+            trace!("Particle Filter: Resampling triggered (ESS below threshold)");
             self.resample()?;
         }
 
         let final_mean_state = self.mean();
-        debug!(
+        trace!(
             "Particle Filter update: {} posterior={:.4}",
             format_state(&final_mean_state, "mean_state"),
             state_norm(&final_mean_state)
@@ -334,7 +334,7 @@ where
         };
 
         if result.is_ok() {
-            debug!("Particle Filter: Resampling completed, weights reset to uniform");
+            trace!("Particle Filter: Resampling completed, weights reset to uniform");
             #[cfg(feature = "prometheus-metrics")]
             crate::metrics::record_resampling("pf", strategy_str);
         } else {

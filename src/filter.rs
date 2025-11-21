@@ -154,7 +154,7 @@ where
         // Check numerical stability of initial covariance
         check_numerical_stability(&initial_covariance, n, "Initial covariance");
 
-        debug!(
+        trace!(
             "Kalman filter initialized: {}",
             format_state(&initial_state, "initial_state")
         );
@@ -186,7 +186,7 @@ where
     pub fn predict(&mut self) {
         let n = self.state_dim;
 
-        debug!("Predict step: state_norm={:.6}", state_norm(&self.x));
+        trace!("Predict step: state_norm={:.6}", state_norm(&self.x));
 
         #[cfg(feature = "prometheus-metrics")]
         let _timer = crate::metrics::MetricsTimer::start();
@@ -228,7 +228,7 @@ where
 
         check_numerical_stability(&self.P, n, "Predicted covariance");
 
-        debug!("Predict complete: state_norm={:.6}", state_norm(&self.x));
+        trace!("Predict complete: state_norm={:.6}", state_norm(&self.x));
 
         #[cfg(feature = "prometheus-metrics")]
         {
@@ -249,7 +249,7 @@ where
         let n = self.state_dim;
         let m = self.measurement_dim;
 
-        debug!(
+        trace!(
             "Update step: measurement_norm={:.6}",
             state_norm(measurement)
         );
@@ -281,7 +281,7 @@ where
             *y_i = *y_i - hx;
         }
 
-        debug!("Innovation: {}", format_innovation(&y));
+        trace!("Innovation: {}", format_innovation(&y));
 
         // Calculate innovation norm for metrics
         #[cfg(feature = "prometheus-metrics")]
@@ -397,7 +397,7 @@ where
 
         check_numerical_stability(&self.P, n, "Updated covariance");
 
-        debug!("Update complete: state_norm={:.6}", state_norm(&self.x));
+        trace!("Update complete: state_norm={:.6}", state_norm(&self.x));
 
         #[cfg(feature = "prometheus-metrics")]
         {

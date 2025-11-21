@@ -2,7 +2,7 @@
 
 use crate::types::{KalmanError, KalmanResult, KalmanScalar, NonlinearSystem};
 use crate::unscented::{UKFParameters, UnscentedKalmanFilter};
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 
 /// Builder for constructing Unscented Kalman Filters
 ///
@@ -52,11 +52,13 @@ where
 {
     /// Create a new builder with the nonlinear system
     pub fn new(system: S) -> Self {
-        debug!(
-            "Creating UnscentedKalmanFilterBuilder: state_dim={}, measurement_dim={}",
-            system.state_dim(),
-            system.measurement_dim()
-        );
+        if log::log_enabled!(log::Level::Trace) {
+            trace!(
+                "Creating UnscentedKalmanFilterBuilder: state_dim={}, measurement_dim={}",
+                system.state_dim(),
+                system.measurement_dim()
+            );
+        }
         Self {
             system,
             initial_state: None,
@@ -134,7 +136,7 @@ where
         let n = self.system.state_dim();
         let m = self.system.measurement_dim();
 
-        debug!(
+        trace!(
             "Building Unscented Kalman Filter: state_dim={}, measurement_dim={}",
             n, m
         );

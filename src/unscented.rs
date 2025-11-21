@@ -439,7 +439,7 @@ where
             });
         }
 
-        debug!("UKF update: {}", format_state(measurement, "measurement"));
+        trace!("UKF update: {}", format_state(measurement, "measurement"));
 
         // Transform sigma points through measurement function
         let mut measurement_sigma = vec![T::zero(); m * num_sigma];
@@ -516,7 +516,7 @@ where
             y[i] = measurement[i] - z_pred[i];
         }
 
-        debug!("UKF update: {}", format_innovation(&y));
+        trace!("UKF update: {}", format_innovation(&y));
 
         // Calculate innovation norm for metrics
         #[cfg(feature = "prometheus-metrics")]
