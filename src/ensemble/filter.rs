@@ -240,11 +240,11 @@ where
 
         // Compute mean
         let mut mean = vec![T::zero(); n];
-        for i in 0..n {
+        for (i, mean_i) in mean.iter_mut().enumerate() {
             for j in 0..m {
-                mean[i] = mean[i] + self.ensemble[i * m + j];
+                *mean_i = *mean_i + self.ensemble[i * m + j];
             }
-            mean[i] = mean[i] / T::from(m).unwrap();
+            *mean_i = *mean_i / T::from(m).unwrap();
         }
 
         // Compute anomalies and spread
@@ -285,8 +285,8 @@ where
         for j in 0..m {
             // Extract member j
             let mut member = vec![T::zero(); n];
-            for i in 0..n {
-                member[i] = self.ensemble[i * m + j];
+            for (i, member_i) in member.iter_mut().enumerate() {
+                *member_i = self.ensemble[i * m + j];
             }
 
             // Propagate through nonlinear model
@@ -372,8 +372,8 @@ where
         let mut H_ensemble = vec![T::zero(); m_obs * m_state];
         for j in 0..m_state {
             let mut member = vec![T::zero(); n];
-            for i in 0..n {
-                member[i] = self.ensemble[i * m_state + j];
+            for (i, member_i) in member.iter_mut().enumerate() {
+                *member_i = self.ensemble[i * m_state + j];
             }
 
             let h_x = self.system.measurement(&member);

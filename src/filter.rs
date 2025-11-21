@@ -197,9 +197,9 @@ where
 
         // x = F * x
         let mut new_x = vec![T::zero(); n];
-        for i in 0..n {
+        for (i, new_x_i) in new_x.iter_mut().enumerate() {
             for j in 0..n {
-                new_x[i] = new_x[i] + self.F[i * n + j] * self.x[j];
+                *new_x_i = *new_x_i + self.F[i * n + j] * self.x[j];
             }
         }
         self.x = new_x;
@@ -273,12 +273,12 @@ where
 
         // Innovation: y = z - H * x
         let mut y = measurement.to_vec();
-        for i in 0..m {
+        for (i, y_i) in y.iter_mut().enumerate() {
             let mut hx = T::zero();
             for j in 0..n {
                 hx = hx + self.H[i * n + j] * self.x[j];
             }
-            y[i] = y[i] - hx;
+            *y_i = *y_i - hx;
         }
 
         debug!("Innovation: {}", format_innovation(&y));
@@ -448,13 +448,8 @@ where
                     if a[j * size + i].abs() > <T as KalmanScalar>::epsilon() {
                         // Swap rows
                         for k in 0..size {
-                            let temp = a[i * size + k];
-                            a[i * size + k] = a[j * size + k];
-                            a[j * size + k] = temp;
-
-                            let temp = inv[i * size + k];
-                            inv[i * size + k] = inv[j * size + k];
-                            inv[j * size + k] = temp;
+                            a.swap(i * size + k, j * size + k);
+                            inv.swap(i * size + k, j * size + k);
                         }
                         pivot = a[i * size + i];
                         break;

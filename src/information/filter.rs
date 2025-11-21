@@ -146,12 +146,12 @@ impl<T: KalmanScalar> InformationForm<T> for InformationState<T> {
         trace!("Information Filter: Adding information update");
 
         // Y = Y + ΔY
-        for i in 0..self.Y.len() {
-            self.Y[i] = self.Y[i] + delta_Y[i];
+        for (yi, &dyi) in self.Y.iter_mut().zip(delta_Y.iter()) {
+            *yi = *yi + dyi;
         }
         // y = y + Δy
-        for i in 0..self.y.len() {
-            self.y[i] = self.y[i] + delta_y[i];
+        for (yi, &dyi) in self.y.iter_mut().zip(delta_y.iter()) {
+            *yi = *yi + dyi;
         }
 
         check_numerical_stability(&self.Y, self.dim, "Updated information matrix Y");
@@ -312,9 +312,9 @@ impl<T: KalmanScalar> InformationFilter<T> {
 
         // Then compute F·x_k-1
         let mut Fx = vec![T::zero(); n];
-        for i in 0..n {
-            for j in 0..n {
-                Fx[i] = Fx[i] + self.F[i * n + j] * x_prev[j];
+        for (i, fx_i) in Fx.iter_mut().enumerate() {
+            for (j, &x_j) in x_prev.iter().enumerate() {
+                *fx_i = *fx_i + self.F[i * n + j] * x_j;
             }
         }
 
@@ -538,5 +538,232 @@ mod tests {
         let state = filter.get_state().unwrap();
         assert!(state[0] > 0.0);
         assert!(state[0] < 1.0);
+    }
+
+    // =========================================================================
+    // Additional tests for Information Filter mathematical properties
+    // =========================================================================
+
+    #[test]
+    fn test_information_state_dimension_mismatch() {
+        // Y has wrong dimension for y
+        let Y = vec![1.0, 0.0, 0.0, 1.0]; // 2x2
+        let y = vec![1.0, 2.0, 3.0]; // 3x1 - mismatch!
+        let result = InformationState::from_information(Y, y);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_information_state_covariance_dimension_mismatch() {
+        let state = vec![1.0, 2.0];
+        let covariance = vec![1.0]; // 1x1 but state is 2x1
+        let result = InformationState::<f64>::from_state_covariance(&state, &covariance);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_information_update_increases_information() {
+        // Key property: updates ALWAYS add information (Y increases)
+        let Y_init = vec![1.0, 0.0, 0.0, 1.0];
+        let y_init = vec![0.0, 0.0];
+
+        let mut filter = InformationFilter::new(
+            2,
+            1,
+            Y_init.clone(),
+            y_init,
+            vec![1.0, 0.0, 0.0, 1.0],
+            vec![0.01, 0.0, 0.0, 0.01],
+            vec![1.0, 0.0],
+            vec![0.1],
+        )
+        .unwrap();
+
+        let Y_before = filter.state.Y.clone();
+        filter.update(&[5.0]).unwrap();
+        let Y_after = &filter.state.Y;
+
+        // Information matrix should increase (in the positive semi-definite sense)
+        // For symmetric matrices, trace(Y_after) >= trace(Y_before)
+        let trace_before: f64 = Y_before[0] + Y_before[3];
+        let trace_after: f64 = Y_after[0] + Y_after[3];
+        assert!(trace_after > trace_before,
+            "Update should increase information. Before: {}, After: {}", trace_before, trace_after);
+    }
+
+    #[test]
+    fn test_information_predict_decreases_information() {
+        // Key property: predictions DECREASE information (add uncertainty)
+        let Y_init = vec![10.0, 0.0, 0.0, 10.0];
+        let y_init = vec![10.0, 10.0]; // x = [1, 1]
+
+        let mut filter = InformationFilter::new(
+            2,
+            1,
+            Y_init.clone(),
+            y_init,
+            vec![1.0, 0.0, 0.0, 1.0], // Identity dynamics
+            vec![0.1, 0.0, 0.0, 0.1], // Some process noise
+            vec![1.0, 0.0],
+            vec![0.1],
+        )
+        .unwrap();
+
+        let trace_before: f64 = filter.state.Y[0] + filter.state.Y[3];
+        filter.predict().unwrap();
+        let trace_after: f64 = filter.state.Y[0] + filter.state.Y[3];
+
+        assert!(trace_after < trace_before,
+            "Predict should decrease information. Before: {}, After: {}", trace_before, trace_after);
+    }
+
+    #[test]
+    fn test_information_filter_convergence() {
+        // IF should converge to true value with repeated measurements
+        let mut filter = InformationFilter::<f64>::new(
+            1,
+            1,
+            vec![0.1],   // Low initial information (high uncertainty)
+            vec![0.0],   // Zero initial state
+            vec![1.0],   // F
+            vec![0.001], // Small Q
+            vec![1.0],   // H
+            vec![0.1],   // R
+        )
+        .unwrap();
+
+        let true_value = 5.0_f64;
+
+        for _ in 0..50 {
+            filter.predict().unwrap();
+            filter.update(&[true_value]).unwrap();
+        }
+
+        let state = filter.get_state().unwrap();
+        let error = (state[0] - true_value).abs();
+        assert!(error < 0.5_f64, "IF should converge. Error: {}, State: {}", error, state[0]);
+    }
+
+    #[test]
+    fn test_information_filter_measurement_dimension_check() {
+        let mut filter = InformationFilter::new(
+            2,
+            1,
+            vec![1.0, 0.0, 0.0, 1.0],
+            vec![0.0, 0.0],
+            vec![1.0, 0.0, 0.0, 1.0],
+            vec![0.01, 0.0, 0.0, 0.01],
+            vec![1.0, 0.0],
+            vec![0.1],
+        )
+        .unwrap();
+
+        // Wrong measurement dimension
+        let result = filter.update(&[1.0, 2.0]); // 2x1 but should be 1x1
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_information_state_symmetry_preserved() {
+        // Information matrix Y should remain symmetric
+        let state: Vec<f64> = vec![1.0, 2.0];
+        let covariance: Vec<f64> = vec![2.0, 0.5, 0.5, 1.0]; // Symmetric
+
+        let info = InformationState::from_state_covariance(&state, &covariance).unwrap();
+
+        // Check Y is symmetric
+        let Y = &info.Y;
+        assert!((Y[1] - Y[2]).abs() < 1e-10_f64,
+            "Y should be symmetric. Y[0,1]={}, Y[1,0]={}", Y[1], Y[2]);
+    }
+
+    #[test]
+    fn test_roundtrip_conversion_preserves_values() {
+        // Convert state/cov -> info -> state/cov should be identity
+        let original_state: Vec<f64> = vec![3.0, -2.0, 7.0];
+        let original_cov: Vec<f64> = vec![
+            2.0, 0.1, 0.05,
+            0.1, 1.5, 0.2,
+            0.05, 0.2, 1.0,
+        ];
+
+        let info = InformationState::from_state_covariance(&original_state, &original_cov).unwrap();
+        let recovered_state = info.recover_state().unwrap();
+        let recovered_cov = info.recover_covariance().unwrap();
+
+        for i in 0..3 {
+            assert!((original_state[i] - recovered_state[i]).abs() < 1e-8_f64,
+                "State mismatch at {}: {} vs {}", i, original_state[i], recovered_state[i]);
+        }
+
+        for i in 0..9 {
+            assert!((original_cov[i] - recovered_cov[i]).abs() < 1e-8_f64,
+                "Covariance mismatch at {}: {} vs {}", i, original_cov[i], recovered_cov[i]);
+        }
+    }
+
+    #[test]
+    fn test_add_information_accumulates() {
+        let mut state = InformationState::<f64>::new(2);
+        state.Y = vec![1.0, 0.0, 0.0, 1.0];
+        state.y = vec![1.0, 1.0];
+
+        // Add first update
+        state.add_information(&[2.0, 0.0], &[2.0, 0.0, 0.0, 0.0]);
+
+        assert_eq!(state.Y[0], 3.0); // 1 + 2
+        assert_eq!(state.y[0], 3.0); // 1 + 2
+
+        // Add second update
+        state.add_information(&[1.5, 0.5], &[0.0, 0.0, 0.0, 1.5]);
+
+        assert_eq!(state.Y[0], 3.0); // unchanged
+        assert_eq!(state.Y[3], 2.5); // 1 + 1.5
+        assert_eq!(state.y[0], 4.5); // 3 + 1.5
+        assert_eq!(state.y[1], 1.5); // 1 + 0.5
+    }
+
+    #[test]
+    fn test_fuse_measurements_order_independent() {
+        // Fusing measurements should give same result regardless of order
+        // This is a key property of information form
+        let create_filter = || {
+            InformationFilter::new(
+                2,
+                1,
+                vec![1.0, 0.0, 0.0, 1.0],
+                vec![0.0, 0.0],
+                vec![1.0, 0.0, 0.0, 1.0],
+                vec![0.01, 0.0, 0.0, 0.01],
+                vec![1.0, 0.0],
+                vec![0.1],
+            )
+            .unwrap()
+        };
+
+        let z1: &[f64] = &[1.0];
+        let H1: &[f64] = &[1.0, 0.0];
+        let R1: &[f64] = &[0.1];
+
+        let z2: &[f64] = &[2.0];
+        let H2: &[f64] = &[0.0, 1.0];
+        let R2: &[f64] = &[0.2];
+
+        // Fuse in order [1, 2]
+        let mut filter1 = create_filter();
+        filter1.fuse_measurements(vec![(z1, H1, R1), (z2, H2, R2)]).unwrap();
+        let state1 = filter1.get_state().unwrap();
+
+        // Fuse in order [2, 1]
+        let mut filter2 = create_filter();
+        filter2.fuse_measurements(vec![(z2, H2, R2), (z1, H1, R1)]).unwrap();
+        let state2 = filter2.get_state().unwrap();
+
+        // Results should be identical
+        for i in 0..2 {
+            assert!((state1[i] - state2[i]).abs() < 1e-10,
+                "Fusion should be order-independent. state1[{}]={}, state2[{}]={}",
+                i, state1[i], i, state2[i]);
+        }
     }
 }
