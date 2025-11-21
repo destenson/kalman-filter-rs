@@ -324,7 +324,7 @@ fn main() {
     let mut kf = StaticKalmanFilter::new(x0, P0, F, Q, H_gps, R_gps);
 
     // Simulation parameters
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let gps_noise = Normal::new(0.0, 0.5).unwrap();
 
     // True trajectory

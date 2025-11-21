@@ -436,11 +436,11 @@ fn bench_sparse_vs_dense() {
 
     // Create sparse matrix
     let mut dense = vec![0.0; n * n];
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     for i in 0..n {
         for j in 0..n {
             if rand::random::<f64>() > sparsity {
-                dense[i * n + j] = rng.gen_range(-1.0f64..1.0f64);
+                dense[i * n + j] = rng.random_range(-1.0f64..1.0f64);
             }
         }
     }

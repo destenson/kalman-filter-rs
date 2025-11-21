@@ -8,8 +8,8 @@ use crate::logging::{format_state, log_filter_dimensions, state_norm};
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
 use log::{debug, error, info, trace, warn};
 use num_traits::{One, Zero};
-use rand::distributions::{Distribution, Uniform};
-use rand::{thread_rng, Rng};
+use rand_distr::{Distribution, Uniform};
+use rand::{rng, Rng};
 use rand_distr::Normal;
 use std::f64::consts::PI;
 
@@ -133,7 +133,7 @@ where
 
         // Initialize particles from initial distribution
         let mut particles = Vec::with_capacity(num_particles);
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let initial_weight = T::one() / T::from(num_particles).unwrap();
         let initial_log_weight = initial_weight.ln();
 
@@ -190,7 +190,7 @@ where
             state_norm(&mean_state)
         );
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         for particle in &mut self.particles {
             // Apply motion model
@@ -346,7 +346,7 @@ where
 
     /// Multinomial resampling
     fn multinomial_resample(&mut self) -> KalmanResult<()> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut new_particles = Vec::with_capacity(self.num_particles);
 
         // Build cumulative distribution
@@ -361,7 +361,7 @@ where
         let log_weight = uniform_weight.ln();
 
         for _ in 0..self.num_particles {
-            let u: f64 = rng.gen();
+            let u: f64 = rng.random();
             let u_t = T::from(u).unwrap();
 
             // Binary search for particle
@@ -386,7 +386,7 @@ where
 
     /// Systematic resampling (lower variance)
     fn systematic_resample(&mut self) -> KalmanResult<()> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut new_particles = Vec::with_capacity(self.num_particles);
 
         // Build cumulative distribution
@@ -398,7 +398,7 @@ where
 
         // Systematic resampling
         let step = T::one() / T::from(self.num_particles).unwrap();
-        let u0: f64 = rng.gen::<f64>() / self.num_particles as f64;
+        let u0: f64 = rng.random::<f64>() / self.num_particles as f64;
         let uniform_weight = step;
         let log_weight = uniform_weight.ln();
 
@@ -423,7 +423,7 @@ where
 
     /// Stratified resampling
     fn stratified_resample(&mut self) -> KalmanResult<()> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut new_particles = Vec::with_capacity(self.num_particles);
 
         // Build cumulative distribution
@@ -439,7 +439,7 @@ where
         let log_weight = uniform_weight.ln();
 
         for i in 0..self.num_particles {
-            let u: f64 = (i as f64 + rng.gen::<f64>()) / self.num_particles as f64;
+            let u: f64 = (i as f64 + rng.random::<f64>()) / self.num_particles as f64;
             let u_t = T::from(u).unwrap();
 
             // Find particle
@@ -491,9 +491,9 @@ where
             }
 
             // Sample from residuals
-            let mut rng = thread_rng();
+            let mut rng = rng();
             for _ in 0..remaining {
-                let u: f64 = rng.gen();
+                let u: f64 = rng.random();
                 let mut cumsum = 0.0;
 
                 for (i, &r) in residuals.iter().enumerate() {

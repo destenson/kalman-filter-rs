@@ -11,8 +11,8 @@ use crate::logging::{
 use crate::types::{KalmanError, KalmanResult, KalmanScalar, NonlinearSystem};
 use log::{debug, error, info, trace, warn};
 use num_traits::{One, Zero};
-use rand::distributions::Distribution;
-use rand::thread_rng;
+use rand_distr::Distribution;
+use rand::rng;
 use rand_distr::Normal;
 
 /// Statistics computed from an ensemble
@@ -186,7 +186,7 @@ where
 
         // Initialize ensemble from initial distribution
         let mut ensemble = vec![T::zero(); n * ensemble_size];
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         for j in 0..ensemble_size {
             for i in 0..n {
@@ -351,7 +351,7 @@ where
 
         // Generate observation ensemble (perturbed observations)
         let mut obs_ensemble = vec![T::zero(); m_obs * m_state];
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         for j in 0..m_state {
             for i in 0..m_obs {

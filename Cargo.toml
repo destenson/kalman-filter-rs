@@ -1,9 +1,13 @@
 [package]
 name = "kalman_filters"
-version = "1.0.1"
-authors = ["Dennis E <git+kalman-filters@destenson.digital>", "Claude AI Assistant"]
+version = "1.1.0"
+authors = [
+    "Dennis E <git+kalman-filters@destenson.digital>",
+    "Claude AI Assistant",
+]
 license = "MIT"
-edition = "2021"
+# TODO: update to 2024
+edition = "2024"
 repository = "https://github.com/destenson/kalman-filter-rs"
 description = "Comprehensive Kalman filter library with multiple variants (EKF, UKF, Information Filter, Particle Filter, etc.)"
 keywords = ["kalman", "filter", "estimation", "tracking", "sensor-fusion"]
@@ -13,7 +17,7 @@ readme = "README.md"
 
 [features]
 default = ["std"]
-std = ["rand_distr/std","adskalman?/std"]
+std = ["rand_distr/std", "adskalman?/std"]
 alloc = ["rand_distr/alloc"]
 nalgebra = ["dep:nalgebra"]
 opencv = ["dep:opencv"]
@@ -28,26 +32,28 @@ prometheus-metrics = ["dep:prometheus-client", "dep:once_cell"]
 [dependencies]
 approx = "0.5"
 num-traits = "0.2"
-rand = "0.8"
-rand_distr = { version = "0.4", default-features = false }
+rand = "0.9.2"
+rand_distr = { version = "0.5.1", default-features = false }
 nalgebra = { version = "0.34.1", optional = true }
 opencv = { version = "0.95.1", optional = true }
 rayon = { version = "1.7", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
 adskalman = { version = "0.17.0", optional = true }
 log = "0.4.28"
-tracing-subscriber = { version = "0.3.20", features = ["env-filter"], optional = true }
+tracing-subscriber = { version = "0.3.20", features = [
+    "env-filter",
+], optional = true }
 prometheus-client = { version = "0.24.0", optional = true }
 once_cell = { version = "1.21.3", optional = true }
 
 
 [dev-dependencies]
-criterion = "0.7.0"
+criterion = "0.7"
 env_logger = "0.11"
-quickcheck = "1.0"
-quickcheck_macros = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.143"
+quickcheck = "1"
+quickcheck_macros = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 
 [[bench]]
