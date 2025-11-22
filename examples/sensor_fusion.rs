@@ -153,8 +153,12 @@ fn main() {
     let omega = 0.2; // Angular frequency
     let radius = 10.0;
 
-    println!("Time | True X | True Y | GPS X  | GPS Y  | Radar X| Radar Y| Est. X | Est. Y | Est. Vx| Est. Vy");
-    println!("-----|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------");
+    println!(
+        "Time | True X | True Y | GPS X  | GPS Y  | Radar X| Radar Y| Est. X | Est. Y | Est. Vx| Est. Vy"
+    );
+    println!(
+        "-----|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------"
+    );
 
     for step in 0..100 {
         let t = step as f64 * dt;

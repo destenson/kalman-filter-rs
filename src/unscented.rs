@@ -191,8 +191,8 @@ where
         let num_sigma_points = 2 * n + 1;
 
         // Compute lambda
-        let lambda = params.alpha * params.alpha * (T::from_usize(n) + params.kappa)
-            - T::from_usize(n);
+        let lambda =
+            params.alpha * params.alpha * (T::from_usize(n) + params.kappa) - T::from_usize(n);
 
         // Compute weights
         let mut weights_mean = vec![T::zero(); num_sigma_points];
@@ -233,8 +233,8 @@ where
         let n = self.state_dim;
 
         // Recompute lambda
-        self.lambda = params.alpha * params.alpha * (T::from_usize(n) + params.kappa)
-            - T::from_usize(n);
+        self.lambda =
+            params.alpha * params.alpha * (T::from_usize(n) + params.kappa) - T::from_usize(n);
 
         // Recompute weights
         self.weights_mean[0] = self.lambda / (T::from_usize(n) + self.lambda);
@@ -310,7 +310,12 @@ where
 
                 if i == j {
                     if sum <= T::zero() {
-                        error!("UKF: Cholesky decomposition failed - negative diagonal element at ({},{}) = {:.6e}", i, j, KalmanScalar::to_f64(&sum));
+                        error!(
+                            "UKF: Cholesky decomposition failed - negative diagonal element at ({},{}) = {:.6e}",
+                            i,
+                            j,
+                            KalmanScalar::to_f64(&sum)
+                        );
                         return Err(KalmanError::SingularMatrix);
                     }
                     L[i * n + j] = sum.sqrt();
@@ -891,10 +896,7 @@ mod tests {
         // Test that sigma points are generated with correct count and spread
         let system = VanDerPolOscillator { mu: 1.0 };
         let mean = vec![2.0, 1.0];
-        let cov = vec![
-            1.0, 0.0,
-            0.0, 0.5,
-        ];
+        let cov = vec![1.0, 0.0, 0.0, 0.5];
 
         let mut ukf = UnscentedKalmanFilter::new(
             system,
@@ -910,7 +912,11 @@ mod tests {
 
         // For n=2, we should have 2n+1 = 5 sigma points
         // Each point has n=2 components, total = 10 values
-        assert_eq!(ukf.sigma_points.len(), 10, "Should have 5 sigma points * 2 components");
+        assert_eq!(
+            ukf.sigma_points.len(),
+            10,
+            "Should have 5 sigma points * 2 components"
+        );
 
         // All sigma points should be finite
         for (i, val) in ukf.sigma_points.iter().enumerate() {
@@ -931,8 +937,16 @@ mod tests {
         assert!(y_spread > 0.0, "y should have positive spread");
 
         // Spread should be reasonable (not too small or too large)
-        assert!(x_spread < 100.0, "x spread unreasonably large: {}", x_spread);
-        assert!(y_spread < 100.0, "y spread unreasonably large: {}", y_spread);
+        assert!(
+            x_spread < 100.0,
+            "x spread unreasonably large: {}",
+            x_spread
+        );
+        assert!(
+            y_spread < 100.0,
+            "y spread unreasonably large: {}",
+            y_spread
+        );
     }
 
     #[test]
@@ -975,7 +989,11 @@ mod tests {
 
             // Check for NaN/Inf
             for val in ukf.state() {
-                assert!(val.is_finite(), "State became non-finite: {:?}", ukf.state());
+                assert!(
+                    val.is_finite(),
+                    "State became non-finite: {:?}",
+                    ukf.state()
+                );
             }
             for val in ukf.covariance() {
                 assert!(val.is_finite(), "Covariance became non-finite");
@@ -1035,7 +1053,11 @@ mod tests {
 
         // Both should converge to similar results for static measurement
         let diff = (ukf_conservative.state()[0] - ukf_aggressive.state()[0]).abs();
-        assert!(diff < 1.0, "Different UKF params gave very different results: {}", diff);
+        assert!(
+            diff < 1.0,
+            "Different UKF params gave very different results: {}",
+            diff
+        );
     }
 
     #[test]
@@ -1057,8 +1079,11 @@ mod tests {
 
         // Sum of mean weights should be 1
         let sum = weight_0 + 2.0 * n as f64 * weight_i;
-        assert!((sum - 1.0).abs() < 1e-10,
-            "Mean weights should sum to 1. Got: {}", sum);
+        assert!(
+            (sum - 1.0).abs() < 1e-10,
+            "Mean weights should sum to 1. Got: {}",
+            sum
+        );
     }
 
     // Simple deterministic pseudo-random for tests

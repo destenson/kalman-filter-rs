@@ -273,7 +273,10 @@ mod tests {
     fn test_condition_number_identity() {
         let identity = vec![1.0, 0.0, 0.0, 1.0];
         let cond = estimate_condition_number(&identity, 2);
-        assert!((cond - 1.0).abs() < 1e-10, "Identity matrix has condition number 1");
+        assert!(
+            (cond - 1.0).abs() < 1e-10,
+            "Identity matrix has condition number 1"
+        );
     }
 
     #[test]
@@ -289,18 +292,20 @@ mod tests {
         // Zero on diagonal should give infinity (or very large number)
         let p = vec![1.0, 0.0, 0.0, 0.0];
         let cond = estimate_condition_number(&p, 2);
-        assert!(cond > 1e10, "Zero diagonal should give huge condition number");
+        assert!(
+            cond > 1e10,
+            "Zero diagonal should give huge condition number"
+        );
     }
 
     #[test]
     fn test_condition_number_3x3() {
         // Test with larger matrix
-        let p = vec![
-            10.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-            0.0, 0.0, 0.1,
-        ];
+        let p = vec![10.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.1];
         let cond = estimate_condition_number(&p, 3);
-        assert!((cond - 100.0).abs() < 1e-10, "Condition number should be 10/0.1 = 100");
+        assert!(
+            (cond - 100.0).abs() < 1e-10,
+            "Condition number should be 10/0.1 = 100"
+        );
     }
 }

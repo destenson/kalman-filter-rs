@@ -4,9 +4,7 @@
 //! not just specific test cases. They test the fundamental properties of Kalman filtering.
 
 use kalman_filters::filter::KalmanFilter;
-use kalman_filters::information::{
-    kalman_to_information, InformationForm, InformationState,
-};
+use kalman_filters::information::{InformationForm, InformationState, kalman_to_information};
 use kalman_filters::{ExtendedKalmanFilterBuilder, InformationFilterBuilder, NonlinearSystem};
 
 const EPSILON: f64 = 1e-8;

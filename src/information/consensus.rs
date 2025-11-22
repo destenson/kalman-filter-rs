@@ -190,8 +190,12 @@ impl<T: KalmanScalar> ConsensusAlgorithm<T> for AverageConsensus<T> {
     fn is_converged(&self, epsilon: T) -> bool {
         let converged = self.max_change < epsilon && self.iterations > 0;
         if converged {
-            debug!("AverageConsensus converged after {} iterations (max_change={:.6e} < epsilon={:.6e})",
-                   self.iterations, KalmanScalar::to_f64(&self.max_change), KalmanScalar::to_f64(&epsilon));
+            debug!(
+                "AverageConsensus converged after {} iterations (max_change={:.6e} < epsilon={:.6e})",
+                self.iterations,
+                KalmanScalar::to_f64(&self.max_change),
+                KalmanScalar::to_f64(&epsilon)
+            );
         }
         converged
     }
@@ -418,7 +422,11 @@ impl<T: KalmanScalar> ConsensusAlgorithm<T> for MaxConsensus<T> {
             );
 
             // Propagate max to neighbors
-            let max_state = self.max_state.as_ref().expect("max_state should be set during iteration").clone();
+            let max_state = self
+                .max_state
+                .as_ref()
+                .expect("max_state should be set during iteration")
+                .clone();
 
             for (current_node, neighbors) in topology {
                 if neighbors.contains(&node_id) || *current_node == node_id {

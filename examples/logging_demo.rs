@@ -21,7 +21,7 @@ use kalman_filters::{ExtendedKalmanFilter, KalmanFilterBuilder, NonlinearSystem}
 use log::{debug, info, warn};
 
 #[cfg(feature = "tracing-subscriber")]
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 /// Simple pendulum system for demonstrating EKF logging
 struct PendulumSystem {

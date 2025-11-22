@@ -134,15 +134,31 @@ fn test_ensemble_kalman_filter_builder() {
 
     // Verify ensemble mean is close to initial mean
     let mean = enkf.mean();
-    assert!((mean[0] - 0.0).abs() < 0.5, "Ensemble mean[0] should be near 0.0, got {}", mean[0]);
-    assert!((mean[1] - 1.0).abs() < 0.5, "Ensemble mean[1] should be near 1.0, got {}", mean[1]);
+    assert!(
+        (mean[0] - 0.0).abs() < 0.5,
+        "Ensemble mean[0] should be near 0.0, got {}",
+        mean[0]
+    );
+    assert!(
+        (mean[1] - 1.0).abs() < 0.5,
+        "Ensemble mean[1] should be near 1.0, got {}",
+        mean[1]
+    );
 
     // Verify spread is reasonable (should be around initial_spread)
     let spread = enkf.spread();
     assert!(spread[0] > 0.0, "Spread[0] should be positive");
     assert!(spread[1] > 0.0, "Spread[1] should be positive");
-    assert!(spread[0] < 3.0, "Spread[0] shouldn't be too large, got {}", spread[0]);
-    assert!(spread[1] < 3.0, "Spread[1] shouldn't be too large, got {}", spread[1]);
+    assert!(
+        spread[0] < 3.0,
+        "Spread[0] shouldn't be too large, got {}",
+        spread[0]
+    );
+    assert!(
+        spread[1] < 3.0,
+        "Spread[1] shouldn't be too large, got {}",
+        spread[1]
+    );
 }
 
 #[test]
@@ -213,21 +229,42 @@ fn test_particle_filter_builder() {
 
     // Verify particle mean is close to initial mean
     let mean = pf.mean();
-    assert!((mean[0] - 0.0_f64).abs() < 0.5, "Particle mean[0] should be near 0.0, got {}", mean[0]);
-    assert!((mean[1] - 1.0_f64).abs() < 0.5, "Particle mean[1] should be near 1.0, got {}", mean[1]);
+    assert!(
+        (mean[0] - 0.0_f64).abs() < 0.5,
+        "Particle mean[0] should be near 0.0, got {}",
+        mean[0]
+    );
+    assert!(
+        (mean[1] - 1.0_f64).abs() < 0.5,
+        "Particle mean[1] should be near 1.0, got {}",
+        mean[1]
+    );
 
     // Verify particles were created
     assert_eq!(pf.particles.len(), 100, "Should have 100 particles");
 
     // Verify all particles have correct state dimension
     for (i, particle) in pf.particles.iter().enumerate() {
-        assert_eq!(particle.state.len(), 2, "Particle {} should have 2-D state", i);
-        assert!(particle.weight > 0.0, "Particle {} should have positive weight", i);
+        assert_eq!(
+            particle.state.len(),
+            2,
+            "Particle {} should have 2-D state",
+            i
+        );
+        assert!(
+            particle.weight > 0.0,
+            "Particle {} should have positive weight",
+            i
+        );
     }
 
     // Verify initial weights sum to 1
     let total_weight: f64 = pf.particles.iter().map(|p| p.weight).sum();
-    assert!((total_weight - 1.0).abs() < 1e-10, "Weights should sum to 1.0, got {}", total_weight);
+    assert!(
+        (total_weight - 1.0).abs() < 1e-10,
+        "Weights should sum to 1.0, got {}",
+        total_weight
+    );
 }
 
 #[test]

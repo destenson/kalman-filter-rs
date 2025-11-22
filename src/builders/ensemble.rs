@@ -2,7 +2,7 @@
 
 use crate::ensemble::EnsembleKalmanFilter;
 use crate::types::{KalmanError, KalmanResult, KalmanScalar, NonlinearSystem};
-use log::{debug, error, trace, info};
+use log::{debug, error, info, trace};
 
 /// Builder for constructing Ensemble Kalman Filters
 ///

@@ -8,9 +8,9 @@ use crate::logging::{format_state, log_filter_dimensions, state_norm};
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
 use log::{debug, error, info, trace, warn};
 use num_traits::{One, Zero};
-use rand_distr::{Distribution, Uniform};
-use rand::{rng, Rng};
+use rand::{Rng, rng};
 use rand_distr::Normal;
+use rand_distr::{Distribution, Uniform};
 use std::f64::consts::PI;
 
 /// A single particle representing a state hypothesis
@@ -557,7 +557,11 @@ where
     pub fn best_particle(&self) -> &Particle<T> {
         self.particles
             .iter()
-            .max_by(|a, b| a.weight.partial_cmp(&b.weight).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|a, b| {
+                a.weight
+                    .partial_cmp(&b.weight)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .expect("Particle filter should have at least one particle")
     }
 }
@@ -704,10 +708,16 @@ mod tests {
         }
 
         // Both modes should have significant weight
-        assert!(total_weight_positive > 0.1,
-            "Positive mode should have significant weight. Got: {}", total_weight_positive);
-        assert!(total_weight_negative > 0.1,
-            "Negative mode should have significant weight. Got: {}", total_weight_negative);
+        assert!(
+            total_weight_positive > 0.1,
+            "Positive mode should have significant weight. Got: {}",
+            total_weight_positive
+        );
+        assert!(
+            total_weight_negative > 0.1,
+            "Negative mode should have significant weight. Got: {}",
+            total_weight_negative
+        );
     }
 
     #[test]
@@ -729,8 +739,11 @@ mod tests {
 
         // Initially, uniform weights -> ESS = N
         let ess_initial = pf.effective_sample_size();
-        assert!((ess_initial - num_particles as f64).abs() < 1e-6,
-            "Initial ESS should equal num_particles. Got: {}", ess_initial);
+        assert!(
+            (ess_initial - num_particles as f64).abs() < 1e-6,
+            "Initial ESS should equal num_particles. Got: {}",
+            ess_initial
+        );
 
         // Very peaked likelihood - one particle much more likely
         let peaked_likelihood = |state: &[f64], measurement: &[f64]| -> f64 {
@@ -746,9 +759,16 @@ mod tests {
         // NOTE: Current implementation may have issues with weight updates
         let ess_after = pf.effective_sample_size();
         // Just verify ESS is a valid positive number for now
-        assert!(ess_after > 0.0, "ESS should be positive. Got: {}", ess_after);
-        assert!(ess_after <= num_particles as f64 + 1e-6,
-            "ESS should not exceed num_particles. Got: {}", ess_after);
+        assert!(
+            ess_after > 0.0,
+            "ESS should be positive. Got: {}",
+            ess_after
+        );
+        assert!(
+            ess_after <= num_particles as f64 + 1e-6,
+            "ESS should not exceed num_particles. Got: {}",
+            ess_after
+        );
     }
 
     #[test]
@@ -781,8 +801,11 @@ mod tests {
 
         // ESS should be restored to N (uniform weights)
         let ess_after_resample = pf.effective_sample_size();
-        assert!((ess_after_resample - num_particles as f64).abs() < 1e-6,
-            "ESS should be restored after resampling. Got: {}", ess_after_resample);
+        assert!(
+            (ess_after_resample - num_particles as f64).abs() < 1e-6,
+            "ESS should be restored after resampling. Got: {}",
+            ess_after_resample
+        );
     }
 
     #[test]
@@ -827,8 +850,12 @@ mod tests {
         // Mean should be close to true state
         let mean = pf.mean();
         let error = (mean[0] - true_state).abs();
-        assert!(error < 1.0,
-            "PF should converge to true state. Error: {}, Mean: {}", error, mean[0]);
+        assert!(
+            error < 1.0,
+            "PF should converge to true state. Error: {}, Mean: {}",
+            error,
+            mean[0]
+        );
     }
 
     #[test]
@@ -849,8 +876,11 @@ mod tests {
 
         // After any operation, weights should sum to 1
         let sum_initial: f64 = pf.particles.iter().map(|p| p.weight).sum();
-        assert!((sum_initial - 1.0).abs() < 1e-10,
-            "Initial weights should sum to 1. Sum: {}", sum_initial);
+        assert!(
+            (sum_initial - 1.0).abs() < 1e-10,
+            "Initial weights should sum to 1. Sum: {}",
+            sum_initial
+        );
 
         // Update
         let likelihood = |state: &[f64], measurement: &[f64]| -> f64 {
@@ -860,15 +890,21 @@ mod tests {
         pf.update(&[0.5], likelihood).unwrap();
 
         let sum_after_update: f64 = pf.particles.iter().map(|p| p.weight).sum();
-        assert!((sum_after_update - 1.0).abs() < 1e-10,
-            "Weights should sum to 1 after update. Sum: {}", sum_after_update);
+        assert!(
+            (sum_after_update - 1.0).abs() < 1e-10,
+            "Weights should sum to 1 after update. Sum: {}",
+            sum_after_update
+        );
 
         // Resample
         pf.resample().unwrap();
 
         let sum_after_resample: f64 = pf.particles.iter().map(|p| p.weight).sum();
-        assert!((sum_after_resample - 1.0).abs() < 1e-10,
-            "Weights should sum to 1 after resample. Sum: {}", sum_after_resample);
+        assert!(
+            (sum_after_resample - 1.0).abs() < 1e-10,
+            "Weights should sum to 1 after resample. Sum: {}",
+            sum_after_resample
+        );
     }
 
     #[test]
@@ -888,9 +924,7 @@ mod tests {
         )
         .unwrap();
 
-        let motion_model = |state: &[f64], _dt: f64| -> Vec<f64> {
-            state.to_vec()
-        };
+        let motion_model = |state: &[f64], _dt: f64| -> Vec<f64> { state.to_vec() };
 
         let likelihood = |state: &[f64], measurement: &[f64]| -> f64 {
             let diff = state[0] - measurement[0];
@@ -907,12 +941,17 @@ mod tests {
 
         // Check variance of particles
         let mean = pf.mean()[0];
-        let variance: f64 = pf.particles.iter()
+        let variance: f64 = pf
+            .particles
+            .iter()
             .map(|p| (p.state[0] - mean).powi(2) * p.weight)
             .sum();
 
         // Variance should not be zero (not all particles at same location)
-        assert!(variance > 1e-6,
-            "Particles should not all collapse to same state. Variance: {}", variance);
+        assert!(
+            variance > 1e-6,
+            "Particles should not all collapse to same state. Variance: {}",
+            variance
+        );
     }
 }

@@ -5,9 +5,8 @@
 
 use kalman_filters::filter::KalmanFilter;
 use kalman_filters::information::{
+    DistributedInformationFilter, InformationState,
     consensus::{AverageConsensus, ConsensusAlgorithm},
-    DistributedInformationFilter,
-    InformationState,
 };
 use kalman_filters::{EnsembleKalmanFilterBuilder, NonlinearSystem, ParticleFilterBuilder};
 use std::collections::HashMap;
@@ -190,11 +189,7 @@ fn test_distributed_if_node_failure() {
     // Remaining nodes should still have reasonable estimates
     for i in &[0, 1, 3, 4] {
         if let Ok(state) = dif.get_node_state(*i) {
-            assert!(
-                state[0] > 1.0,
-                "Node {} should have some information",
-                i
-            );
+            assert!(state[0] > 1.0, "Node {} should have some information", i);
         }
     }
 }
@@ -228,8 +223,7 @@ fn test_consensus_with_byzantine_node() {
     // Byzantine node with wildly different value
     states.insert(
         3,
-        InformationState::from_information(vec![100.0, 0.0, 0.0, 100.0], vec![100.0, 0.0])
-            .unwrap(),
+        InformationState::from_information(vec![100.0, 0.0, 0.0, 100.0], vec![100.0, 0.0]).unwrap(),
     );
 
     // Run consensus

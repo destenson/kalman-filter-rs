@@ -11,8 +11,8 @@ use crate::logging::{
 use crate::types::{KalmanError, KalmanResult, KalmanScalar, NonlinearSystem};
 use log::{debug, error, info, trace, warn};
 use num_traits::{One, Zero};
-use rand_distr::Distribution;
 use rand::rng;
+use rand_distr::Distribution;
 use rand_distr::Normal;
 
 /// Statistics computed from an ensemble
@@ -130,7 +130,7 @@ where
             measurement_noise,
             dt,
             T::from_f64(1.05), // Default 5% inflation
-            T::zero(),              // No localization by default
+            T::zero(),         // No localization by default
             None,
         )
     }
@@ -195,7 +195,8 @@ where
                 let spread_f64 = KalmanScalar::to_f64(&initial_spread[i]);
 
                 if spread_f64 > 0.0f64 {
-                    let normal = Normal::new(mean_f64, spread_f64).expect("Normal distribution creation should succeed for valid parameters");
+                    let normal = Normal::new(mean_f64, spread_f64)
+                        .expect("Normal distribution creation should succeed for valid parameters");
                     ensemble[i * ensemble_size + j] = T::from_f64(normal.sample(&mut rng));
                 } else {
                     ensemble[i * ensemble_size + j] = initial_mean[i];
@@ -360,7 +361,8 @@ where
                 let noise_var = KalmanScalar::to_f64(&self.R[i * m_obs + i]).sqrt();
 
                 if noise_var > 0.0f64 {
-                    let normal = Normal::new(obs_f64, noise_var).expect("Normal distribution creation should succeed for valid parameters");
+                    let normal = Normal::new(obs_f64, noise_var)
+                        .expect("Normal distribution creation should succeed for valid parameters");
                     obs_ensemble[i * m_state + j] = T::from_f64(normal.sample(&mut rng));
                 } else {
                     obs_ensemble[i * m_state + j] = observation[i];
@@ -632,7 +634,8 @@ mod tests {
         // Compute variance for each state dimension
         for state_idx in 0..state_dim {
             for member_idx in 0..ensemble_size {
-                let diff = enkf.ensemble[state_idx * ensemble_size + member_idx] - sample_mean[state_idx];
+                let diff =
+                    enkf.ensemble[state_idx * ensemble_size + member_idx] - sample_mean[state_idx];
                 sample_var[state_idx] += diff * diff;
             }
             sample_var[state_idx] /= (ensemble_size - 1) as f64;
@@ -642,9 +645,14 @@ mod tests {
         for j in 0..state_dim {
             let std_err = initial_spread[j] / (ensemble_size as f64).sqrt();
             let error = (sample_mean[j] - initial_mean[j]).abs();
-            assert!(error < 3.0 * std_err + 0.1,
+            assert!(
+                error < 3.0 * std_err + 0.1,
                 "Sample mean {} too far from initial mean {}. Error: {}, 3*std_err: {}",
-                sample_mean[j], initial_mean[j], error, 3.0 * std_err);
+                sample_mean[j],
+                initial_mean[j],
+                error,
+                3.0 * std_err
+            );
             assert!(sample_mean[j].is_finite(), "Sample mean is not finite");
         }
 
@@ -653,9 +661,13 @@ mod tests {
             let sample_std = sample_var[j].sqrt();
             let relative_error = (sample_std - initial_spread[j]).abs() / initial_spread[j];
             // For large ensemble, std should be within ~20% of specified spread
-            assert!(relative_error < 0.3,
+            assert!(
+                relative_error < 0.3,
                 "Sample std {} too far from initial spread {}. Relative error: {}",
-                sample_std, initial_spread[j], relative_error);
+                sample_std,
+                initial_spread[j],
+                relative_error
+            );
         }
     }
 
@@ -743,9 +755,11 @@ mod tests {
         // At least one dimension should have reduced spread after update
         let reduced = spread_after_update[0] < spread_after_forecast[0]
             || spread_after_update[1] < spread_after_forecast[1];
-        assert!(reduced,
+        assert!(
+            reduced,
             "Update should reduce spread. Before: {:?}, After: {:?}",
-            spread_after_forecast, spread_after_update);
+            spread_after_forecast, spread_after_update
+        );
     }
 
     #[test]
@@ -793,14 +807,19 @@ mod tests {
 
         // Should converge close to true value
         let error = (enkf.mean()[0] - true_value).abs();
-        assert!(error < 1.0,
+        assert!(
+            error < 1.0,
             "EnKF should converge to static target. Error: {}, Mean: {}",
-            error, enkf.mean()[0]);
+            error,
+            enkf.mean()[0]
+        );
 
         // Spread should have decreased
-        assert!(enkf.spread()[0] < 1.0,
+        assert!(
+            enkf.spread()[0] < 1.0,
             "Spread should decrease with repeated observations. Spread: {}",
-            enkf.spread()[0]);
+            enkf.spread()[0]
+        );
     }
 
     #[test]
@@ -826,10 +845,16 @@ mod tests {
         }
 
         // Spread should remain positive (not collapsed)
-        assert!(enkf.spread()[0] > 1e-6,
-            "Ensemble collapsed in dim 0. Spread: {}", enkf.spread()[0]);
-        assert!(enkf.spread()[1] > 1e-6,
-            "Ensemble collapsed in dim 1. Spread: {}", enkf.spread()[1]);
+        assert!(
+            enkf.spread()[0] > 1e-6,
+            "Ensemble collapsed in dim 0. Spread: {}",
+            enkf.spread()[0]
+        );
+        assert!(
+            enkf.spread()[1] > 1e-6,
+            "Ensemble collapsed in dim 1. Spread: {}",
+            enkf.spread()[1]
+        );
 
         // All members should be finite
         for val in enkf.ensemble.iter() {

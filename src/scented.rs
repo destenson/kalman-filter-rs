@@ -213,7 +213,12 @@ where
 
                 if i == j {
                     if sum <= T::zero() {
-                        error!("CKF: Cholesky decomposition failed - negative diagonal element at ({},{}) = {:.6e}", i, j, KalmanScalar::to_f64(&sum));
+                        error!(
+                            "CKF: Cholesky decomposition failed - negative diagonal element at ({},{}) = {:.6e}",
+                            i,
+                            j,
+                            KalmanScalar::to_f64(&sum)
+                        );
                         return Err(KalmanError::SingularMatrix);
                     }
                     L[i * n + j] = sum.sqrt();

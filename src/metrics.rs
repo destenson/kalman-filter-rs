@@ -52,10 +52,10 @@ use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::metrics::counter::Counter;
 use prometheus_client::metrics::family::Family;
 use prometheus_client::metrics::gauge::Gauge;
-use prometheus_client::metrics::histogram::{exponential_buckets, Histogram};
+use prometheus_client::metrics::histogram::{Histogram, exponential_buckets};
 use prometheus_client::registry::Registry;
-use std::sync::atomic::AtomicU64;
 use std::sync::OnceLock;
+use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 
 /// Filter type labels for metrics
@@ -236,7 +236,9 @@ pub fn registry() -> &'static Registry {
     REGISTRY.get().unwrap_or_else(|| {
         // Auto-initialize if not done explicitly
         init();
-        REGISTRY.get().expect("Registry should be initialized after init() call")
+        REGISTRY
+            .get()
+            .expect("Registry should be initialized after init() call")
     })
 }
 

@@ -752,13 +752,19 @@ mod tests {
 
         // Average error should be small
         let mean_error: f64 = errors.iter().sum::<f64>() / errors.len() as f64;
-        assert!(mean_error < 0.05,
-            "EKF should track pendulum accurately. Mean error: {}", mean_error);
+        assert!(
+            mean_error < 0.05,
+            "EKF should track pendulum accurately. Mean error: {}",
+            mean_error
+        );
 
         // Final error should be small
         let final_error = errors.last().unwrap();
-        assert!(*final_error < 0.1,
-            "Final tracking error too large: {}", final_error);
+        assert!(
+            *final_error < 0.1,
+            "Final tracking error too large: {}",
+            final_error
+        );
     }
 
     #[test]
@@ -769,10 +775,10 @@ mod tests {
 
         // Test at various operating points
         let test_states = vec![
-            vec![0.0, 0.0],   // Equilibrium
-            vec![0.5, 0.0],   // Small angle
-            vec![1.0, 0.5],   // Larger angle with velocity
-            vec![2.0, -1.0],  // Large angle
+            vec![0.0, 0.0],  // Equilibrium
+            vec![0.5, 0.0],  // Small angle
+            vec![1.0, 0.5],  // Larger angle with velocity
+            vec![2.0, -1.0], // Large angle
         ];
 
         for state in test_states {
@@ -802,9 +808,14 @@ mod tests {
             // Compare
             for i in 0..4 {
                 let diff = (analytical[i] - numerical[i]).abs();
-                assert!(diff < 1e-4,
+                assert!(
+                    diff < 1e-4,
                     "Jacobian mismatch at state {:?}, element {}: analytical={}, numerical={}",
-                    state, i, analytical[i], numerical[i]);
+                    state,
+                    i,
+                    analytical[i],
+                    numerical[i]
+                );
             }
         }
     }
@@ -847,8 +858,14 @@ mod tests {
         }
 
         // Both should grow, but this tests the filter maintains positive definiteness
-        assert!(ekf_small.covariance()[0] > 0.01, "Small angle cov should grow");
-        assert!(ekf_large.covariance()[0] > 0.01, "Large angle cov should grow");
+        assert!(
+            ekf_small.covariance()[0] > 0.01,
+            "Small angle cov should grow"
+        );
+        assert!(
+            ekf_large.covariance()[0] > 0.01,
+            "Large angle cov should grow"
+        );
 
         // Covariance diagonal elements must remain positive
         for i in 0..2 {

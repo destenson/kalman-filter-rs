@@ -245,8 +245,16 @@ fn test_predict_updates_state_correctly() {
     kf.predict();
 
     // After prediction: position should be 0 + 1*1 = 1
-    assert!((kf.x[0] - 1.0).abs() < 1e-10, "Position should be 1.0, got {}", kf.x[0]);
-    assert!((kf.x[1] - 1.0).abs() < 1e-10, "Velocity should remain 1.0, got {}", kf.x[1]);
+    assert!(
+        (kf.x[0] - 1.0).abs() < 1e-10,
+        "Position should be 1.0, got {}",
+        kf.x[0]
+    );
+    assert!(
+        (kf.x[1] - 1.0).abs() < 1e-10,
+        "Velocity should remain 1.0, got {}",
+        kf.x[1]
+    );
 }
 
 #[test]
@@ -503,26 +511,11 @@ fn test_3d_state_2d_measurement() {
     let mut kf = KalmanFilter::<f64>::new(3, 2);
 
     kf.x = vec![1.0, 2.0, 3.0];
-    kf.P = vec![
-        1.0, 0.0, 0.0,
-        0.0, 1.0, 0.0,
-        0.0, 0.0, 1.0,
-    ];
-    kf.F = vec![
-        1.0, 0.0, 0.0,
-        0.0, 1.0, 0.0,
-        0.0, 0.0, 1.0,
-    ];
-    kf.Q = vec![
-        0.01, 0.0, 0.0,
-        0.0, 0.01, 0.0,
-        0.0, 0.0, 0.01,
-    ];
+    kf.P = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+    kf.F = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+    kf.Q = vec![0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.01];
     // Observe first two states only
-    kf.H = vec![
-        1.0, 0.0, 0.0,
-        0.0, 1.0, 0.0,
-    ];
+    kf.H = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
     kf.R = vec![0.1, 0.0, 0.0, 0.1];
 
     kf.predict();
@@ -576,7 +569,10 @@ fn test_very_large_values_dont_overflow() {
     kf.predict();
     kf.update(&vec![1e10]).unwrap();
 
-    assert!(!kf.x[0].is_infinite(), "State should not overflow to infinity");
+    assert!(
+        !kf.x[0].is_infinite(),
+        "State should not overflow to infinity"
+    );
     assert!(!kf.P[0].is_infinite(), "Covariance should not overflow");
 }
 
@@ -597,8 +593,16 @@ fn test_matrix_multiplication_in_predict_is_correct() {
     kf.predict();
 
     // F * x = [[1, 2], [3, 4]] * [[2], [3]] = [[8], [18]]
-    assert!((kf.x[0] - 8.0).abs() < 1e-10, "Expected x[0]=8, got {}", kf.x[0]);
-    assert!((kf.x[1] - 18.0).abs() < 1e-10, "Expected x[1]=18, got {}", kf.x[1]);
+    assert!(
+        (kf.x[0] - 8.0).abs() < 1e-10,
+        "Expected x[0]=8, got {}",
+        kf.x[0]
+    );
+    assert!(
+        (kf.x[1] - 18.0).abs() < 1e-10,
+        "Expected x[1]=18, got {}",
+        kf.x[1]
+    );
 }
 
 #[test]
@@ -806,7 +810,10 @@ fn test_covariance_positive_definite_after_predict() {
     assert!(kf.P[3] > 0.0, "P[1,1] should be positive");
 
     let det = kf.P[0] * kf.P[3] - kf.P[1] * kf.P[2];
-    assert!(det > 0.0, "Determinant should be positive for positive definite matrix");
+    assert!(
+        det > 0.0,
+        "Determinant should be positive for positive definite matrix"
+    );
 }
 
 #[test]
@@ -847,11 +854,7 @@ fn test_matrix_vector_multiply_3x3() {
     // F = [[2, 0, 1],
     //      [0, 3, 0],
     //      [1, 0, 2]]
-    kf.F = vec![
-        2.0, 0.0, 1.0,
-        0.0, 3.0, 0.0,
-        1.0, 0.0, 2.0,
-    ];
+    kf.F = vec![2.0, 0.0, 1.0, 0.0, 3.0, 0.0, 1.0, 0.0, 2.0];
     kf.P = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
     kf.Q = vec![0.0; 9];
 
@@ -1000,7 +1003,7 @@ fn test_multiple_sequential_update_steps() {
 fn test_contradictory_measurements_dont_crash() {
     // Real scenario: GPS says you're moving north, compass says you're moving south
     // Bad filters crash or produce NaN. Good filters handle this gracefully.
-    
+
     let mut kf = KalmanFilter::<f64>::new(2, 2);
     kf.x = vec![0.0, 0.0]; // position, velocity
     kf.P = vec![1.0, 0.0, 0.0, 1.0];
@@ -1018,7 +1021,10 @@ fn test_contradictory_measurements_dont_crash() {
     let result = kf.update(&vec![11.0, -5.0]);
 
     // Should not crash or produce NaN
-    assert!(result.is_ok(), "Filter should handle contradictory measurements");
+    assert!(
+        result.is_ok(),
+        "Filter should handle contradictory measurements"
+    );
     assert!(!kf.x[0].is_nan(), "State should not be NaN");
     assert!(!kf.x[1].is_nan(), "Velocity should not be NaN");
     assert!(!kf.P[0].is_nan(), "Covariance should not be NaN");
@@ -1029,7 +1035,7 @@ fn test_measurement_far_from_prediction_doesnt_explode_covariance() {
     // Real scenario: GPS glitch reports you teleported 1000km
     // Bad filters: covariance explodes, filter never recovers
     // Good filters: large innovation, but bounded response
-    
+
     let mut kf = KalmanFilter::<f64>::new(1, 1);
     kf.x = vec![0.0];
     kf.P = vec![1.0];
@@ -1067,7 +1073,7 @@ fn test_measurement_far_from_prediction_doesnt_explode_covariance() {
 fn test_repeated_predict_without_update_increases_uncertainty() {
     // Real scenario: Sensor fails, you only have predictions (dead reckoning)
     // Uncertainty should grow WITHOUT BOUND (not saturate incorrectly)
-    
+
     let mut kf = KalmanFilter::<f64>::new(1, 1);
     kf.x = vec![0.0];
     kf.P = vec![1.0];
@@ -1077,7 +1083,7 @@ fn test_repeated_predict_without_update_increases_uncertainty() {
     kf.R = vec![1.0];
 
     let mut uncertainties = vec![];
-    
+
     // Predict 100 times without any measurements
     for _ in 0..100 {
         kf.predict();
@@ -1087,9 +1093,11 @@ fn test_repeated_predict_without_update_increases_uncertainty() {
     // Uncertainty should monotonically increase
     for i in 1..uncertainties.len() {
         assert!(
-            uncertainties[i] > uncertainties[i-1],
+            uncertainties[i] > uncertainties[i - 1],
             "Uncertainty should increase at step {}: {} <= {}",
-            i, uncertainties[i], uncertainties[i-1]
+            i,
+            uncertainties[i],
+            uncertainties[i - 1]
         );
     }
 
@@ -1106,7 +1114,7 @@ fn test_zero_process_noise_with_model_error_causes_overconfidence() {
     // Real scenario: Your model is F=identity but actual system is F=1.1*x
     // With Q=0, filter becomes overconfident and ignores measurements
     // This is a FEATURE, not a bug, but good to document
-    
+
     let mut kf = KalmanFilter::<f64>::new(1, 1);
     kf.x = vec![1.0];
     kf.P = vec![1.0];
@@ -1117,10 +1125,10 @@ fn test_zero_process_noise_with_model_error_causes_overconfidence() {
 
     // Actual system: state grows by 10% each step
     let mut true_state = 1.0;
-    
+
     for _ in 0..10 {
         true_state *= 1.1; // Actual dynamics
-        
+
         kf.predict();
         kf.update(&vec![true_state]).unwrap();
     }
@@ -1146,18 +1154,15 @@ fn test_zero_process_noise_with_model_error_causes_overconfidence() {
 fn test_near_singular_innovation_covariance_uses_regularization() {
     // Real scenario: R and H*P*H' cancel out, making S singular
     // This tests that we don't crash when inverting S
-    
+
     let mut kf = KalmanFilter::<f64>::new(2, 1);
     kf.x = vec![0.0, 0.0];
-    
+
     // Set up P and H so that H*P*H' ≈ 0
-    kf.P = vec![
-        1e-15, 0.0,
-        0.0, 1.0
-    ];
+    kf.P = vec![1e-15, 0.0, 0.0, 1.0];
     kf.H = vec![1.0, 0.0]; // Only observes first state (which has tiny variance)
     kf.R = vec![1e-15]; // Also tiny
-    
+
     kf.F = vec![1.0, 0.0, 0.0, 1.0];
     kf.Q = vec![0.0, 0.0, 0.0, 0.0];
 
@@ -1166,7 +1171,10 @@ fn test_near_singular_innovation_covariance_uses_regularization() {
 
     // Should handle gracefully (either succeed or fail gracefully)
     if result.is_ok() {
-        assert!(!kf.x[0].is_nan(), "State should not be NaN after near-singular update");
+        assert!(
+            !kf.x[0].is_nan(),
+            "State should not be NaN after near-singular update"
+        );
         assert!(!kf.x[0].is_infinite(), "State should not be infinite");
     }
     // If it fails, that's also acceptable - just shouldn't crash
@@ -1176,7 +1184,7 @@ fn test_near_singular_innovation_covariance_uses_regularization() {
 fn test_large_dt_in_constant_velocity_model() {
     // Real scenario: Timestep varies (missed frames, slow sensor)
     // Large dt can make F*P*F' explode if not handled correctly
-    
+
     let mut kf = KalmanFilter::<f64>::new(2, 1);
     kf.x = vec![0.0, 1.0]; // position=0, velocity=1
     kf.P = vec![1.0, 0.0, 0.0, 1.0];
@@ -1197,36 +1205,28 @@ fn test_large_dt_in_constant_velocity_model() {
     assert!(
         kf.P[0] > normal_P * 10.0,
         "Position uncertainty should grow with large dt: {} vs {}",
-        kf.P[0], normal_P
+        kf.P[0],
+        normal_P
     );
 
     // But should not overflow
-    assert!(!kf.P[0].is_infinite(), "Covariance should not overflow with large dt");
+    assert!(
+        !kf.P[0].is_infinite(),
+        "Covariance should not overflow with large dt"
+    );
 }
 
 #[test]
 fn test_asymmetric_covariance_stays_symmetric() {
     // Real scenario: Floating point errors accumulate and break symmetry
     // This can cause eigenvalue computation to fail later
-    
+
     let mut kf = KalmanFilter::<f64>::new(3, 1);
     kf.x = vec![0.0, 0.0, 0.0];
-    kf.P = vec![
-        1.0, 0.1, 0.2,
-        0.1, 1.0, 0.3,
-        0.2, 0.3, 1.0,
-    ];
-    kf.F = vec![
-        0.9, 0.1, 0.0,
-        0.0, 0.9, 0.1,
-        0.0, 0.0, 0.9,
-    ];
+    kf.P = vec![1.0, 0.1, 0.2, 0.1, 1.0, 0.3, 0.2, 0.3, 1.0];
+    kf.F = vec![0.9, 0.1, 0.0, 0.0, 0.9, 0.1, 0.0, 0.0, 0.9];
     kf.H = vec![1.0, 0.0, 0.0];
-    kf.Q = vec![
-        0.01, 0.0, 0.0,
-        0.0, 0.01, 0.0,
-        0.0, 0.0, 0.01,
-    ];
+    kf.Q = vec![0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.01];
     kf.R = vec![0.1];
 
     // Run many predict-update cycles
@@ -1237,12 +1237,16 @@ fn test_asymmetric_covariance_stays_symmetric() {
 
     // Check symmetry of final covariance
     for i in 0..3 {
-        for j in i+1..3 {
+        for j in i + 1..3 {
             let diff = (kf.P[i * 3 + j] - kf.P[j * 3 + i]).abs();
             assert!(
                 diff < 1e-10,
                 "Covariance asymmetry at ({},{}): {} vs {} (diff={})",
-                i, j, kf.P[i * 3 + j], kf.P[j * 3 + i], diff
+                i,
+                j,
+                kf.P[i * 3 + j],
+                kf.P[j * 3 + i],
+                diff
             );
         }
     }

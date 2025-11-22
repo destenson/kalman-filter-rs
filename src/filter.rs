@@ -189,7 +189,7 @@ where
             trace!("Predict step: state_norm={:.6}", state_norm(&self.x));
             trace!("Before predict: {}", format_state(&self.x, "x"));
         }
-        
+
         #[cfg(feature = "prometheus-metrics")]
         let _timer = crate::metrics::MetricsTimer::start();
 
@@ -777,30 +777,12 @@ mod tests {
         let mut kf = KalmanFilter::<f64>::new(3, 2);
 
         kf.x = vec![0.0, 0.0, 0.0];
-        kf.P = vec![
-            1.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-            0.0, 0.0, 1.0,
-        ];
-        kf.F = vec![
-            1.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-            0.0, 0.0, 1.0,
-        ];
-        kf.Q = vec![
-            0.01, 0.0, 0.0,
-            0.0, 0.01, 0.0,
-            0.0, 0.0, 0.01,
-        ];
+        kf.P = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        kf.F = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        kf.Q = vec![0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.01];
         // Observe only x and y
-        kf.H = vec![
-            1.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-        ];
-        kf.R = vec![
-            0.1, 0.0,
-            0.0, 0.1,
-        ];
+        kf.H = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        kf.R = vec![0.1, 0.0, 0.0, 0.1];
 
         // True state: x=5, y=3, z=7
         for _ in 0..50 {
@@ -809,14 +791,27 @@ mod tests {
         }
 
         // Observable states should converge
-        assert!((kf.x[0] - 5.0).abs() < 0.5, "x should converge. Got: {}", kf.x[0]);
-        assert!((kf.x[1] - 3.0).abs() < 0.5, "y should converge. Got: {}", kf.x[1]);
+        assert!(
+            (kf.x[0] - 5.0).abs() < 0.5,
+            "x should converge. Got: {}",
+            kf.x[0]
+        );
+        assert!(
+            (kf.x[1] - 3.0).abs() < 0.5,
+            "y should converge. Got: {}",
+            kf.x[1]
+        );
 
         // Unobservable state (z) should stay near initial with growing uncertainty
         // z uncertainty should be larger than x,y uncertainty
         let p_z = kf.P[8]; // P[2,2]
         let p_x = kf.P[0]; // P[0,0]
-        assert!(p_z > p_x, "Unobserved state should have higher uncertainty. P_z: {}, P_x: {}", p_z, p_x);
+        assert!(
+            p_z > p_x,
+            "Unobserved state should have higher uncertainty. P_z: {}, P_x: {}",
+            p_z,
+            p_x
+        );
     }
 
     #[test]
@@ -854,8 +849,12 @@ mod tests {
         let error_low = (kf_low_q.x[0] - 5.0).abs();
         let error_high = (kf_high_q.x[0] - 5.0).abs();
 
-        assert!(error_high < error_low,
-            "High Q should adapt faster. Low Q error: {}, High Q error: {}", error_low, error_high);
+        assert!(
+            error_high < error_low,
+            "High Q should adapt faster. Low Q error: {}, High Q error: {}",
+            error_low,
+            error_high
+        );
     }
 
     #[test]
@@ -884,9 +883,12 @@ mod tests {
 
         // KF will be pulled toward outlier (this is expected, not desired)
         let state_after_outlier = kf.x[0];
-        assert!(state_after_outlier > state_before_outlier + 1.0,
+        assert!(
+            state_after_outlier > state_before_outlier + 1.0,
             "KF should be affected by outlier. Before: {}, After: {}",
-            state_before_outlier, state_after_outlier);
+            state_before_outlier,
+            state_after_outlier
+        );
     }
 
     #[test]
@@ -895,29 +897,11 @@ mod tests {
         let mut kf = KalmanFilter::<f64>::new(3, 2);
 
         kf.x = vec![1.0, 2.0, 3.0];
-        kf.P = vec![
-            1.0, 0.1, 0.2,
-            0.1, 2.0, 0.3,
-            0.2, 0.3, 3.0,
-        ];
-        kf.F = vec![
-            1.0, 0.1, 0.0,
-            0.0, 1.0, 0.1,
-            0.0, 0.0, 1.0,
-        ];
-        kf.Q = vec![
-            0.1, 0.01, 0.0,
-            0.01, 0.1, 0.01,
-            0.0, 0.01, 0.1,
-        ];
-        kf.H = vec![
-            1.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-        ];
-        kf.R = vec![
-            0.5, 0.0,
-            0.0, 0.5,
-        ];
+        kf.P = vec![1.0, 0.1, 0.2, 0.1, 2.0, 0.3, 0.2, 0.3, 3.0];
+        kf.F = vec![1.0, 0.1, 0.0, 0.0, 1.0, 0.1, 0.0, 0.0, 1.0];
+        kf.Q = vec![0.1, 0.01, 0.0, 0.01, 0.1, 0.01, 0.0, 0.01, 0.1];
+        kf.H = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        kf.R = vec![0.5, 0.0, 0.0, 0.5];
 
         for _ in 0..20 {
             kf.predict();
@@ -925,9 +909,24 @@ mod tests {
 
             // Check symmetry: P[i,j] == P[j,i]
             let eps = 1e-10;
-            assert!((kf.P[1] - kf.P[3]).abs() < eps, "P[0,1] != P[1,0]: {} vs {}", kf.P[1], kf.P[3]);
-            assert!((kf.P[2] - kf.P[6]).abs() < eps, "P[0,2] != P[2,0]: {} vs {}", kf.P[2], kf.P[6]);
-            assert!((kf.P[5] - kf.P[7]).abs() < eps, "P[1,2] != P[2,1]: {} vs {}", kf.P[5], kf.P[7]);
+            assert!(
+                (kf.P[1] - kf.P[3]).abs() < eps,
+                "P[0,1] != P[1,0]: {} vs {}",
+                kf.P[1],
+                kf.P[3]
+            );
+            assert!(
+                (kf.P[2] - kf.P[6]).abs() < eps,
+                "P[0,2] != P[2,0]: {} vs {}",
+                kf.P[2],
+                kf.P[6]
+            );
+            assert!(
+                (kf.P[5] - kf.P[7]).abs() < eps,
+                "P[1,2] != P[2,1]: {} vs {}",
+                kf.P[5],
+                kf.P[7]
+            );
         }
     }
 
@@ -978,7 +977,11 @@ mod tests {
 
         // Should barely move toward measurement
         let movement = (kf_high_r.x[0] - state_before).abs();
-        assert!(movement < 0.5, "With high R, state should barely change. Moved: {}", movement);
+        assert!(
+            movement < 0.5,
+            "With high R, state should barely change. Moved: {}",
+            movement
+        );
 
         // Low measurement noise - should trust measurement
         let mut kf_low_r = KalmanFilter::<f64>::new(1, 1);
@@ -993,8 +996,11 @@ mod tests {
         kf_low_r.update(&vec![10.0]).unwrap();
 
         // Should move almost entirely to measurement
-        assert!((kf_low_r.x[0] - 10.0).abs() < 0.5,
-            "With low R, state should jump to measurement. Got: {}", kf_low_r.x[0]);
+        assert!(
+            (kf_low_r.x[0] - 10.0).abs() < 0.5,
+            "With low R, state should jump to measurement. Got: {}",
+            kf_low_r.x[0]
+        );
     }
 
     #[test]
@@ -1024,7 +1030,11 @@ mod tests {
 
         // Mean of innovations should be close to zero
         let mean: f64 = innovations.iter().sum::<f64>() / innovations.len() as f64;
-        assert!(mean.abs() < 0.2, "Innovation mean should be near zero. Got: {}", mean);
+        assert!(
+            mean.abs() < 0.2,
+            "Innovation mean should be near zero. Got: {}",
+            mean
+        );
 
         // Innovations should be bounded (no outliers for consistent measurements)
         for (i, innov) in innovations.iter().enumerate() {
@@ -1058,13 +1068,20 @@ mod tests {
             prev_p = kf.P[0];
         }
 
-        assert!(converged, "Covariance should converge to steady-state. Final P: {}", kf.P[0]);
+        assert!(
+            converged,
+            "Covariance should converge to steady-state. Final P: {}",
+            kf.P[0]
+        );
 
         // Steady-state covariance should satisfy algebraic Riccati equation
         // For scalar: P_ss = (sqrt(Q*R) + Q) / (1 + sqrt(Q/R)) approximately
         // More importantly, it should be bounded by Q and R
         assert!(kf.P[0] > 0.0, "Steady-state P must be positive");
-        assert!(kf.P[0] < 10.0, "Steady-state P should be much less than initial");
+        assert!(
+            kf.P[0] < 10.0,
+            "Steady-state P should be much less than initial"
+        );
     }
 
     #[test]
@@ -1088,8 +1105,12 @@ mod tests {
 
         // Should have recovered
         let error = (kf.x[0] - true_value).abs();
-        assert!(error < 5.0,
-            "Filter should recover from bad init. Error: {}, State: {}", error, kf.x[0]);
+        assert!(
+            error < 5.0,
+            "Filter should recover from bad init. Error: {}, State: {}",
+            error,
+            kf.x[0]
+        );
     }
 
     #[test]

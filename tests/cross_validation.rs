@@ -9,8 +9,8 @@
 //! - Bar-Shalom, Y., Li, X. R., & Kirubarajan, T. (2001). Estimation with applications to tracking and navigation.
 //! - Welch & Bishop, "An Introduction to the Kalman Filter" (UNC-Chapel Hill, TR 95-041)
 
-use kalman_filters::filter::KalmanFilter;
 use approx::assert_abs_diff_eq;
+use kalman_filters::filter::KalmanFilter;
 
 /// Test against analytical solution for static system
 /// This is Example 1 from Welch & Bishop
@@ -40,7 +40,10 @@ fn test_analytical_static_system() {
     assert_abs_diff_eq!(kf.x[0], 5.0, epsilon = 0.1);
 
     // Uncertainty should decrease significantly
-    assert!(kf.P[0] < 1.0, "Covariance should decrease with measurements");
+    assert!(
+        kf.P[0] < 1.0,
+        "Covariance should decrease with measurements"
+    );
 }
 
 /// Test steady-state convergence for time-invariant system
@@ -106,8 +109,8 @@ fn test_innovation_statistics() {
 
     // Measurements that vary (simulating real sensor data)
     let measurements = vec![
-        1.0, 1.2, 0.9, 1.1, 1.3, 0.8, 1.0, 1.2, 0.95, 1.05,
-        1.1, 1.0, 0.9, 1.15, 1.05, 0.95, 1.0, 1.1, 1.0, 0.9,
+        1.0, 1.2, 0.9, 1.1, 1.3, 0.8, 1.0, 1.2, 0.95, 1.05, 1.1, 1.0, 0.9, 1.15, 1.05, 0.95, 1.0,
+        1.1, 1.0, 0.9,
     ];
 
     let mut innovations = vec![];

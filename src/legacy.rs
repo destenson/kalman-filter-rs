@@ -3,8 +3,8 @@
 //! This module provides backward compatibility with the original kalman-filter crate API.
 //! It wraps the new implementation to maintain the old interface.
 
-use crate::filter::KalmanFilter as NewKalmanFilter;
 use crate::KalmanError;
+use crate::filter::KalmanFilter as NewKalmanFilter;
 
 /// Legacy Kalman Filter with backward-compatible API
 pub struct KalmanFilter {

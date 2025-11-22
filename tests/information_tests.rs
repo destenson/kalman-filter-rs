@@ -3,11 +3,11 @@
 
 use kalman_filters::filter::KalmanFilter;
 use kalman_filters::information::{
+    DistributedInformationFilter, ExtendedInformationFilter, InformationFilter, InformationForm,
+    InformationState, SparseInformationFilter,
     consensus::{AverageConsensus, ConsensusAlgorithm, WeightedConsensus},
     information_to_kalman, kalman_to_information,
     sparse::SparseMatrix,
-    DistributedInformationFilter, ExtendedInformationFilter, InformationFilter, InformationForm,
-    InformationState, SparseInformationFilter,
 };
 use kalman_filters::types::NonlinearSystem;
 use rand::Rng;

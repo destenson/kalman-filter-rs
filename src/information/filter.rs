@@ -349,7 +349,11 @@ impl<T: KalmanScalar> InformationFilter<T> {
         let m = self.measurement_dim;
 
         if measurement.len() != m {
-            error!("Information Filter update: measurement dimension mismatch: expected {}x1, got {}x1", m, measurement.len());
+            error!(
+                "Information Filter update: measurement dimension mismatch: expected {}x1, got {}x1",
+                m,
+                measurement.len()
+            );
             return Err(KalmanError::DimensionMismatch {
                 expected: (m, 1),
                 actual: (measurement.len(), 1),
@@ -587,8 +591,12 @@ mod tests {
         // For symmetric matrices, trace(Y_after) >= trace(Y_before)
         let trace_before: f64 = Y_before[0] + Y_before[3];
         let trace_after: f64 = Y_after[0] + Y_after[3];
-        assert!(trace_after > trace_before,
-            "Update should increase information. Before: {}, After: {}", trace_before, trace_after);
+        assert!(
+            trace_after > trace_before,
+            "Update should increase information. Before: {}, After: {}",
+            trace_before,
+            trace_after
+        );
     }
 
     #[test]
@@ -613,8 +621,12 @@ mod tests {
         filter.predict().unwrap();
         let trace_after: f64 = filter.state.Y[0] + filter.state.Y[3];
 
-        assert!(trace_after < trace_before,
-            "Predict should decrease information. Before: {}, After: {}", trace_before, trace_after);
+        assert!(
+            trace_after < trace_before,
+            "Predict should decrease information. Before: {}, After: {}",
+            trace_before,
+            trace_after
+        );
     }
 
     #[test]
@@ -641,7 +653,12 @@ mod tests {
 
         let state = filter.get_state().unwrap();
         let error = (state[0] - true_value).abs();
-        assert!(error < 0.5_f64, "IF should converge. Error: {}, State: {}", error, state[0]);
+        assert!(
+            error < 0.5_f64,
+            "IF should converge. Error: {}, State: {}",
+            error,
+            state[0]
+        );
     }
 
     #[test]
@@ -673,32 +690,42 @@ mod tests {
 
         // Check Y is symmetric
         let Y = &info.Y;
-        assert!((Y[1] - Y[2]).abs() < 1e-10_f64,
-            "Y should be symmetric. Y[0,1]={}, Y[1,0]={}", Y[1], Y[2]);
+        assert!(
+            (Y[1] - Y[2]).abs() < 1e-10_f64,
+            "Y should be symmetric. Y[0,1]={}, Y[1,0]={}",
+            Y[1],
+            Y[2]
+        );
     }
 
     #[test]
     fn test_roundtrip_conversion_preserves_values() {
         // Convert state/cov -> info -> state/cov should be identity
         let original_state: Vec<f64> = vec![3.0, -2.0, 7.0];
-        let original_cov: Vec<f64> = vec![
-            2.0, 0.1, 0.05,
-            0.1, 1.5, 0.2,
-            0.05, 0.2, 1.0,
-        ];
+        let original_cov: Vec<f64> = vec![2.0, 0.1, 0.05, 0.1, 1.5, 0.2, 0.05, 0.2, 1.0];
 
         let info = InformationState::from_state_covariance(&original_state, &original_cov).unwrap();
         let recovered_state = info.recover_state().unwrap();
         let recovered_cov = info.recover_covariance().unwrap();
 
         for i in 0..3 {
-            assert!((original_state[i] - recovered_state[i]).abs() < 1e-8_f64,
-                "State mismatch at {}: {} vs {}", i, original_state[i], recovered_state[i]);
+            assert!(
+                (original_state[i] - recovered_state[i]).abs() < 1e-8_f64,
+                "State mismatch at {}: {} vs {}",
+                i,
+                original_state[i],
+                recovered_state[i]
+            );
         }
 
         for i in 0..9 {
-            assert!((original_cov[i] - recovered_cov[i]).abs() < 1e-8_f64,
-                "Covariance mismatch at {}: {} vs {}", i, original_cov[i], recovered_cov[i]);
+            assert!(
+                (original_cov[i] - recovered_cov[i]).abs() < 1e-8_f64,
+                "Covariance mismatch at {}: {} vs {}",
+                i,
+                original_cov[i],
+                recovered_cov[i]
+            );
         }
     }
 
@@ -751,19 +778,28 @@ mod tests {
 
         // Fuse in order [1, 2]
         let mut filter1 = create_filter();
-        filter1.fuse_measurements(vec![(z1, H1, R1), (z2, H2, R2)]).unwrap();
+        filter1
+            .fuse_measurements(vec![(z1, H1, R1), (z2, H2, R2)])
+            .unwrap();
         let state1 = filter1.get_state().unwrap();
 
         // Fuse in order [2, 1]
         let mut filter2 = create_filter();
-        filter2.fuse_measurements(vec![(z2, H2, R2), (z1, H1, R1)]).unwrap();
+        filter2
+            .fuse_measurements(vec![(z2, H2, R2), (z1, H1, R1)])
+            .unwrap();
         let state2 = filter2.get_state().unwrap();
 
         // Results should be identical
         for i in 0..2 {
-            assert!((state1[i] - state2[i]).abs() < 1e-10,
+            assert!(
+                (state1[i] - state2[i]).abs() < 1e-10,
                 "Fusion should be order-independent. state1[{}]={}, state2[{}]={}",
-                i, state1[i], i, state2[i]);
+                i,
+                state1[i],
+                i,
+                state2[i]
+            );
         }
     }
 }

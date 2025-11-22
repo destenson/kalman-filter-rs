@@ -90,8 +90,12 @@ fn main() {
     let omega = 0.1; // Angular velocity for circular motion
     let radius = 5.0;
 
-    println!("\nTime |  True X  |  True Y  | Meas. X  | Meas. Y  | Est. X   | Est. Y   | Est. Vx  | Est. Vy");
-    println!("-----|----------|----------|----------|----------|----------|----------|----------|--------");
+    println!(
+        "\nTime |  True X  |  True Y  | Meas. X  | Meas. Y  | Est. X   | Est. Y   | Est. Vx  | Est. Vy"
+    );
+    println!(
+        "-----|----------|----------|----------|----------|----------|----------|----------|--------"
+    );
 
     for step in 0..100 {
         let t = step as f64 * dt;
@@ -190,8 +194,12 @@ fn main() {
     let omega = 0.1; // Angular velocity for circular motion
     let radius = 5.0;
 
-    println!("\nTime |  True X  |  True Y  | Meas. X  | Meas. Y  | Est. X   | Est. Y   | Est. Vx  | Est. Vy");
-    println!("-----|----------|----------|----------|----------|----------|----------|----------|--------");
+    println!(
+        "\nTime |  True X  |  True Y  | Meas. X  | Meas. Y  | Est. X   | Est. Y   | Est. Vx  | Est. Vy"
+    );
+    println!(
+        "-----|----------|----------|----------|----------|----------|----------|----------|--------"
+    );
 
     for step in 0..100 {
         let t = step as f64 * dt;

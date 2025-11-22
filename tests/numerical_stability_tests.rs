@@ -95,11 +95,7 @@ fn test_kf_perfect_measurements() {
     );
 
     // Covariance should be very small but not exactly zero (numerical floor)
-    assert!(
-        kf.P[0] < 1e-10,
-        "Covariance should be tiny: {}",
-        kf.P[0]
-    );
+    assert!(kf.P[0] < 1e-10, "Covariance should be tiny: {}", kf.P[0]);
 }
 
 #[test]
@@ -332,12 +328,10 @@ fn test_ekf_vs_ukf_on_highly_nonlinear_system() {
         ukf.update(&meas).unwrap();
 
         // Compute errors (we're using measurements as proxy for truth)
-        let ekf_err = ((ekf.state()[0] - meas[0]).powi(2)
-            + (ekf.state()[1] - meas[1]).powi(2))
-        .sqrt();
-        let ukf_err = ((ukf.state()[0] - meas[0]).powi(2)
-            + (ukf.state()[1] - meas[1]).powi(2))
-        .sqrt();
+        let ekf_err =
+            ((ekf.state()[0] - meas[0]).powi(2) + (ekf.state()[1] - meas[1]).powi(2)).sqrt();
+        let ukf_err =
+            ((ukf.state()[0] - meas[0]).powi(2) + (ukf.state()[1] - meas[1]).powi(2)).sqrt();
 
         ekf_errors.push(ekf_err);
         ukf_errors.push(ukf_err);

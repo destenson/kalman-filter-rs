@@ -266,7 +266,11 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
             while let Some(msg) = node.message_queue.front() {
                 if msg.timestamp <= self.timestamp {
                     // We just checked that front() is Some, so pop_front() must succeed
-                    to_process.push(node.message_queue.pop_front().expect("message queue should have front element"));
+                    to_process.push(
+                        node.message_queue
+                            .pop_front()
+                            .expect("message queue should have front element"),
+                    );
                 } else {
                     break;
                 }
