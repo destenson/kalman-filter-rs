@@ -2,7 +2,13 @@
 
 use crate::filter::KalmanFilter;
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
+use crate::unified::KalmanFilterTrait;
 use log::{debug, error, info, trace, warn};
+
+#[cfg(feature = "nalgebra")]
+use crate::filter::StaticKalmanFilter;
+#[cfg(feature = "nalgebra")]
+use nalgebra::{RealField, SMatrix, SVector};
 
 /// Builder for constructing Kalman filters
 ///
@@ -93,8 +99,108 @@ where
         self
     }
 
-    /// Build the Kalman filter
-    pub fn build(self) -> KalmanResult<KalmanFilter<T>> {
+    /// Build a backend-agnostic Kalman filter
+    ///
+    /// Returns `UnifiedKalmanFilter` which provides the same API regardless of enabled features.
+    /// The builder automatically selects the optimal backend:
+    /// - With `nalgebra` feature: Uses compile-time optimized StaticKalmanFilter for common dimensions
+    /// - Without `nalgebra` feature: Uses Vec-based KalmanFilter
+    ///
+    /// # Example
+    /// ```
+    /// use kalman_filters::KalmanFilterBuilder;
+    ///
+    /// let mut kf = KalmanFilterBuilder::new(2, 1)
+    ///     .initial_state(vec![0.0, 0.0])
+    ///     .initial_covariance(vec![1.0, 0.0, 0.0, 1.0])
+    ///     .transition_matrix(vec![1.0, 0.1, 0.0, 1.0])
+    ///     .process_noise(vec![0.001, 0.0, 0.0, 0.001])
+    ///     .observation_matrix(vec![1.0, 0.0])
+    ///     .measurement_noise(vec![0.1])
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// // Works the same regardless of backend!
+    /// kf.predict();
+    /// kf.update(&[1.0]).unwrap();
+    /// ```
+    #[cfg(not(feature = "nalgebra"))]
+    pub fn build(self) -> KalmanResult<crate::unified::UnifiedKalmanFilter<T>> {
+        use crate::unified::IntoUnified;
+
+        trace!(
+            "Building Kalman filter: state_dim={}, measurement_dim={}",
+            self.state_dim, self.measurement_dim
+        );
+
+        let initial_state = self.initial_state.ok_or_else(|| {
+            error!("KalmanFilterBuilder: missing initial_state");
+            KalmanError::BuilderIncomplete("initial_state".to_string())
+        })?;
+
+        let initial_covariance = self.initial_covariance.ok_or_else(|| {
+            error!("KalmanFilterBuilder: missing initial_covariance");
+            KalmanError::BuilderIncomplete("initial_covariance".to_string())
+        })?;
+
+        let transition_matrix = self.transition_matrix.ok_or_else(|| {
+            error!("KalmanFilterBuilder: missing transition_matrix");
+            KalmanError::BuilderIncomplete("transition_matrix".to_string())
+        })?;
+
+        let process_noise = self.process_noise.ok_or_else(|| {
+            error!("KalmanFilterBuilder: missing process_noise");
+            KalmanError::BuilderIncomplete("process_noise".to_string())
+        })?;
+
+        let observation_matrix = self.observation_matrix.ok_or_else(|| {
+            error!("KalmanFilterBuilder: missing observation_matrix");
+            KalmanError::BuilderIncomplete("observation_matrix".to_string())
+        })?;
+
+        let measurement_noise = self.measurement_noise.ok_or_else(|| {
+            error!("KalmanFilterBuilder: missing measurement_noise");
+            KalmanError::BuilderIncomplete("measurement_noise".to_string())
+        })?;
+
+        let n = self.state_dim;
+        let m = self.measurement_dim;
+
+        if !is_symmetric(&initial_covariance, n) {
+            error!("KalmanFilterBuilder: initial_covariance is not symmetric (size={n}x{n})");
+            return Err(KalmanError::InvalidCovariance);
+        }
+        trace!("Initial covariance matrix validated as symmetric");
+        if !is_symmetric(&process_noise, n) {
+            error!("KalmanFilterBuilder: process_noise is not symmetric (size={n}x{n})");
+            return Err(KalmanError::InvalidNoiseCovariance);
+        }
+        trace!("Process noise matrix validated as symmetric");
+        if !is_symmetric(&measurement_noise, m) {
+            error!("KalmanFilterBuilder: measurement_noise is not symmetric (size={m}x{m})");
+            return Err(KalmanError::InvalidNoiseCovariance);
+        }
+        trace!("Measurement noise matrix validated as symmetric");
+
+        info!("Using KalmanFilter (Vec backend)");
+        let kf = KalmanFilter::initialize(
+            self.state_dim,
+            self.measurement_dim,
+            initial_state,
+            initial_covariance,
+            transition_matrix,
+            process_noise,
+            observation_matrix,
+            measurement_noise,
+        )?;
+        Ok(kf.into_unified())
+    }
+
+    #[cfg(feature = "nalgebra")]
+    pub fn build(self) -> KalmanResult<crate::unified::UnifiedKalmanFilter<T>>
+    where
+        T: RealField,
+    {
         trace!(
             "Building Kalman filter: state_dim={}, measurement_dim={}",
             self.state_dim, self.measurement_dim
@@ -149,16 +255,107 @@ where
         }
         trace!("Measurement noise matrix validated as symmetric");
 
-        KalmanFilter::initialize(
-            self.state_dim,
-            self.measurement_dim,
-            initial_state,
-            initial_covariance,
-            transition_matrix,
-            process_noise,
-            observation_matrix,
-            measurement_noise,
-        )
+        // Build appropriate backend based on dimensions and features
+        #[cfg(feature = "nalgebra")]
+        {
+            use crate::unified::IntoUnified;
+
+            // Try to use optimized static backends for common dimensions
+            match (n, m) {
+                (1, 1) => {
+                    info!("Using StaticKalmanFilter<1, 1> (nalgebra backend)");
+                    let kf = StaticKalmanFilter::<T, 1, 1>::new(
+                        SVector::from_row_slice(&initial_state),
+                        SMatrix::from_row_slice(&initial_covariance),
+                        SMatrix::from_row_slice(&transition_matrix),
+                        SMatrix::from_row_slice(&process_noise),
+                        SMatrix::from_row_slice(&observation_matrix),
+                        SMatrix::from_row_slice(&measurement_noise),
+                    );
+                    Ok(kf.into_unified())
+                }
+                (2, 1) => {
+                    info!("Using StaticKalmanFilter<1, 2> (nalgebra backend)");
+                    let kf = StaticKalmanFilter::<T, 1, 2>::new(
+                        SVector::from_row_slice(&initial_state),
+                        SMatrix::from_row_slice(&initial_covariance),
+                        SMatrix::from_row_slice(&transition_matrix),
+                        SMatrix::from_row_slice(&process_noise),
+                        SMatrix::from_row_slice(&observation_matrix),
+                        SMatrix::from_row_slice(&measurement_noise),
+                    );
+                    Ok(kf.into_unified())
+                }
+                (3, 1) => {
+                    info!("Using StaticKalmanFilter<1, 3> (nalgebra backend)");
+                    let kf = StaticKalmanFilter::<T, 1, 3>::new(
+                        SVector::from_row_slice(&initial_state),
+                        SMatrix::from_row_slice(&initial_covariance),
+                        SMatrix::from_row_slice(&transition_matrix),
+                        SMatrix::from_row_slice(&process_noise),
+                        SMatrix::from_row_slice(&observation_matrix),
+                        SMatrix::from_row_slice(&measurement_noise),
+                    );
+                    Ok(kf.into_unified())
+                }
+                (4, 2) => {
+                    info!("Using StaticKalmanFilter<2, 4> (nalgebra backend)");
+                    let kf = StaticKalmanFilter::<T, 2, 4>::new(
+                        SVector::from_row_slice(&initial_state),
+                        SMatrix::from_row_slice(&initial_covariance),
+                        SMatrix::from_row_slice(&transition_matrix),
+                        SMatrix::from_row_slice(&process_noise),
+                        SMatrix::from_row_slice(&observation_matrix),
+                        SMatrix::from_row_slice(&measurement_noise),
+                    );
+                    Ok(kf.into_unified())
+                }
+                (6, 3) => {
+                    info!("Using StaticKalmanFilter<3, 6> (nalgebra backend)");
+                    let kf = StaticKalmanFilter::<T, 3, 6>::new(
+                        SVector::from_row_slice(&initial_state),
+                        SMatrix::from_row_slice(&initial_covariance),
+                        SMatrix::from_row_slice(&transition_matrix),
+                        SMatrix::from_row_slice(&process_noise),
+                        SMatrix::from_row_slice(&observation_matrix),
+                        SMatrix::from_row_slice(&measurement_noise),
+                    );
+                    Ok(kf.into_unified())
+                }
+                _ => {
+                    // Fall back to Vec-based for uncommon dimensions
+                    info!("Using KalmanFilter (Vec backend) for dimensions {n}x{m}");
+                    let kf = KalmanFilter::initialize(
+                        self.state_dim,
+                        self.measurement_dim,
+                        initial_state,
+                        initial_covariance,
+                        transition_matrix,
+                        process_noise,
+                        observation_matrix,
+                        measurement_noise,
+                    )?;
+                    Ok(kf.into_unified())
+                }
+            }
+        }
+
+        #[cfg(not(feature = "nalgebra"))]
+        {
+            use crate::unified::IntoUnified;
+            info!("Using KalmanFilter (Vec backend)");
+            let kf = KalmanFilter::initialize(
+                self.state_dim,
+                self.measurement_dim,
+                initial_state,
+                initial_covariance,
+                transition_matrix,
+                process_noise,
+                observation_matrix,
+                measurement_noise,
+            )?;
+            Ok(kf.into_unified())
+        }
     }
 }
 

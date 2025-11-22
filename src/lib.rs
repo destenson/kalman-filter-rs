@@ -57,6 +57,7 @@ pub mod particle;
 pub mod scented;
 pub mod types;
 pub mod unscented;
+pub mod unified;
 /// Validation utilities for matrices and numerical stability checks
 pub mod validation;
 
@@ -76,6 +77,7 @@ pub use information::filter::InformationFilter;
 pub use particle::{Particle, ParticleFilter, ResamplingStrategy};
 pub use scented::CubatureKalmanFilter;
 pub use types::{JacobianStrategy, KalmanResult, KalmanScalar, NonlinearSystem};
+pub use unified::{KalmanFilterTrait, UnifiedKalmanFilter};
 pub use unscented::{UKFParameters, UnscentedKalmanFilter};
 
 #[cfg(feature = "nalgebra")]
