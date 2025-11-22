@@ -28,20 +28,26 @@
 
 use crate::{KalmanError, KalmanResult, KalmanScalar};
 
+// Backend modules
 #[cfg(feature = "naive-matrix")]
 mod naive;
-#[cfg(feature = "naive-matrix")]
-pub use naive::NaiveBackend as DefaultBackend;
 
 #[cfg(feature = "nalgebra")]
 mod nalgebra_backend;
-#[cfg(all(feature = "nalgebra", not(feature = "naive-matrix")))]
-pub use nalgebra_backend::NalgebraBackend as DefaultBackend;
 
 #[cfg(feature = "blas-backend")]
 mod ndarray_backend;
-#[cfg(all(feature = "blas-backend", not(feature = "naive-matrix"), not(feature = "nalgebra")))]
+
+// Backend selection with priority: blas-backend > nalgebra > naive-matrix
+// This ensures the most optimized backend is used when multiple features are enabled
+#[cfg(all(feature = "blas-backend", not(feature = "naive-matrix")))]
 pub use ndarray_backend::NdarrayBackend as DefaultBackend;
+
+#[cfg(all(feature = "nalgebra", not(feature = "blas-backend"), not(feature = "naive-matrix")))]
+pub use nalgebra_backend::NalgebraBackend as DefaultBackend;
+
+#[cfg(feature = "naive-matrix")]
+pub use naive::NaiveBackend as DefaultBackend;
 
 #[cfg(test)]
 mod tests;

@@ -32,16 +32,17 @@ ndarray-linalg = ["blas-backend", "dep:ndarray-linalg", "std"]
 # These features enable both ndarray-linalg and a specific BLAS implementation
 # NOTE: Only ONE BLAS backend should be enabled at a time to avoid linker conflicts.
 # openblas-static is enabled by default for --all-features compatibility.
+# TODO: remove "ndarray-linalg" as a dependency (use the feature to select static iff ndarray-linalg is enabled)
 # To use system OpenBLAS instead, explicitly enable it:
 #   cargo build --features "openblas-system,serde,parallel"
-openblas-static = ["ndarray-linalg", "ndarray-linalg/openblas-static"]
-# openblas-system = ["ndarray-linalg", "ndarray-linalg/openblas-system"]  # Commented to prevent conflicts with openblas-static
-# intel-mkl-dynamic-lp64 = ["ndarray-linalg", "ndarray-linalg/intel-mkl-dynamic-lp64-iomp"]
-# intel-mkl-dynamic-seq = ["ndarray-linalg", "ndarray-linalg/intel-mkl-dynamic-lp64-seq"]
-# intel-mkl-static-lp64 = ["ndarray-linalg", "ndarray-linalg/intel-mkl-static-lp64-iomp"]
-# intel-mkl-static-seq = ["ndarray-linalg", "ndarray-linalg/intel-mkl-static-lp64-seq"]
-# netlib-system = ["ndarray-linalg", "ndarray-linalg/netlib-system"]
-# netlib-static = ["ndarray-linalg", "ndarray-linalg/netlib-static"]
+openblas-static = ["dep:ndarray-linalg", "ndarray-linalg/openblas-static"]
+openblas-system = ["dep:ndarray-linalg", "ndarray-linalg/openblas-system"]  # Commented to prevent conflicts with openblas-static
+# intel-mkl-dynamic-lp64 = ["dep:ndarray-linalg", "ndarray-linalg/intel-mkl-dynamic-lp64-iomp"]
+# intel-mkl-dynamic-seq = ["dep:ndarray-linalg", "ndarray-linalg/intel-mkl-dynamic-lp64-seq"]
+# intel-mkl-static-lp64 = ["dep:ndarray-linalg", "ndarray-linalg/intel-mkl-static-lp64-iomp"]
+# intel-mkl-static-seq = ["dep:ndarray-linalg", "ndarray-linalg?/intel-mkl-static-lp64-seq"]
+# netlib-system = ["dep:ndarray-linalg", "ndarray-linalg/netlib-system"]
+# netlib-static = ["dep:ndarray-linalg", "ndarray-linalg/netlib-static"]
 
 # Other features
 opencv = ["dep:opencv"]
