@@ -1,0 +1,14 @@
+# Cargo configuration for kalman-filters project
+
+[env]
+# Set C++ include path for opencv-rust binding generation
+# This ensures that clang can find the C++ standard library headers when building opencv bindings
+CPLUS_INCLUDE_PATH = "/usr/include/c++/13:/usr/include/x86_64-linux-gnu/c++/13"
+
+# Note: BLAS backend features are mutually exclusive. When using --all-features,
+# cargo will enable both openblas-static and openblas-system due to additive feature resolution.
+# To avoid conflicts, use specific feature combinations:
+#   cargo build --features "openblas-static,serde,parallel"
+#   cargo build --features "openblas-system,serde,parallel"
+# or exclude opencv:
+#   cargo build --all-features --exclude-features opencv
