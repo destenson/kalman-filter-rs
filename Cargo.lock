@@ -113,15 +113,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
 
 [[package]]
-name = "blas-src"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5bd439b48f5425c9f4597141b52476358e05e08471bc30f4d1c2a1f4084d7c9f"
-dependencies = [
- "openblas-src",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -155,15 +146,6 @@ dependencies = [
  "num-traits",
  "rand 0.8.5",
  "serde",
-]
-
-[[package]]
-name = "cblas-sys"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6feecd82cce51b0204cf063f0041d69f24ce83f680d87514b004248e7b0fa65"
-dependencies = [
- "libc",
 ]
 
 [[package]]
@@ -712,7 +694,6 @@ name = "kalman_filters"
 version = "1.1.0-dev"
 dependencies = [
  "approx",
- "blas-src",
  "criterion",
  "env_logger 0.11.8",
  "log",
@@ -763,6 +744,7 @@ dependencies = [
  "katexit",
  "lapack-sys",
  "num-traits",
+ "openblas-src",
  "thiserror",
 ]
 
@@ -919,8 +901,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c7c9125e8f6f10c9da3aad044cc918cf8784fa34de857b1aa68038eb05a50a9"
 dependencies = [
  "approx",
- "cblas-sys",
- "libc",
  "matrixmultiply",
  "num-complex",
  "num-integer",

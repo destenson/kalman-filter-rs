@@ -25,7 +25,19 @@ alloc = ["rand_distr/alloc"]
 nalgebra = ["dep:nalgebra"]
 naive-matrix = []
 blas-backend = ["dep:ndarray", "std"]
-ndarray-linalg = ["blas-backend", "dep:ndarray-linalg", "dep:blas-src", "std"]
+# Base ndarray-linalg without specific BLAS backend
+ndarray-linalg = ["blas-backend", "dep:ndarray-linalg", "std"]
+
+# BLAS backend selection (choose one when using ndarray-linalg)
+# These features enable both ndarray-linalg and a specific BLAS implementation
+openblas-system = ["ndarray-linalg", "ndarray-linalg/openblas-system"]
+openblas-static = ["ndarray-linalg", "ndarray-linalg/openblas-static"]
+# intel-mkl-dynamic-lp64 = ["ndarray-linalg", "ndarray-linalg/intel-mkl-dynamic-lp64-iomp"]
+# intel-mkl-dynamic-seq = ["ndarray-linalg", "ndarray-linalg/intel-mkl-dynamic-lp64-seq"]
+# intel-mkl-static-lp64 = ["ndarray-linalg", "ndarray-linalg/intel-mkl-static-lp64-iomp"]
+# intel-mkl-static-seq = ["ndarray-linalg", "ndarray-linalg/intel-mkl-static-lp64-seq"]
+# netlib-system = ["ndarray-linalg", "ndarray-linalg/netlib-system"]
+# netlib-static = ["ndarray-linalg", "ndarray-linalg/netlib-static"]
 
 # Other features
 opencv = ["dep:opencv"]
@@ -35,6 +47,10 @@ legacy = []
 tracing-subscriber = ["dep:tracing-subscriber"]
 prometheus-metrics = ["dep:prometheus-client", "dep:once_cell"]
 
+[target.'cfg(target_os = "macos")'.features]
+# macOS-only BLAS backend
+accelerate = ["blas-src/accelerate"]
+
 
 [dependencies]
 approx = "0.5"
@@ -43,8 +59,7 @@ rand = "0.9.2"
 rand_distr = { version = "0.5.1", default-features = false }
 nalgebra = { version = "0.34.1", optional = true }
 ndarray = { version = "0.17.1", optional = true }
-ndarray-linalg = { version = "0.18.0", optional = true }
-blas-src = { version = "0.14.0", optional = true, features = ["openblas"] }
+ndarray-linalg = { version = "0.18.0", optional = true, default-features = false }
 opencv = { version = "0.97", optional = true }
 rayon = { version = "1.7", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
@@ -52,7 +67,6 @@ log = "0.4.28"
 tracing-subscriber = { version = "0.3", features = ["env-filter",], optional = true }
 prometheus-client = { version = "0.24.0", optional = true }
 once_cell = { version = "1.21.3", optional = true }
-
 
 [dev-dependencies]
 criterion = "0.7"
