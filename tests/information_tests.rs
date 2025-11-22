@@ -425,55 +425,5 @@ fn test_numerical_stability() {
     assert!(result.is_ok() || result.is_err()); // May fail gracefully
 }
 
-/// Benchmark sparse vs dense operations
-#[test]
-#[ignore] // Run with --ignored for benchmarks
-fn bench_sparse_vs_dense() {
-    use std::time::Instant;
-
-    let n = 100; // Large state dimension
-    let sparsity = 0.95; // 95% sparse
-
-    // Create sparse matrix
-    let mut dense = vec![0.0; n * n];
-    let mut rng = rand::rng();
-    for i in 0..n {
-        for j in 0..n {
-            if rand::random::<f64>() > sparsity {
-                dense[i * n + j] = rng.random_range(-1.0f64..1.0f64);
-            }
-        }
-    }
-
-    let sparse = SparseMatrix::from_dense(&dense, n, n);
-    let v = vec![1.0; n];
-
-    // Benchmark sparse multiplication
-    let start = Instant::now();
-    for _ in 0..1000 {
-        let _ = sparse.multiply_vector(&v).unwrap();
-    }
-    let sparse_time = start.elapsed();
-
-    // Benchmark dense multiplication
-    let start = Instant::now();
-    for _ in 0..1000 {
-        let mut result = vec![0.0; n];
-        for i in 0..n {
-            for j in 0..n {
-                result[i] += dense[i * n + j] * v[j];
-            }
-        }
-    }
-    let dense_time = start.elapsed();
-
-    println!("Sparse time: {:?}", sparse_time);
-    println!("Dense time: {:?}", dense_time);
-    println!(
-        "Speedup: {:.2}x",
-        dense_time.as_secs_f64() / sparse_time.as_secs_f64()
-    );
-
-    // Sparse should be faster for high sparsity
-    assert!(sparse_time < dense_time);
-}
+// NOTE: Benchmark for sparse operations has been moved to benches/kalman_benchmarks.rs
+// Run with: cargo bench --bench kalman_benchmarks sparse_operations

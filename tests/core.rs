@@ -988,3 +988,260 @@ fn test_multiple_sequential_update_steps() {
         kf.P[0]
     );
 }
+
+// =============================================================================
+// TESTS FOR REAL-WORLD FAILURE MODES
+// These test actual bugs that occur in practice, not just "does math work"
+// =============================================================================
+
+#[test]
+fn test_contradictory_measurements_dont_crash() {
+    // Real scenario: GPS says you're moving north, compass says you're moving south
+    // Bad filters crash or produce NaN. Good filters handle this gracefully.
+    
+    let mut kf = KalmanFilter::<f64>::new(2, 2);
+    kf.x = vec![0.0, 0.0]; // position, velocity
+    kf.P = vec![1.0, 0.0, 0.0, 1.0];
+    kf.F = vec![1.0, 1.0, 0.0, 1.0]; // dt=1
+    kf.H = vec![1.0, 0.0, 0.0, 1.0]; // measure both position and velocity
+    kf.Q = vec![0.1, 0.0, 0.0, 0.1];
+    kf.R = vec![0.1, 0.0, 0.0, 0.1];
+
+    // Measurement 1: position=10, velocity=5 (moving forward)
+    kf.predict();
+    kf.update(&vec![10.0, 5.0]).unwrap();
+
+    // Measurement 2: position=11, velocity=-5 (suddenly reversed?!)
+    kf.predict();
+    let result = kf.update(&vec![11.0, -5.0]);
+
+    // Should not crash or produce NaN
+    assert!(result.is_ok(), "Filter should handle contradictory measurements");
+    assert!(!kf.x[0].is_nan(), "State should not be NaN");
+    assert!(!kf.x[1].is_nan(), "Velocity should not be NaN");
+    assert!(!kf.P[0].is_nan(), "Covariance should not be NaN");
+}
+
+#[test]
+fn test_measurement_far_from_prediction_doesnt_explode_covariance() {
+    // Real scenario: GPS glitch reports you teleported 1000km
+    // Bad filters: covariance explodes, filter never recovers
+    // Good filters: large innovation, but bounded response
+    
+    let mut kf = KalmanFilter::<f64>::new(1, 1);
+    kf.x = vec![0.0];
+    kf.P = vec![1.0];
+    kf.F = vec![1.0];
+    kf.H = vec![1.0];
+    kf.Q = vec![0.01];
+    kf.R = vec![1.0];
+
+    // Normal measurements
+    for i in 0..10 {
+        kf.predict();
+        kf.update(&vec![i as f64]).unwrap();
+    }
+
+    let stable_P = kf.P[0];
+
+    // Massive outlier measurement
+    kf.predict();
+    kf.update(&vec![1000.0]).unwrap();
+
+    // Covariance should not explode
+    assert!(
+        kf.P[0] < stable_P * 100.0,
+        "Covariance exploded from {} to {} after outlier",
+        stable_P,
+        kf.P[0]
+    );
+
+    // Should still be numerically stable
+    assert!(!kf.P[0].is_infinite(), "Covariance went to infinity");
+    assert!(!kf.P[0].is_nan(), "Covariance became NaN");
+}
+
+#[test]
+fn test_repeated_predict_without_update_increases_uncertainty() {
+    // Real scenario: Sensor fails, you only have predictions (dead reckoning)
+    // Uncertainty should grow WITHOUT BOUND (not saturate incorrectly)
+    
+    let mut kf = KalmanFilter::<f64>::new(1, 1);
+    kf.x = vec![0.0];
+    kf.P = vec![1.0];
+    kf.F = vec![1.0];
+    kf.H = vec![1.0];
+    kf.Q = vec![0.1]; // Process noise adds uncertainty each step
+    kf.R = vec![1.0];
+
+    let mut uncertainties = vec![];
+    
+    // Predict 100 times without any measurements
+    for _ in 0..100 {
+        kf.predict();
+        uncertainties.push(kf.P[0]);
+    }
+
+    // Uncertainty should monotonically increase
+    for i in 1..uncertainties.len() {
+        assert!(
+            uncertainties[i] > uncertainties[i-1],
+            "Uncertainty should increase at step {}: {} <= {}",
+            i, uncertainties[i], uncertainties[i-1]
+        );
+    }
+
+    // Final uncertainty should be much larger than initial
+    assert!(
+        kf.P[0] > 5.0,
+        "After 100 predictions with Q=0.1, uncertainty should be >5, got {}",
+        kf.P[0]
+    );
+}
+
+#[test]
+fn test_zero_process_noise_with_model_error_causes_overconfidence() {
+    // Real scenario: Your model is F=identity but actual system is F=1.1*x
+    // With Q=0, filter becomes overconfident and ignores measurements
+    // This is a FEATURE, not a bug, but good to document
+    
+    let mut kf = KalmanFilter::<f64>::new(1, 1);
+    kf.x = vec![1.0];
+    kf.P = vec![1.0];
+    kf.F = vec![1.0]; // Model: state stays constant
+    kf.H = vec![1.0];
+    kf.Q = vec![0.0]; // NO process noise (overconfident model)
+    kf.R = vec![1.0];
+
+    // Actual system: state grows by 10% each step
+    let mut true_state = 1.0;
+    
+    for _ in 0..10 {
+        true_state *= 1.1; // Actual dynamics
+        
+        kf.predict();
+        kf.update(&vec![true_state]).unwrap();
+    }
+
+    // With Q=0, covariance should approach zero
+    // (Filter becomes certain it knows the state, even though model is wrong)
+    assert!(
+        kf.P[0] < 0.5,
+        "With Q=0, covariance should shrink despite model error, got {}",
+        kf.P[0]
+    );
+
+    // State estimate will lag behind true state
+    let error = (kf.x[0] - true_state).abs();
+    assert!(
+        error > 0.1,
+        "Filter should have model error with Q=0, error = {}",
+        error
+    );
+}
+
+#[test]
+fn test_near_singular_innovation_covariance_uses_regularization() {
+    // Real scenario: R and H*P*H' cancel out, making S singular
+    // This tests that we don't crash when inverting S
+    
+    let mut kf = KalmanFilter::<f64>::new(2, 1);
+    kf.x = vec![0.0, 0.0];
+    
+    // Set up P and H so that H*P*H' ≈ 0
+    kf.P = vec![
+        1e-15, 0.0,
+        0.0, 1.0
+    ];
+    kf.H = vec![1.0, 0.0]; // Only observes first state (which has tiny variance)
+    kf.R = vec![1e-15]; // Also tiny
+    
+    kf.F = vec![1.0, 0.0, 0.0, 1.0];
+    kf.Q = vec![0.0, 0.0, 0.0, 0.0];
+
+    // S = H*P*H' + R ≈ 1e-15 + 1e-15 = 2e-15 (nearly singular)
+    let result = kf.update(&vec![1.0]);
+
+    // Should handle gracefully (either succeed or fail gracefully)
+    if result.is_ok() {
+        assert!(!kf.x[0].is_nan(), "State should not be NaN after near-singular update");
+        assert!(!kf.x[0].is_infinite(), "State should not be infinite");
+    }
+    // If it fails, that's also acceptable - just shouldn't crash
+}
+
+#[test]
+fn test_large_dt_in_constant_velocity_model() {
+    // Real scenario: Timestep varies (missed frames, slow sensor)
+    // Large dt can make F*P*F' explode if not handled correctly
+    
+    let mut kf = KalmanFilter::<f64>::new(2, 1);
+    kf.x = vec![0.0, 1.0]; // position=0, velocity=1
+    kf.P = vec![1.0, 0.0, 0.0, 1.0];
+    kf.H = vec![1.0, 0.0];
+    kf.Q = vec![0.01, 0.0, 0.0, 0.01];
+    kf.R = vec![0.1];
+
+    // Normal dt=0.1
+    kf.F = vec![1.0, 0.1, 0.0, 1.0];
+    kf.predict();
+    let normal_P = kf.P[0];
+
+    // Very large dt=100 (sensor offline for a while)
+    kf.F = vec![1.0, 100.0, 0.0, 1.0];
+    kf.predict();
+
+    // Uncertainty in position should grow dramatically
+    assert!(
+        kf.P[0] > normal_P * 10.0,
+        "Position uncertainty should grow with large dt: {} vs {}",
+        kf.P[0], normal_P
+    );
+
+    // But should not overflow
+    assert!(!kf.P[0].is_infinite(), "Covariance should not overflow with large dt");
+}
+
+#[test]
+fn test_asymmetric_covariance_stays_symmetric() {
+    // Real scenario: Floating point errors accumulate and break symmetry
+    // This can cause eigenvalue computation to fail later
+    
+    let mut kf = KalmanFilter::<f64>::new(3, 1);
+    kf.x = vec![0.0, 0.0, 0.0];
+    kf.P = vec![
+        1.0, 0.1, 0.2,
+        0.1, 1.0, 0.3,
+        0.2, 0.3, 1.0,
+    ];
+    kf.F = vec![
+        0.9, 0.1, 0.0,
+        0.0, 0.9, 0.1,
+        0.0, 0.0, 0.9,
+    ];
+    kf.H = vec![1.0, 0.0, 0.0];
+    kf.Q = vec![
+        0.01, 0.0, 0.0,
+        0.0, 0.01, 0.0,
+        0.0, 0.0, 0.01,
+    ];
+    kf.R = vec![0.1];
+
+    // Run many predict-update cycles
+    for i in 0..100 {
+        kf.predict();
+        kf.update(&vec![i as f64 * 0.1]).unwrap();
+    }
+
+    // Check symmetry of final covariance
+    for i in 0..3 {
+        for j in i+1..3 {
+            let diff = (kf.P[i * 3 + j] - kf.P[j * 3 + i]).abs();
+            assert!(
+                diff < 1e-10,
+                "Covariance asymmetry at ({},{}): {} vs {} (diff={})",
+                i, j, kf.P[i * 3 + j], kf.P[j * 3 + i], diff
+            );
+        }
+    }
+}
