@@ -62,6 +62,7 @@ use crate::logging::{
     check_numerical_stability, format_innovation, format_matrix, format_state,
     log_filter_dimensions, state_norm,
 };
+use crate::matrix::{DefaultBackend, MatrixDecomposition, MatrixOps};
 use crate::types::{JacobianStrategy, KalmanError, KalmanResult, KalmanScalar, NonlinearSystem};
 use log::{debug, error, info, trace, warn};
 use num_traits::{One, Zero};
@@ -253,26 +254,18 @@ where
 
         self.x = new_x;
 
-        // P = F * P * F^T + Q
+        // P = F * P * F^T + Q (using optimized matrix operations)
         // First compute F * P
         let mut fp = vec![T::zero(); n * n];
-        for i in 0..n {
-            for j in 0..n {
-                for k in 0..n {
-                    fp[i * n + j] = fp[i * n + j] + F[i * n + k] * self.P[k * n + j];
-                }
-            }
-        }
+        DefaultBackend::matmul(&F, &self.P, &mut fp, n, n, n);
 
-        // Then compute (F * P) * F^T + Q
-        let mut new_p = self.Q.clone();
-        for i in 0..n {
-            for j in 0..n {
-                for k in 0..n {
-                    new_p[i * n + j] = new_p[i * n + j] + fp[i * n + k] * F[j * n + k];
-                }
-            }
-        }
+        // Then compute (F * P) * F^T
+        let mut fpf_t = vec![T::zero(); n * n];
+        DefaultBackend::matmul_transpose(&fp, &F, &mut fpf_t, n, n, n);
+
+        // Add Q: P = F * P * F^T + Q
+        DefaultBackend::add_inplace(&mut fpf_t, &self.Q, n * n);
+        let new_p = fpf_t;
 
         // Check for divergence
         let trace_val = (0..n)
@@ -350,37 +343,24 @@ where
             _ => self.system.measurement_jacobian(&self.x),
         };
 
-        // Innovation covariance: S = H * P * H^T + R
+        // Innovation covariance: S = H * P * H^T + R (using optimized matrix operations)
         // First compute H * P
         let mut hp = vec![T::zero(); m * n];
-        for i in 0..m {
-            for j in 0..n {
-                for k in 0..n {
-                    hp[i * n + j] = hp[i * n + j] + H[i * n + k] * self.P[k * n + j];
-                }
-            }
-        }
+        DefaultBackend::matmul(&H, &self.P, &mut hp, m, n, n);
 
         // Then compute S = (H * P) * H^T + R
-        let mut s = self.R.clone();
-        for i in 0..m {
-            for j in 0..m {
-                for k in 0..n {
-                    s[i * m + j] = s[i * m + j] + hp[i * n + k] * H[j * n + k];
-                }
-            }
-        }
+        let mut s = vec![T::zero(); m * m];
+        DefaultBackend::matmul_transpose(&hp, &H, &mut s, m, n, m);
+        DefaultBackend::add_inplace(&mut s, &self.R, m * m);
 
-        // Invert S
+        // Invert S (using optimized matrix inversion)
         trace!("EKF: Computing innovation covariance inverse");
-        let s_inv = match KalmanFilter::<T>::invert_matrix(&s, m) {
-            Ok(inv) => inv,
-            Err(e) => {
-                error!("EKF: Failed to invert innovation covariance: {:?}", e);
-                check_numerical_stability(&s, m, "EKF innovation covariance (singular)");
-                return Err(e);
-            }
-        };
+        let mut s_inv = vec![T::zero(); m * m];
+        if let Err(e) = DefaultBackend::invert(&s, &mut s_inv, m) {
+            error!("EKF: Failed to invert innovation covariance: {:?}", e);
+            check_numerical_stability(&s, m, "EKF innovation covariance (singular)");
+            return Err(e);
+        }
 
         // Kalman gain: K = P * H^T * S^-1
         // First compute P * H^T
@@ -395,31 +375,19 @@ where
 
         // Then compute K = (P * H^T) * S^-1
         let mut k = vec![T::zero(); n * m];
-        for i in 0..n {
-            for j in 0..m {
-                for l in 0..m {
-                    k[i * m + j] = k[i * m + j] + ph_t[i * m + l] * s_inv[l * m + j];
-                }
-            }
-        }
+        DefaultBackend::matmul(&ph_t, &s_inv, &mut k, n, m, m);
 
         // State update: x = x + K * y
+        let mut ky = vec![T::zero(); n];
+        DefaultBackend::matvec(&k, &y, &mut ky, n, m);
         for i in 0..n {
-            for j in 0..m {
-                self.x[i] = self.x[i] + k[i * m + j] * y[j];
-            }
+            self.x[i] = self.x[i] + ky[i];
         }
 
-        // Covariance update: P = (I - K * H) * P
+        // Covariance update: P = (I - K * H) * P (using optimized matrix operations)
         // First compute K * H
         let mut kh = vec![T::zero(); n * n];
-        for i in 0..n {
-            for j in 0..n {
-                for l in 0..m {
-                    kh[i * n + j] = kh[i * n + j] + k[i * m + l] * H[l * n + j];
-                }
-            }
-        }
+        DefaultBackend::matmul(&k, &H, &mut kh, n, m, n);
 
         // Compute I - K * H
         let mut i_kh = vec![T::zero(); n * n];
@@ -431,22 +399,10 @@ where
 
         // Finally compute P = (I - K * H) * P
         let mut new_p = vec![T::zero(); n * n];
-        for i in 0..n {
-            for j in 0..n {
-                for l in 0..n {
-                    new_p[i * n + j] = new_p[i * n + j] + i_kh[i * n + l] * self.P[l * n + j];
-                }
-            }
-        }
+        DefaultBackend::matmul(&i_kh, &self.P, &mut new_p, n, n, n);
 
-        // Ensure symmetry
-        for i in 0..n {
-            for j in i + 1..n {
-                let avg = (new_p[i * n + j] + new_p[j * n + i]) * T::from_f64(0.5);
-                new_p[i * n + j] = avg;
-                new_p[j * n + i] = avg;
-            }
-        }
+        // Ensure symmetry (using optimized symmetrize operation)
+        DefaultBackend::symmetrize(&mut new_p, n);
 
         self.P = new_p;
 

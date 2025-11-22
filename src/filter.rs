@@ -5,6 +5,7 @@ use crate::logging::{
     check_numerical_stability, format_innovation, format_matrix, format_state,
     log_filter_dimensions, state_norm,
 };
+use crate::matrix::{DefaultBackend, MatrixDecomposition, MatrixOps};
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
 use crate::validation::{regularize_matrix, validate_covariance, validate_measurement_noise};
 use log::{debug, error, info, trace, warn};
@@ -193,36 +194,23 @@ where
         #[cfg(feature = "prometheus-metrics")]
         let _timer = crate::metrics::MetricsTimer::start();
 
-        // x = F * x
+        // x = F * x (using optimized matrix-vector multiplication)
         let mut new_x = vec![T::zero(); n];
-        for (i, new_x_i) in new_x.iter_mut().enumerate() {
-            for j in 0..n {
-                *new_x_i = *new_x_i + self.F[i * n + j] * self.x[j];
-            }
-        }
+        DefaultBackend::matvec(&self.F, &self.x, &mut new_x, n, n);
         self.x = new_x;
 
         // P = F * P * F^T + Q
         // First compute F * P
         let mut fp = vec![T::zero(); n * n];
-        for i in 0..n {
-            for j in 0..n {
-                for k in 0..n {
-                    fp[i * n + j] = fp[i * n + j] + self.F[i * n + k] * self.P[k * n + j];
-                }
-            }
-        }
+        DefaultBackend::matmul(&self.F, &self.P, &mut fp, n, n, n);
 
-        // Then compute (F * P) * F^T + Q
-        let mut new_p = self.Q.clone();
-        for i in 0..n {
-            for j in 0..n {
-                for k in 0..n {
-                    new_p[i * n + j] = new_p[i * n + j] + fp[i * n + k] * self.F[j * n + k];
-                }
-            }
-        }
-        self.P = new_p;
+        // Then compute (F * P) * F^T
+        let mut fpf_t = vec![T::zero(); n * n];
+        DefaultBackend::matmul_transpose(&fp, &self.F, &mut fpf_t, n, n, n);
+
+        // Add Q: P = F * P * F^T + Q
+        DefaultBackend::add_inplace(&mut fpf_t, &self.Q, n * n);
+        self.P = fpf_t;
 
         check_numerical_stability(&self.P, n, "Predicted covariance");
 
@@ -245,7 +233,6 @@ where
     }
 
     /// Update step: incorporate measurement to correct state estimate
-    /// TODO: Don't do matrix multiplication by hand. Use a proper linear algebra library with optimized routines, better numerical stability, and GPU support
     pub fn update(&mut self, measurement: &[T]) -> KalmanResult<()> {
         let n = self.state_dim;
         let m = self.measurement_dim;
@@ -274,14 +261,12 @@ where
             });
         }
 
-        // Innovation: y = z - H * x
+        // Innovation: y = z - H * x (using optimized matrix-vector multiplication)
+        let mut hx = vec![T::zero(); m];
+        DefaultBackend::matvec(&self.H, &self.x, &mut hx, m, n);
         let mut y = measurement.to_vec();
-        for (i, y_i) in y.iter_mut().enumerate() {
-            let mut hx = T::zero();
-            for j in 0..n {
-                hx = hx + self.H[i * n + j] * self.x[j];
-            }
-            *y_i = *y_i - hx;
+        for i in 0..m {
+            y[i] = y[i] - hx[i];
         }
 
         if log::log_enabled!(log::Level::Trace) {
@@ -301,36 +286,23 @@ where
         // Innovation covariance: S = H * P * H^T + R
         // First compute H * P
         let mut hp = vec![T::zero(); m * n];
-        for i in 0..m {
-            for j in 0..n {
-                for k in 0..n {
-                    hp[i * n + j] = hp[i * n + j] + self.H[i * n + k] * self.P[k * n + j];
-                }
-            }
-        }
+        DefaultBackend::matmul(&self.H, &self.P, &mut hp, m, n, n);
 
         // Then compute S = (H * P) * H^T + R
-        let mut s = self.R.clone();
-        for i in 0..m {
-            for j in 0..m {
-                for k in 0..n {
-                    s[i * m + j] = s[i * m + j] + hp[i * n + k] * self.H[j * n + k];
-                }
-            }
-        }
+        let mut s = vec![T::zero(); m * m];
+        DefaultBackend::matmul_transpose(&hp, &self.H, &mut s, m, n, m);
+        DefaultBackend::add_inplace(&mut s, &self.R, m * m);
 
-        // Invert S
+        // Invert S (using optimized matrix inversion)
         trace!("Computing innovation covariance inverse");
-        let s_inv = match Self::invert_matrix(&s, m) {
-            Ok(inv) => inv,
-            Err(e) => {
-                error!("Failed to invert innovation covariance: {:?}", e);
-                check_numerical_stability(&s, m, "Innovation covariance (singular)");
-                #[cfg(feature = "prometheus-metrics")]
-                crate::metrics::record_error("kf", "singular_matrix");
-                return Err(e);
-            }
-        };
+        let mut s_inv = vec![T::zero(); m * m];
+        if let Err(e) = DefaultBackend::invert(&s, &mut s_inv, m) {
+            error!("Failed to invert innovation covariance: {:?}", e);
+            check_numerical_stability(&s, m, "Innovation covariance (singular)");
+            #[cfg(feature = "prometheus-metrics")]
+            crate::metrics::record_error("kf", "singular_matrix");
+            return Err(e);
+        }
 
         // Kalman gain: K = P * H^T * S^-1
         // First compute P * H^T
@@ -345,31 +317,19 @@ where
 
         // Then compute K = (P * H^T) * S^-1
         let mut k = vec![T::zero(); n * m];
-        for i in 0..n {
-            for j in 0..m {
-                for l in 0..m {
-                    k[i * m + j] = k[i * m + j] + ph_t[i * m + l] * s_inv[l * m + j];
-                }
-            }
-        }
+        DefaultBackend::matmul(&ph_t, &s_inv, &mut k, n, m, m);
 
         // State update: x = x + K * y
+        let mut ky = vec![T::zero(); n];
+        DefaultBackend::matvec(&k, &y, &mut ky, n, m);
         for i in 0..n {
-            for j in 0..m {
-                self.x[i] = self.x[i] + k[i * m + j] * y[j];
-            }
+            self.x[i] = self.x[i] + ky[i];
         }
 
         // Covariance update: P = (I - K * H) * P
         // First compute K * H
         let mut kh = vec![T::zero(); n * n];
-        for i in 0..n {
-            for j in 0..n {
-                for l in 0..m {
-                    kh[i * n + j] = kh[i * n + j] + k[i * m + l] * self.H[l * n + j];
-                }
-            }
-        }
+        DefaultBackend::matmul(&k, &self.H, &mut kh, n, m, n);
 
         // Compute I - K * H
         let mut i_kh = vec![T::zero(); n * n];
@@ -381,22 +341,10 @@ where
 
         // Finally compute P = (I - K * H) * P
         let mut new_p = vec![T::zero(); n * n];
-        for i in 0..n {
-            for j in 0..n {
-                for l in 0..n {
-                    new_p[i * n + j] = new_p[i * n + j] + i_kh[i * n + l] * self.P[l * n + j];
-                }
-            }
-        }
+        DefaultBackend::matmul(&i_kh, &self.P, &mut new_p, n, n, n);
 
-        // Ensure symmetry
-        for i in 0..n {
-            for j in i + 1..n {
-                let avg = (new_p[i * n + j] + new_p[j * n + i]) * T::from_f64(0.5);
-                new_p[i * n + j] = avg;
-                new_p[j * n + i] = avg;
-            }
-        }
+        // Ensure symmetry (using optimized symmetrize operation)
+        DefaultBackend::symmetrize(&mut new_p, n);
 
         self.P = new_p;
 
