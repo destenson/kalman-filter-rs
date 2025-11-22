@@ -666,3 +666,325 @@ fn test_symmetric_covariance_maintained_after_update() {
         kf.P[2]
     );
 }
+
+// =============================================================================
+// TESTS FOR KALMAN GAIN CALCULATION
+// =============================================================================
+
+#[test]
+fn test_kalman_gain_computation_1d() {
+    // For 1D case, we can compute Kalman gain analytically
+    // K = P * H^T * (H * P * H^T + R)^-1
+    // With H=1, this simplifies to: K = P / (P + R)
+
+    let mut kf = KalmanFilter::<f64>::new(1, 1);
+    kf.x = vec![0.0];
+    kf.P = vec![2.0]; // Prior uncertainty = 2
+    kf.H = vec![1.0];
+    kf.R = vec![3.0]; // Measurement noise = 3
+    kf.F = vec![1.0];
+    kf.Q = vec![0.0];
+
+    let prior_state = kf.x[0];
+    let measurement = 10.0;
+
+    kf.update(&vec![measurement]).unwrap();
+
+    // Expected Kalman gain: K = P / (P + R) = 2 / (2 + 3) = 0.4
+    // Expected state update: x_new = x_old + K * (z - x_old)
+    //                              = 0 + 0.4 * (10 - 0) = 4.0
+
+    let expected_state = prior_state + 0.4 * (measurement - prior_state);
+    assert!(
+        (kf.x[0] - expected_state).abs() < 1e-10,
+        "Kalman gain calculation error: expected {}, got {}",
+        expected_state,
+        kf.x[0]
+    );
+}
+
+#[test]
+fn test_kalman_gain_with_high_measurement_noise() {
+    // When R >> P, Kalman gain should be near 0 (don't trust measurement)
+    let mut kf = KalmanFilter::<f64>::new(1, 1);
+    kf.x = vec![5.0];
+    kf.P = vec![1.0];
+    kf.H = vec![1.0];
+    kf.R = vec![1000.0]; // Very high measurement noise
+    kf.F = vec![1.0];
+    kf.Q = vec![0.0];
+
+    let prior_state = kf.x[0];
+    kf.update(&vec![100.0]).unwrap();
+
+    // State should barely change because measurement is unreliable
+    assert!(
+        (kf.x[0] - prior_state).abs() < 0.5,
+        "With high R, state should barely change from prior"
+    );
+}
+
+#[test]
+fn test_kalman_gain_with_high_prior_uncertainty() {
+    // When P >> R, Kalman gain should be near 1 (trust measurement fully)
+    let mut kf = KalmanFilter::<f64>::new(1, 1);
+    kf.x = vec![0.0];
+    kf.P = vec![1000.0]; // Very uncertain prior
+    kf.H = vec![1.0];
+    kf.R = vec![0.1]; // Confident measurement
+    kf.F = vec![1.0];
+    kf.Q = vec![0.0];
+
+    kf.update(&vec![42.0]).unwrap();
+
+    // State should be very close to measurement
+    assert!(
+        (kf.x[0] - 42.0).abs() < 1.0,
+        "With high P, state should be close to measurement, got {}",
+        kf.x[0]
+    );
+}
+
+// =============================================================================
+// TESTS FOR INNOVATION CALCULATION
+// =============================================================================
+
+#[test]
+fn test_innovation_calculation() {
+    let mut kf = KalmanFilter::<f64>::new(2, 1);
+
+    kf.x = vec![10.0, 5.0]; // position=10, velocity=5
+    kf.P = vec![1.0, 0.0, 0.0, 1.0];
+    kf.H = vec![1.0, 0.5]; // Observe position + 0.5*velocity
+    kf.R = vec![0.1];
+    kf.F = vec![1.0, 0.0, 0.0, 1.0];
+    kf.Q = vec![0.0, 0.0, 0.0, 0.0];
+
+    // Predicted measurement: H * x = 1*10 + 0.5*5 = 12.5
+    // Actual measurement: 15.0
+    // Expected innovation: 15.0 - 12.5 = 2.5
+
+    let initial_prediction = kf.H[0] * kf.x[0] + kf.H[1] * kf.x[1];
+    let measurement = 15.0;
+    let expected_innovation = measurement - initial_prediction;
+
+    assert!(
+        (expected_innovation - 2.5).abs() < 1e-10,
+        "Innovation should be 2.5, calculated {}",
+        expected_innovation
+    );
+
+    kf.update(&vec![measurement]).unwrap();
+
+    // After update, predicted measurement should be closer to actual measurement
+    let final_prediction = kf.H[0] * kf.x[0] + kf.H[1] * kf.x[1];
+    assert!(
+        (final_prediction - measurement).abs() < (initial_prediction - measurement).abs(),
+        "Update should bring prediction closer to measurement"
+    );
+}
+
+// =============================================================================
+// TESTS FOR COVARIANCE PROPERTIES
+// =============================================================================
+
+#[test]
+fn test_covariance_positive_definite_after_predict() {
+    let mut kf = KalmanFilter::<f64>::new(2, 1);
+
+    kf.x = vec![0.0, 0.0];
+    kf.P = vec![1.0, 0.2, 0.2, 1.0]; // Positive definite
+    kf.F = vec![1.0, 0.1, 0.0, 1.0];
+    kf.Q = vec![0.01, 0.0, 0.0, 0.01];
+
+    kf.predict();
+
+    // Check positive definite: diagonal elements positive and det > 0
+    assert!(kf.P[0] > 0.0, "P[0,0] should be positive");
+    assert!(kf.P[3] > 0.0, "P[1,1] should be positive");
+
+    let det = kf.P[0] * kf.P[3] - kf.P[1] * kf.P[2];
+    assert!(det > 0.0, "Determinant should be positive for positive definite matrix");
+}
+
+#[test]
+fn test_covariance_decreases_after_update() {
+    let mut kf = KalmanFilter::<f64>::new(2, 1);
+
+    kf.x = vec![0.0, 0.0];
+    kf.P = vec![10.0, 0.0, 0.0, 10.0];
+    kf.H = vec![1.0, 0.0];
+    kf.R = vec![1.0];
+    kf.F = vec![1.0, 0.0, 0.0, 1.0];
+    kf.Q = vec![0.0, 0.0, 0.0, 0.0];
+
+    let prior_trace = kf.P[0] + kf.P[3];
+
+    kf.update(&vec![5.0]).unwrap();
+
+    let posterior_trace = kf.P[0] + kf.P[3];
+
+    assert!(
+        posterior_trace < prior_trace,
+        "Trace of covariance should decrease after update: {} >= {}",
+        posterior_trace,
+        prior_trace
+    );
+}
+
+//  =============================================================================
+// TESTS FOR MATRIX OPERATIONS WITH KNOWN RESULTS
+// =============================================================================
+
+#[test]
+fn test_matrix_vector_multiply_3x3() {
+    // Test via predict step: x' = F * x
+    let mut kf = KalmanFilter::<f64>::new(3, 1);
+
+    kf.x = vec![1.0, 2.0, 3.0];
+    // F = [[2, 0, 1],
+    //      [0, 3, 0],
+    //      [1, 0, 2]]
+    kf.F = vec![
+        2.0, 0.0, 1.0,
+        0.0, 3.0, 0.0,
+        1.0, 0.0, 2.0,
+    ];
+    kf.P = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+    kf.Q = vec![0.0; 9];
+
+    kf.predict();
+
+    // F * x = [[2, 0, 1],   [[1],    [[2*1 + 0*2 + 1*3],    [[5],
+    //          [0, 3, 0],  *  [2],  =  [0*1 + 3*2 + 0*3],  =  [6],
+    //          [1, 0, 2]]     [3]]     [1*1 + 0*2 + 2*3]]     [7]]
+    assert_eq!(kf.x[0], 5.0, "Matrix-vector multiply failed for row 0");
+    assert_eq!(kf.x[1], 6.0, "Matrix-vector multiply failed for row 1");
+    assert_eq!(kf.x[2], 7.0, "Matrix-vector multiply failed for row 2");
+}
+
+#[test]
+fn test_matrix_matrix_multiply_in_covariance_predict() {
+    let mut kf = KalmanFilter::<f64>::new(2, 1);
+
+    kf.x = vec![0.0, 0.0];
+    // F = [[2, 1],
+    //      [0, 3]]
+    kf.F = vec![2.0, 1.0, 0.0, 3.0];
+    // P = [[1, 0],
+    //      [0, 1]]
+    kf.P = vec![1.0, 0.0, 0.0, 1.0];
+    kf.Q = vec![0.0, 0.0, 0.0, 0.0];
+
+    kf.predict();
+
+    // P' = F * P * F^T + Q
+    // F * P = [[2, 1],   [[1, 0],    [[2, 1],
+    //          [0, 3]]  *  [0, 1]]  =  [0, 3]]
+    //
+    // F*P*F^T = [[2, 1],   [[2, 0],    [[2*2+1*1, 2*0+1*3],    [[5, 3],
+    //            [0, 3]]  *  [1, 3]]  =  [0*2+3*1, 0*0+3*3]]  =  [3, 9]]
+
+    assert_eq!(kf.P[0], 5.0, "P[0,0] should be 5");
+    assert_eq!(kf.P[1], 3.0, "P[0,1] should be 3");
+    assert_eq!(kf.P[2], 3.0, "P[1,0] should be 3 (symmetric)");
+    assert_eq!(kf.P[3], 9.0, "P[1,1] should be 9");
+}
+
+// =============================================================================
+// TESTS FOR EDGE CASES AND ERROR CONDITIONS
+// =============================================================================
+
+#[test]
+fn test_singular_innovation_covariance_handling() {
+    // This tests what happens when innovation covariance S = H*P*H^T + R becomes singular
+    // This shouldn't happen with proper R, but we test robustness
+
+    let mut kf = KalmanFilter::<f64>::new(2, 1);
+    kf.x = vec![0.0, 0.0];
+    kf.P = vec![0.0, 0.0, 0.0, 0.0]; // Degenerate covariance
+    kf.H = vec![1.0, 0.0];
+    kf.R = vec![0.0001]; // Small but non-zero
+    kf.F = vec![1.0, 0.0, 0.0, 1.0];
+    kf.Q = vec![0.0, 0.0, 0.0, 0.0];
+
+    // Should not crash or produce NaN
+    let result = kf.update(&vec![1.0]);
+    if result.is_ok() {
+        assert!(!kf.x[0].is_nan(), "State should not be NaN");
+        assert!(!kf.P[0].is_nan(), "Covariance should not be NaN");
+    }
+}
+
+#[test]
+fn test_identity_observation_matrix() {
+    // Test when we directly observe the entire state
+    let mut kf = KalmanFilter::<f64>::new(2, 2);
+
+    kf.x = vec![1.0, 2.0];
+    kf.P = vec![1.0, 0.0, 0.0, 1.0];
+    kf.H = vec![1.0, 0.0, 0.0, 1.0]; // Identity observation
+    kf.R = vec![0.1, 0.0, 0.0, 0.1];
+    kf.F = vec![1.0, 0.0, 0.0, 1.0];
+    kf.Q = vec![0.0, 0.0, 0.0, 0.0];
+
+    kf.update(&vec![3.0, 4.0]).unwrap();
+
+    // With direct observation and low R, state should move toward measurement
+    assert!((kf.x[0] - 3.0).abs() < 1.0);
+    assert!((kf.x[1] - 4.0).abs() < 1.0);
+}
+
+#[test]
+fn test_multiple_sequential_predict_steps() {
+    // Test that multiple predictions work correctly
+    let mut kf = KalmanFilter::<f64>::new(1, 1);
+    kf.x = vec![1.0];
+    kf.F = vec![2.0]; // State doubles each step
+    kf.P = vec![1.0];
+    kf.Q = vec![0.0];
+
+    // x1 = 2*1 = 2
+    kf.predict();
+    assert_eq!(kf.x[0], 2.0);
+
+    // x2 = 2*2 = 4
+    kf.predict();
+    assert_eq!(kf.x[0], 4.0);
+
+    // x3 = 2*4 = 8
+    kf.predict();
+    assert_eq!(kf.x[0], 8.0);
+}
+
+#[test]
+fn test_multiple_sequential_update_steps() {
+    // Test that multiple measurements continue to refine estimate
+    let mut kf = KalmanFilter::<f64>::new(1, 1);
+    kf.x = vec![0.0];
+    kf.P = vec![10.0];
+    kf.H = vec![1.0];
+    kf.R = vec![1.0];
+    kf.F = vec![1.0];
+    kf.Q = vec![0.0];
+
+    let measurements = vec![5.0, 5.1, 4.9, 5.0, 5.05];
+
+    for &z in &measurements {
+        kf.update(&vec![z]).unwrap();
+    }
+
+    // After many consistent measurements around 5.0, estimate should converge there
+    assert!(
+        (kf.x[0] - 5.0).abs() < 0.5,
+        "After multiple measurements, state should be near 5.0, got {}",
+        kf.x[0]
+    );
+
+    // Uncertainty should have decreased significantly
+    assert!(
+        kf.P[0] < 1.0,
+        "Uncertainty should decrease with measurements, got {}",
+        kf.P[0]
+    );
+}
