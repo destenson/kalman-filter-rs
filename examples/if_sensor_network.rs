@@ -1,19 +1,26 @@
 //! Distributed sensor network example using Information Filter
 //!
-//! This example demonstrates a 20-node sensor network tracking a moving target.
+//! This example demonstrates a configurable sensor network tracking a moving target.
 //! Each sensor has limited range and can only communicate with neighbors.
 //! The Information Filter enables efficient distributed fusion.
 //!
 //! ## Usage
 //! ```bash
-//! # Run with random noise (different output each time)
+//! # Run with default parameters (20 sensors, 20 steps)
 //! cargo run --example if_sensor_network
 //!
-//! # Run with a specific seed for reproducible results
-//! cargo run --example if_sensor_network -- --seed 42
+//! # Run with custom parameters
+//! cargo run --example if_sensor_network -- --seed 42 --num-sensors 30 --steps 50
+//!
+//! # Run with different target dynamics
+//! cargo run --example if_sensor_network -- --omega 0.2 --target-speed 10.0
+//!
+//! # Adjust simulation parameters
+//! cargo run --example if_sensor_network -- --dt 0.1 --print-interval 2
 //! ```
 #![allow(unused, non_snake_case)] // DO NOT CHANGE!
 
+use clap::Parser;
 use kalman_filters::information::{
     AverageConsensus, ConsensusAlgorithm, DistributedInformationFilter, InformationForm,
 };
@@ -21,36 +28,86 @@ use rand::SeedableRng;
 use rand_distr::{Distribution, Uniform};
 use std::collections::HashMap;
 
+/// Distributed sensor network tracking simulation with Information Filter
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Random seed for reproducible results
+    #[arg(short, long)]
+    seed: Option<u64>,
+
+    /// Number of simulation steps
+    #[arg(long, default_value_t = 20)]
+    steps: usize,
+
+    /// Time step duration (seconds)
+    #[arg(long, default_value_t = 0.5)]
+    dt: f64,
+
+    /// Number of sensors in the network
+    #[arg(long, default_value_t = 20)]
+    num_sensors: usize,
+
+    /// Grid size for sensor placement (meters)
+    #[arg(long, default_value_t = 100.0)]
+    grid_size: f64,
+
+    /// Sensor detection range (meters)
+    #[arg(long, default_value_t = 30.0)]
+    sensor_range: f64,
+
+    /// Communication range between sensors (meters)
+    #[arg(long, default_value_t = 40.0)]
+    comm_range: f64,
+
+    /// Target speed (meters/second)
+    #[arg(long, default_value_t = 5.0)]
+    target_speed: f64,
+
+    /// Angular velocity for circular target motion (rad/s)
+    #[arg(long, default_value_t = 0.1)]
+    omega: f64,
+
+    /// Print results every N steps
+    #[arg(long, default_value_t = 1)]
+    print_interval: usize,
+}
+
 /// Simulate a sensor network tracking a moving target
 fn main() {
+    let args = Args::parse();
+
     println!("Distributed Sensor Network with Information Filter");
     println!("==================================================");
-    println!("20 sensors tracking a moving target\n");
 
-    // Parse command-line arguments for optional seed
-    let args: Vec<String> = std::env::args().collect();
-    let seed = if args.len() > 2 && args[1] == "--seed" {
-        let seed_value = args[2].parse::<u64>().expect("Invalid seed value");
-        println!("Using seed: {}\n", seed_value);
-        seed_value
+    // Configuration summary
+    println!("\nConfiguration:");
+    println!("  Network:");
+    println!("    Sensors: {}", args.num_sensors);
+    println!("    Grid size: {} m", args.grid_size);
+    println!("    Sensor range: {} m", args.sensor_range);
+    println!("    Communication range: {} m", args.comm_range);
+    println!("  Target:");
+    println!("    Speed: {} m/s", args.target_speed);
+    println!("    Angular velocity: {} rad/s", args.omega);
+    println!("  Simulation:");
+    println!("    Steps: {}", args.steps);
+    println!("    Time step: {} s", args.dt);
+    println!("    Print interval: every {} step(s)", args.print_interval);
+
+    // Set up random seed
+    let seed = args.seed.unwrap_or_else(|| rand::random::<u64>());
+    if args.seed.is_some() {
+        println!("    Seed: {} (specified)\n", seed);
     } else {
-        let seed_value = rand::random::<u64>();
-        println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
-        seed_value
-    };
+        println!(
+            "    Seed: {} (random, use --seed {} to reproduce)\n",
+            seed, seed
+        );
+    }
 
     // Create RNG with the selected seed
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-
-    // Network parameters
-    const NUM_SENSORS: usize = 20;
-    const GRID_SIZE: f64 = 100.0;
-    const SENSOR_RANGE: f64 = 30.0;
-    const COMM_RANGE: f64 = 40.0;
-
-    // Target parameters
-    let target_speed = 5.0; // m/s
-    let dt = 0.5; // Time step
 
     // State: [x, y, vx, vy] - position and velocity
     let state_dim = 4;
@@ -60,12 +117,12 @@ fn main() {
 
     // Place sensors in a grid
     let mut sensor_positions = Vec::new();
-    let grid_size = ((NUM_SENSORS as f64).sqrt().ceil()) as usize;
-    let grid_spacing = GRID_SIZE / grid_size as f64;
+    let sensors_per_side = ((args.num_sensors as f64).sqrt().ceil()) as usize;
+    let grid_spacing = args.grid_size / sensors_per_side as f64;
 
-    for i in 0..grid_size {
-        for j in 0..grid_size {
-            if sensor_positions.len() < NUM_SENSORS {
+    for i in 0..sensors_per_side {
+        for j in 0..sensors_per_side {
+            if sensor_positions.len() < args.num_sensors {
                 let x = (i as f64 + 0.5) * grid_spacing;
                 let y = (j as f64 + 0.5) * grid_spacing;
                 sensor_positions.push((x, y));
@@ -73,17 +130,17 @@ fn main() {
         }
     }
 
-    println!("Sensor Network Configuration:");
+    println!("\nSensor Network Topology:");
     println!(
-        "- {} sensors in {}x{} grid",
-        NUM_SENSORS, grid_size, grid_size
+        "  {} sensors in {}x{} grid",
+        args.num_sensors, sensors_per_side, sensors_per_side
     );
-    println!("- Sensing range: {} m", SENSOR_RANGE);
-    println!("- Communication range: {} m", COMM_RANGE);
+    println!("  Sensing range: {} m", args.sensor_range);
+    println!("  Communication range: {} m", args.comm_range);
 
     // Initialize nodes with weak prior
     let weak_info = 0.001; // Weak prior information
-    for i in 0..NUM_SENSORS {
+    for i in 0..args.num_sensors {
         let Y_init = vec![
             weak_info, 0.0, 0.0, 0.0, 0.0, weak_info, 0.0, 0.0, 0.0, 0.0, weak_info, 0.0, 0.0, 0.0,
             0.0, weak_info,
@@ -102,7 +159,7 @@ fn main() {
             let (x2, y2) = sensor_positions[j];
             let dist = ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt();
 
-            if dist <= COMM_RANGE {
+            if dist <= args.comm_range {
                 // Add small random delay (0-2 time steps)
                 let delay = delay_dist.sample(&mut rng);
                 dif.connect_nodes(i, j, delay).unwrap();
@@ -111,27 +168,26 @@ fn main() {
         }
     }
 
-    println!("- {} communication links established", num_connections);
+    println!("  {} communication links established", num_connections);
 
     // Target trajectory (circular motion)
-    let center_x = GRID_SIZE / 2.0;
-    let center_y = GRID_SIZE / 2.0;
-    let radius = GRID_SIZE / 3.0;
-    let omega = 0.1; // Angular velocity
+    let center_x = args.grid_size / 2.0;
+    let center_y = args.grid_size / 2.0;
+    let radius = args.grid_size / 3.0;
 
     println!("\nSimulation Results:");
     println!("Time | True X | True Y | Sensors | Consensus X | Consensus Y | Error");
     println!("-----|--------|--------|---------|-------------|-------------|-------");
 
     // Simulation loop
-    for step in 0..20 {
-        let t = step as f64 * dt;
+    for step in 0..args.steps {
+        let t = step as f64 * args.dt;
 
         // True target position
-        let true_x = center_x + radius * (omega * t).cos();
-        let true_y = center_y + radius * (omega * t).sin();
-        let true_vx = -radius * omega * (omega * t).sin();
-        let true_vy = radius * omega * (omega * t).cos();
+        let true_x = center_x + radius * (args.omega * t).cos();
+        let true_y = center_y + radius * (args.omega * t).sin();
+        let true_vx = -radius * args.omega * (args.omega * t).sin();
+        let true_vy = radius * args.omega * (args.omega * t).cos();
 
         // Sensors that can see the target
         let mut detecting_sensors = Vec::new();
@@ -139,7 +195,7 @@ fn main() {
         for (sensor_id, &(sx, sy)) in sensor_positions.iter().enumerate() {
             let dist_to_target = ((true_x - sx).powi(2) + (true_y - sy).powi(2)).sqrt();
 
-            if dist_to_target <= SENSOR_RANGE {
+            if dist_to_target <= args.sensor_range {
                 detecting_sensors.push(sensor_id);
 
                 // Generate noisy measurement
@@ -185,8 +241,8 @@ fn main() {
             if let Ok(state) = consensus_state.recover_state() {
                 let error = ((state[0] - true_x).powi(2) + (state[1] - true_y).powi(2)).sqrt();
 
-                if step % 2 == 0 {
-                    // Print every other step
+                if step % args.print_interval == 0 {
+                    // Print according to interval
                     println!(
                         "{:4.1} | {:6.1} | {:6.1} | {:7} | {:11.1} | {:11.1} | {:6.2}",
                         t,

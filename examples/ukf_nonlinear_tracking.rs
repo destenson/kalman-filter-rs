@@ -6,17 +6,104 @@
 //!
 //! ## Usage
 //! ```bash
-//! # Run with random noise (different output each time)
+//! # Run with default parameters
 //! cargo run --example ukf_nonlinear_tracking
 //!
-//! # Run with a specific seed for reproducible results
-//! cargo run --example ukf_nonlinear_tracking -- --seed 42
+//! # Run with custom parameters
+//! cargo run --example ukf_nonlinear_tracking -- \
+//!   --seed 42 \
+//!   --steps 50 \
+//!   --dt 0.5 \
+//!   --turn-rate 0.05 \
+//!   --alpha 0.001
+//!
+//! # Show all available options
+//! cargo run --example ukf_nonlinear_tracking -- --help
 //! ```
 #![allow(unused, non_snake_case)] // DO NOT CHANGE
 
+use clap::Parser;
 use kalman_filters::{NonlinearSystem, UKFParameters, UnscentedKalmanFilter};
 use rand::SeedableRng;
 use rand_distr::{Distribution, Normal};
+
+/// Command-line arguments for the UKF nonlinear tracking example
+#[derive(Parser, Debug)]
+#[command(name = "UKF Nonlinear Target Tracking")]
+#[command(about = "Demonstrates UKF tracking of a target with coordinated turn dynamics", long_about = None)]
+struct Args {
+    /// Random seed for reproducibility (if not specified, uses random seed)
+    #[arg(long)]
+    seed: Option<u64>,
+
+    /// Number of time steps to simulate
+    #[arg(long, default_value_t = 10)]
+    steps: usize,
+
+    /// Time step size (seconds)
+    #[arg(long, default_value_t = 1.0)]
+    dt: f64,
+
+    /// Turn rate (rad/s)
+    #[arg(long, default_value_t = 0.1)]
+    turn_rate: f64,
+
+    /// Initial position X
+    #[arg(long, default_value_t = 100.0)]
+    init_x: f64,
+
+    /// Initial position Y
+    #[arg(long, default_value_t = 50.0)]
+    init_y: f64,
+
+    /// Initial velocity X
+    #[arg(long, default_value_t = 10.0)]
+    init_vx: f64,
+
+    /// Initial velocity Y
+    #[arg(long, default_value_t = 5.0)]
+    init_vy: f64,
+
+    /// Initial position covariance
+    #[arg(long, default_value_t = 10.0)]
+    init_pos_cov: f64,
+
+    /// Initial velocity covariance
+    #[arg(long, default_value_t = 1.0)]
+    init_vel_cov: f64,
+
+    /// Process noise for position
+    #[arg(long, default_value_t = 0.1)]
+    process_noise_pos: f64,
+
+    /// Process noise for velocity
+    #[arg(long, default_value_t = 0.01)]
+    process_noise_vel: f64,
+
+    /// Measurement noise for range
+    #[arg(long, default_value_t = 1.0)]
+    meas_noise_range: f64,
+
+    /// Measurement noise for bearing (radians)
+    #[arg(long, default_value_t = 0.01)]
+    meas_noise_bearing: f64,
+
+    /// UKF alpha parameter (spread of sigma points)
+    #[arg(long, default_value_t = 1e-3)]
+    alpha: f64,
+
+    /// UKF beta parameter (prior knowledge of distribution)
+    #[arg(long, default_value_t = 2.0)]
+    beta: f64,
+
+    /// UKF kappa parameter (secondary scaling)
+    #[arg(long, default_value_t = 0.0)]
+    kappa: f64,
+
+    /// Print interval (show every Nth step, 0 means show all)
+    #[arg(long, default_value_t = 1)]
+    print_interval: usize,
+}
 
 /// Nonlinear target dynamics with coordinated turn model
 struct CoordinatedTurnModel {
@@ -77,77 +164,87 @@ impl NonlinearSystem<f64> for CoordinatedTurnModel {
 }
 
 fn main() {
+    let args = Args::parse();
+
     println!("=== UKF Nonlinear Target Tracking Example ===\n");
 
-    // Parse command-line arguments for optional seed
-    let args: Vec<String> = std::env::args().collect();
-    let seed = if args.len() > 2 && args[1] == "--seed" {
-        let seed_value = args[2].parse::<u64>().expect("Invalid seed value");
-        println!("Using seed: {}\n", seed_value);
-        seed_value
-    } else {
+    // Handle seed
+    let seed = args.seed.unwrap_or_else(|| {
         let seed_value = rand::random::<u64>();
-        println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
+        println!("Using random seed: {} (use --seed {} to reproduce)", seed_value, seed_value);
         seed_value
-    };
+    });
+    if args.seed.is_some() {
+        println!("Using seed: {}", seed);
+    }
+    println!();
 
     // Create RNG with the selected seed
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
 
     // Create coordinated turn model
-    let system = CoordinatedTurnModel { omega: 0.1 }; // 0.1 rad/s turn rate
+    let system = CoordinatedTurnModel { omega: args.turn_rate };
 
     // Initial state: [x, y, vx, vy]
-    let initial_state = vec![100.0, 50.0, 10.0, 5.0];
+    let initial_state = vec![args.init_x, args.init_y, args.init_vx, args.init_vy];
     let initial_covariance = vec![
-        10.0, 0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        args.init_pos_cov, 0.0, 0.0, 0.0,
+        0.0, args.init_pos_cov, 0.0, 0.0,
+        0.0, 0.0, args.init_vel_cov, 0.0,
+        0.0, 0.0, 0.0, args.init_vel_cov,
     ];
 
     // Process and measurement noise
     let process_noise = vec![
-        0.1, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.0, 0.01,
+        args.process_noise_pos, 0.0, 0.0, 0.0,
+        0.0, args.process_noise_pos, 0.0, 0.0,
+        0.0, 0.0, args.process_noise_vel, 0.0,
+        0.0, 0.0, 0.0, args.process_noise_vel,
     ];
     let measurement_noise = vec![
-        1.0, 0.0, // Range noise
-        0.0, 0.01, // Bearing noise (radians)
+        args.meas_noise_range, 0.0,
+        0.0, args.meas_noise_bearing,
     ];
 
     // Create UKF
     let mut ukf = UnscentedKalmanFilter::new(
         system,
-        initial_state,
+        initial_state.clone(),
         initial_covariance,
         process_noise,
         measurement_noise,
-        1.0, // dt = 1 second
+        args.dt,
     )
     .unwrap();
 
-    // Set UKF parameters for better performance
+    // Set UKF parameters
     let mut params = UKFParameters::default();
-    params.alpha = 1e-3;
-    params.beta = 2.0;
-    params.kappa = 0.0;
+    params.alpha = args.alpha;
+    params.beta = args.beta;
+    params.kappa = args.kappa;
     ukf.set_parameters(params);
 
-    println!(
-        "Initial state: x={:.1}, y={:.1}, vx={:.1}, vy={:.1}",
-        ukf.state()[0],
-        ukf.state()[1],
-        ukf.state()[2],
-        ukf.state()[3]
-    );
+    println!("Configuration:");
+    println!("  Time steps: {}", args.steps);
+    println!("  Time step (dt): {:.3} s", args.dt);
+    println!("  Turn rate: {:.3} rad/s", args.turn_rate);
+    println!("  Initial state: [{:.1}, {:.1}, {:.1}, {:.1}]",
+        initial_state[0], initial_state[1], initial_state[2], initial_state[3]);
+    println!("  Initial covariance: pos={:.2}, vel={:.2}", args.init_pos_cov, args.init_vel_cov);
+    println!("  Process noise: pos={:.4}, vel={:.4}", args.process_noise_pos, args.process_noise_vel);
+    println!("  Measurement noise: range={:.3}, bearing={:.4}", args.meas_noise_range, args.meas_noise_bearing);
+    println!("  UKF parameters: alpha={:.3e}, beta={:.1}, kappa={:.1}", args.alpha, args.beta, args.kappa);
+    println!();
 
-    // Simulate tracking for 10 time steps
-    println!("\nTracking target with coordinated turn model:");
+    println!("Tracking target with coordinated turn model:");
     println!("Time | Range | Bearing | Est. X | Est. Y | Est. Vx | Est. Vy");
     println!("-----|-------|---------|--------|--------|---------|--------");
 
     // Create noise distributions matching the measurement noise covariance
-    let range_noise = Normal::new(0.0, 1.0_f64.sqrt()).unwrap(); // σ² = 1.0
-    let bearing_noise = Normal::new(0.0, 0.01_f64.sqrt()).unwrap(); // σ² = 0.01
+    let range_noise = Normal::new(0.0, args.meas_noise_range.sqrt()).unwrap();
+    let bearing_noise = Normal::new(0.0, args.meas_noise_bearing.sqrt()).unwrap();
 
-    for t in 1..=10 {
+    for t in 1..=args.steps {
         // Predict
         ukf.predict().unwrap();
 
@@ -163,12 +260,14 @@ fn main() {
         // Update with measurement
         ukf.update(&[measured_range, measured_bearing]).unwrap();
 
-        // Print results
-        let state = ukf.state();
-        println!(
-            "{:4} | {:5.1} | {:7.3} | {:6.1} | {:6.1} | {:7.2} | {:6.2}",
-            t, measured_range, measured_bearing, state[0], state[1], state[2], state[3]
-        );
+        // Print results at specified intervals
+        if args.print_interval > 0 && t % args.print_interval == 0 {
+            let state = ukf.state();
+            println!(
+                "{:4} | {:5.1} | {:7.3} | {:6.1} | {:6.1} | {:7.2} | {:6.2}",
+                t, measured_range, measured_bearing, state[0], state[1], state[2], state[3]
+            );
+        }
     }
 
     // Print final covariance

@@ -16,12 +16,39 @@
 //! ```bash
 //! cargo run --example logging_demo --features tracing-subscriber
 //! ```
+//!
+//! Command-line options:
+//! ```bash
+//! # Use a specific random seed for reproducibility
+//! cargo run --example logging_demo -- --seed 42
+//!
+//! # Adjust number of cycles for demos
+//! cargo run --example logging_demo -- --pendulum-cycles 5 --linear-cycles 10
+//! ```
 
+use clap::Parser;
 use kalman_filters::{ExtendedKalmanFilter, KalmanFilterBuilder, NonlinearSystem};
 use log::{debug, info, warn};
 
 #[cfg(feature = "tracing-subscriber")]
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+
+/// Command-line arguments for the logging demo
+#[derive(Parser, Debug)]
+#[command(author, version, about = "Demonstrates logging infrastructure for Kalman filters", long_about = None)]
+struct Args {
+    /// Random seed for reproducibility of the numerical issues demo
+    #[arg(long)]
+    seed: Option<u64>,
+
+    /// Number of cycles to run for the pendulum (EKF) demo
+    #[arg(long, default_value_t = 3)]
+    pendulum_cycles: usize,
+
+    /// Number of cycles to run for the linear Kalman filter demo
+    #[arg(long, default_value_t = 3)]
+    linear_cycles: usize,
+}
 
 /// Simple pendulum system for demonstrating EKF logging
 struct PendulumSystem {
@@ -62,6 +89,8 @@ impl NonlinearSystem<f64> for PendulumSystem {
 }
 
 fn main() {
+    let args = Args::parse();
+
     // Initialize logging
     #[cfg(feature = "tracing-subscriber")]
     {
@@ -80,20 +109,21 @@ fn main() {
     }
 
     info!("Starting Kalman Filter logging demonstration");
+    debug!("Arguments: {:?}", args);
 
     // Demonstrate linear Kalman filter logging
-    demo_linear_kf();
+    demo_linear_kf(args.linear_cycles);
 
     // Demonstrate Extended Kalman filter logging
-    demo_extended_kf();
+    demo_extended_kf(args.pendulum_cycles);
 
     // Demonstrate numerical stability warnings
-    demo_numerical_issues();
+    demo_numerical_issues(args.seed);
 
     info!("Logging demonstration complete");
 }
 
-fn demo_linear_kf() {
+fn demo_linear_kf(cycles: usize) {
     info!("=== Linear Kalman Filter Demo ===");
 
     // Create a simple 1D Kalman filter using the builder
@@ -107,10 +137,10 @@ fn demo_linear_kf() {
         .build()
         .unwrap();
 
-    println!("Running predict/update cycle");
+    info!("Running {} predict/update cycles", cycles);
 
-    // Run a few cycles
-    for i in 1..=3 {
+    // Run specified number of cycles
+    for i in 1..=cycles {
         info!("Cycle {}", i);
 
         // Predict
@@ -122,7 +152,7 @@ fn demo_linear_kf() {
     }
 }
 
-fn demo_extended_kf() {
+fn demo_extended_kf(cycles: usize) {
     info!("=== Extended Kalman Filter Demo ===");
 
     let system = PendulumSystem { g: 9.81, l: 1.0 };
@@ -143,10 +173,10 @@ fn demo_extended_kf() {
     )
     .unwrap();
 
-    debug!("Running EKF predict/update cycle");
+    info!("Running {} EKF predict/update cycles", cycles);
 
-    // Run a few cycles
-    for i in 1..=3 {
+    // Run specified number of cycles
+    for i in 1..=cycles {
         info!("EKF Cycle {}", i);
 
         // Predict
@@ -158,8 +188,15 @@ fn demo_extended_kf() {
     }
 }
 
-fn demo_numerical_issues() {
+fn demo_numerical_issues(seed: Option<u64>) {
     info!("=== Numerical Stability Demo ===");
+
+    if let Some(s) = seed {
+        info!("Using random seed: {}", s);
+        // Note: This demo uses hardcoded values for demonstration purposes.
+        // The seed parameter is provided for future enhancements that might
+        // use randomized test cases.
+    }
 
     // Create a filter with near-singular covariance
     let mut kf = KalmanFilterBuilder::<f64>::new(2, 1)

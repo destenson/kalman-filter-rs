@@ -4,6 +4,7 @@
 //! - Initialize the metrics system
 //! - Run Kalman filters with metrics collection
 //! - Expose metrics via an HTTP endpoint for Prometheus scraping
+//! - Configure filter and simulation parameters via command-line arguments
 //!
 //! ## Usage
 //! ```bash
@@ -12,9 +13,20 @@
 //!
 //! # Run with a specific seed for reproducible results
 //! cargo run --example metrics_server --features prometheus-metrics -- --seed 42
+//!
+//! # Customize parameters
+//! cargo run --example metrics_server --features prometheus-metrics -- \
+//!     --seed 42 \
+//!     --port 8080 \
+//!     --dt 0.5 \
+//!     --process-noise-pos 0.01 \
+//!     --process-noise-vel 0.01 \
+//!     --meas-noise 0.2 \
+//!     --meas-noise-std 0.3 \
+//!     --sleep-ms 200
 //! ```
 //!
-//! Then access metrics at: http://localhost:9090/metrics
+//! Then access metrics at: http://localhost:9090/metrics (or your configured port)
 
 #[cfg(not(feature = "prometheus-metrics"))]
 fn main() {
@@ -24,6 +36,7 @@ fn main() {
 
 #[cfg(feature = "prometheus-metrics")]
 fn main() {
+    use clap::Parser;
     use kalman_filters::KalmanFilterBuilder;
     use rand::SeedableRng;
     use rand_distr::{Distribution, Normal};
@@ -31,34 +44,88 @@ fn main() {
     use std::thread;
     use std::time::Duration;
 
-    // Parse command-line arguments for optional seed
-    let args: Vec<String> = std::env::args().collect();
-    let seed = if args.len() > 2 && args[1] == "--seed" {
-        let seed_value = args[2].parse::<u64>().expect("Invalid seed value");
-        println!("Using seed: {}\n", seed_value);
-        seed_value
-    } else {
+    /// Kalman filter metrics server with Prometheus endpoint
+    #[derive(Parser, Debug)]
+    #[command(author, version, about, long_about = None)]
+    struct Args {
+        /// Random seed for reproducible results (if not specified, uses random seed)
+        #[arg(long)]
+        seed: Option<u64>,
+
+        /// Port for metrics HTTP server
+        #[arg(long, default_value_t = 9090)]
+        port: u16,
+
+        /// Time step (dt) for filter transition matrix
+        #[arg(long, default_value_t = 1.0)]
+        dt: f64,
+
+        /// Process noise for position component
+        #[arg(long, default_value_t = 0.001)]
+        process_noise_pos: f64,
+
+        /// Process noise for velocity component
+        #[arg(long, default_value_t = 0.001)]
+        process_noise_vel: f64,
+
+        /// Measurement noise variance
+        #[arg(long, default_value_t = 0.1)]
+        meas_noise: f64,
+
+        /// Standard deviation of measurement noise for simulation
+        #[arg(long, default_value_t = 0.2)]
+        meas_noise_std: f64,
+
+        /// Milliseconds to sleep between filter steps
+        #[arg(long, default_value_t = 100)]
+        sleep_ms: u64,
+    }
+
+    let args = Args::parse();
+
+    // Use provided seed or generate random one
+    let seed = args.seed.unwrap_or_else(|| {
         let seed_value = rand::random::<u64>();
         println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
         seed_value
-    };
+    });
+
+    if args.seed.is_some() {
+        println!("Using seed: {}\n", seed);
+    }
 
     // Initialize metrics system
     kalman_filters::metrics::init();
     println!("Metrics system initialized");
+    println!("Configuration:");
+    println!("  Port: {}", args.port);
+    println!("  dt: {}", args.dt);
+    println!("  Process noise (pos): {}", args.process_noise_pos);
+    println!("  Process noise (vel): {}", args.process_noise_vel);
+    println!("  Measurement noise: {}", args.meas_noise);
+    println!("  Measurement noise std: {}", args.meas_noise_std);
+    println!("  Sleep interval: {} ms\n", args.sleep_ms);
+
+    // Clone values needed for the thread
+    let dt = args.dt;
+    let process_noise_pos = args.process_noise_pos;
+    let process_noise_vel = args.process_noise_vel;
+    let meas_noise = args.meas_noise;
+    let meas_noise_std = args.meas_noise_std;
+    let sleep_ms = args.sleep_ms;
 
     // Create a thread to run filters and generate metrics
     thread::spawn(move || {
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-        let noise_dist = Normal::new(0.0, 0.2).unwrap();
+        let noise_dist = Normal::new(0.0, meas_noise_std).unwrap();
         // Create a simple 2D position-velocity Kalman filter
         let mut kf = KalmanFilterBuilder::new(2, 1)
             .initial_state(vec![0.0, 0.0])
             .initial_covariance(vec![1.0, 0.0, 0.0, 1.0])
-            .transition_matrix(vec![1.0, 1.0, 0.0, 1.0]) // dt = 1.0
-            .process_noise(vec![0.001, 0.0, 0.0, 0.001])
+            .transition_matrix(vec![1.0, dt, 0.0, 1.0])
+            .process_noise(vec![process_noise_pos, 0.0, 0.0, process_noise_vel])
             .observation_matrix(vec![1.0, 0.0]) // observe position only
-            .measurement_noise(vec![0.1])
+            .measurement_noise(vec![meas_noise])
             .build()
             .expect("Failed to build Kalman filter");
 
@@ -80,21 +147,23 @@ fn main() {
                 eprintln!("Update failed: {:?}", e);
             }
 
-            time += 1.0;
+            time += dt;
 
             // Sleep to simulate real-time operation
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(sleep_ms));
 
-            if time as i32 % 10 == 0 {
-                println!("Processed {} steps, state: {:?}", time as i32, kf.state());
+            if (time / dt) as i32 % 10 == 0 {
+                println!("Processed {} steps, state: {:?}", (time / dt) as i32, kf.state());
             }
         }
     });
 
     // Start HTTP server for metrics endpoint
-    let listener = TcpListener::bind("127.0.0.1:9090").expect("Failed to bind to port 9090");
+    let bind_addr = format!("127.0.0.1:{}", args.port);
+    let listener = TcpListener::bind(&bind_addr)
+        .unwrap_or_else(|_| panic!("Failed to bind to port {}", args.port));
 
-    println!("Metrics server listening on http://localhost:9090/metrics");
+    println!("Metrics server listening on http://localhost:{}/metrics", args.port);
     println!("Use Ctrl+C to stop the server");
 
     for stream in listener.incoming() {
