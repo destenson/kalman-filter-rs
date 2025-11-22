@@ -172,7 +172,7 @@ fn main() {
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let true_velocity = 1.0;
     let measurement_noise_std = 0.3;
-    let noise_dist = Uniform::new(-measurement_noise_std, measurement_noise_std);
+    let noise_dist = Uniform::new(-measurement_noise_std, measurement_noise_std).unwrap();
 
     println!("\nTime | True Pos | Measured | Estimated | Est. Vel");
     println!("-----|----------|----------|-----------|----------");
