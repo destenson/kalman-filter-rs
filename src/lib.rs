@@ -69,13 +69,7 @@ pub use ensemble::{EnsembleKalmanFilter, EnsembleStatistics};
 pub use error::KalmanError;
 pub use extended::ExtendedKalmanFilter;
 
-// Export modern KalmanFilter only when legacy is not enabled
-#[cfg(not(feature = "legacy"))]
 pub use filter::KalmanFilter;
-
-// Export as ModernKalmanFilter when legacy is enabled
-#[cfg(feature = "legacy")]
-pub use filter::KalmanFilter as ModernKalmanFilter;
 
 pub use information::filter::InformationFilter;
 pub use particle::{Particle, ParticleFilter, ResamplingStrategy};
@@ -85,17 +79,6 @@ pub use unscented::{UKFParameters, UnscentedKalmanFilter};
 
 #[cfg(feature = "nalgebra")]
 pub use filter::StaticKalmanFilter;
-
-#[cfg(feature = "adskalman")]
-pub use adskalman;
-
-// Legacy API compatibility
-#[cfg(feature = "legacy")]
-pub mod legacy;
-
-// When legacy feature is enabled, use the legacy API as default KalmanFilter
-#[cfg(feature = "legacy")]
-pub use legacy::KalmanFilter;
 
 #[cfg(feature = "nalgebra")]
 pub use nalgebra;

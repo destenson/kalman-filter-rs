@@ -6,6 +6,8 @@ use kalman_filters::{
 use std::hint::black_box;
 use std::time::Duration;
 
+use kalman_filters::KalmanFilter;
+
 // ============================================================================
 // CORE OPERATIONS BENCHMARKS
 // ============================================================================
@@ -137,7 +139,7 @@ fn bench_filter_variants(c: &mut Criterion) {
 
     group.bench_function("unscented_kalman_filter", |b| {
         b.iter(|| {
-            ukf.predict();
+            let _ = ukf.predict();
             black_box(ukf.update(black_box(&measurement)).unwrap());
         });
     });
@@ -155,7 +157,7 @@ fn bench_filter_variants(c: &mut Criterion) {
 
     group.bench_function("cubature_kalman_filter", |b| {
         b.iter(|| {
-            ckf.predict();
+            let _ = ckf.predict();
             black_box(ckf.update(black_box(&measurement)).unwrap());
         });
     });
@@ -175,7 +177,7 @@ fn bench_filter_variants(c: &mut Criterion) {
 
     group.bench_function("information_filter", |b| {
         b.iter(|| {
-            if_filter.predict();
+            let _ = if_filter.predict();
             black_box(if_filter.update(black_box(&measurement)).unwrap());
         });
     });
@@ -681,46 +683,9 @@ fn bench_real_world_scenarios(c: &mut Criterion) {
 // COMPARATIVE BENCHMARKS
 // ============================================================================
 
-/// Compares performance against adskalman reference implementation (when feature enabled).
-/// Ensures our implementation is competitive with established Rust Kalman filter libraries.
-#[cfg(feature = "adskalman")]
-fn bench_vs_adskalman(c: &mut Criterion) {
-    let mut group = c.benchmark_group("comparison_with_adskalman");
-    group.warm_up_time(Duration::from_secs(2));
-    group.measurement_time(Duration::from_secs(10));
-
-    let state_dim = 4;
-    let measurement_dim = 2;
-    let measurement = vec![1.0; measurement_dim];
-
-    // Our implementation
-    let mut our_kf = create_test_kalman_filter(state_dim, measurement_dim);
-    group.bench_function("our_kalman_filter", |b| {
-        b.iter(|| {
-            our_kf.predict();
-            black_box(our_kf.update(black_box(&measurement)).unwrap());
-        });
-    });
-
-    // adskalman implementation (if feature enabled)
-    use adskalman::KalmanFilterNoControl;
-    let mut ads_kf = KalmanFilterNoControl::new(
-        nalgebra::SMatrix::<f64, 4, 4>::identity(), // transition
-        nalgebra::SMatrix::<f64, 2, 4>::zeros(),    // observation
-        nalgebra::SMatrix::<f64, 4, 4>::identity(), // process noise
-        nalgebra::SMatrix::<f64, 2, 2>::identity(), // measurement noise
-    );
-
-    group.bench_function("adskalman_reference", |b| {
-        b.iter(|| {
-            let prediction = ads_kf.predict();
-            let obs = nalgebra::SVector::<f64, 2>::new(1.0, 1.0);
-            black_box(prediction.update(&obs));
-        });
-    });
-
-    group.finish();
-}
+// NOTE: adskalman comparison benchmark removed due to API incompatibility
+// and feature removal from Cargo.toml.
+// TODO: Re-enable once adskalman API compatibility is resolved.
 
 /// Compares f32 vs f64 precision performance to quantify the speed/accuracy tradeoff.
 /// Useful for embedded systems and GPU acceleration where f32 may be preferred.
@@ -762,7 +727,7 @@ fn bench_precision_comparison(c: &mut Criterion) {
 fn create_test_kalman_filter(
     state_dim: usize,
     measurement_dim: usize,
-) -> kalman_filters::KalmanFilter<f64> {
+) -> KalmanFilter<f64> {
     KalmanFilterBuilder::new(state_dim, measurement_dim)
         .initial_state(vec![0.0; state_dim])
         .initial_covariance(create_identity_matrix(state_dim))
@@ -777,7 +742,7 @@ fn create_test_kalman_filter(
 fn create_test_kalman_filter_f32(
     state_dim: usize,
     measurement_dim: usize,
-) -> kalman_filters::KalmanFilter<f32> {
+) -> KalmanFilter<f32> {
     KalmanFilterBuilder::new(state_dim, measurement_dim)
         .initial_state(vec![0.0f32; state_dim])
         .initial_covariance(create_identity_matrix_f32(state_dim))
@@ -1027,21 +992,6 @@ criterion_group!(
 
 criterion_group!(real_world, bench_real_world_scenarios);
 
-#[cfg(feature = "adskalman")]
-criterion_group!(comparisons, bench_vs_adskalman);
-
-#[cfg(feature = "adskalman")]
-criterion_main!(
-    core_operations,
-    filter_comparisons,
-    scaling_tests,
-    sparse_operations,
-    memory_tests,
-    real_world,
-    comparisons
-);
-
-#[cfg(not(feature = "adskalman"))]
 criterion_main!(
     core_operations,
     filter_comparisons,

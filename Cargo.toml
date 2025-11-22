@@ -18,13 +18,12 @@ readme = "README.md"
 [features]
 default = ["std","dev"]
 dev=["serde", "parallel", "tracing-subscriber", "prometheus-metrics","nalgebra"]
-std = ["rand_distr/std", "adskalman?/std"]
+std = ["rand_distr/std"]
 alloc = ["rand_distr/alloc"]
 nalgebra = ["dep:nalgebra"]
 opencv = ["dep:opencv"]
 parallel = ["rayon"]
 serde = ["dep:serde", "serde/derive"]
-adskalman = ["dep:adskalman"]
 legacy = []
 tracing-subscriber = ["dep:tracing-subscriber"]
 prometheus-metrics = ["dep:prometheus-client", "dep:once_cell"]
@@ -36,14 +35,11 @@ num-traits = "0.2"
 rand = "0.9.2"
 rand_distr = { version = "0.5.1", default-features = false }
 nalgebra = { version = "0.34.1", optional = true }
-opencv = { version = "0.95.1", optional = true }
+opencv = { version = "0.97", optional = true }
 rayon = { version = "1.7", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
-adskalman = { version = "0.17.0", optional = true }
 log = "0.4.28"
-tracing-subscriber = { version = "0.3.20", features = [
-    "env-filter",
-], optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter",], optional = true }
 prometheus-client = { version = "0.24.0", optional = true }
 once_cell = { version = "1.21.3", optional = true }
 
@@ -60,12 +56,6 @@ serde_json = "1"
 [[bench]]
 name = "kalman_benchmarks"
 harness = false
-
-
-[[example]]
-path = "examples/main.rs"
-name = "legacy"
-required-features = ["legacy"]
 
 
 [[example]]
