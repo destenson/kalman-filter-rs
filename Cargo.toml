@@ -24,7 +24,8 @@ alloc = ["rand_distr/alloc"]
 # Matrix operation backends (choose one, nalgebra is default)
 nalgebra = ["dep:nalgebra"]
 naive-matrix = []
-blas-backend = ["dep:ndarray", "dep:ndarray-linalg", "dep:blas-src"]
+blas-backend = ["dep:ndarray", "std"]
+ndarray-linalg = ["blas-backend", "dep:ndarray-linalg", "dep:blas-src", "std"]
 
 # Other features
 opencv = ["dep:opencv"]
@@ -41,9 +42,9 @@ num-traits = "0.2"
 rand = "0.9.2"
 rand_distr = { version = "0.5.1", default-features = false }
 nalgebra = { version = "0.34.1", optional = true }
-ndarray = { version = "0.16", optional = true }
-ndarray-linalg = { version = "0.16", optional = true }
-blas-src = { version = "0.10", optional = true }
+ndarray = { version = "0.17.1", optional = true }
+ndarray-linalg = { version = "0.18.0", optional = true }
+blas-src = { version = "0.14.0", optional = true, features = ["openblas"] }
 opencv = { version = "0.97", optional = true }
 rayon = { version = "1.7", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }

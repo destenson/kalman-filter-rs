@@ -7,6 +7,8 @@
 use super::{MatrixDecomposition, MatrixOps};
 use crate::{KalmanError, KalmanResult, KalmanScalar};
 use nalgebra as na;
+#[cfg(feature = "nalgebra")]
+use nalgebra::{RealField, SMatrix, SVector};
 
 /// nalgebra matrix backend
 pub struct NalgebraBackend;

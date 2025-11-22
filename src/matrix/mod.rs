@@ -2,15 +2,15 @@
 //
 // This module provides optimized matrix operations for Kalman filtering.
 // It supports multiple backends via feature flags:
-// - `naive`: Hand-rolled pure Rust (no dependencies, no_std compatible)
+// - `naive-matrix`: Hand-rolled pure Rust (no dependencies, no_std compatible)
 // - `nalgebra`: High-performance pure Rust using nalgebra (default)
-// - `blas`: Maximum performance using ndarray+BLAS (future)
+// - `blas-backend`: Maximum performance using ndarray+BLAS
 //
 // # Performance
 //
-// The nalgebra backend provides 9-13x speedup over naive implementation for
-// matrix sizes typical in Kalman filtering (50x50 to 100x100). For very large
-// matrices (100x100+), the speedup can exceed 13x.
+// The nalgebra and ndarray+BLAS backends provide 9-13x speedup over naive
+// implementation for matrix sizes typical in Kalman filtering (50x50 to 100x100).
+// For very large matrices (100x100+), the speedup can exceed 13x.
 //
 // # Example
 //
@@ -33,13 +33,15 @@ mod naive;
 #[cfg(feature = "naive-matrix")]
 pub use naive::NaiveBackend as DefaultBackend;
 
-#[cfg(all(feature = "nalgebra", not(feature = "naive-matrix")))]
+#[cfg(feature = "nalgebra")]
 mod nalgebra_backend;
 #[cfg(all(feature = "nalgebra", not(feature = "naive-matrix")))]
 pub use nalgebra_backend::NalgebraBackend as DefaultBackend;
 
 #[cfg(feature = "blas-backend")]
 mod ndarray_backend;
+#[cfg(all(feature = "blas-backend", not(feature = "naive-matrix"), not(feature = "nalgebra")))]
+pub use ndarray_backend::NdarrayBackend as DefaultBackend;
 
 #[cfg(test)]
 mod tests;

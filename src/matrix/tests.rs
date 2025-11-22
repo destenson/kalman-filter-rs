@@ -120,9 +120,16 @@ fn test_naive_backend() {
     test_backend::<NaiveBackend>();
 }
 
-#[cfg(feature = "nalgebra")]
+#[cfg(all(feature = "nalgebra", not(feature = "naive-matrix")))]
 #[test]
 fn test_nalgebra_backend() {
     use super::nalgebra_backend::NalgebraBackend;
     test_backend::<NalgebraBackend>();
+}
+
+#[cfg(feature = "blas-backend")]
+#[test]
+fn test_ndarray_backend() {
+    use super::ndarray_backend::NdarrayBackend;
+    test_backend::<NdarrayBackend>();
 }
