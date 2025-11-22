@@ -1,7 +1,7 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use kalman_filters::{
-    ExtendedKalmanFilter, KalmanFilterBuilder, NonlinearSystem, ParticleFilter,
-    UnscentedKalmanFilter, information::InformationFilter,
+    CubatureKalmanFilter, EnsembleKalmanFilter, ExtendedKalmanFilter, KalmanFilterBuilder,
+    NonlinearSystem, ParticleFilter, UnscentedKalmanFilter, information::InformationFilter,
 };
 use std::hint::black_box;
 use std::time::Duration;
@@ -142,16 +142,34 @@ fn bench_filter_variants(c: &mut Criterion) {
         });
     });
 
+    // Cubature Kalman Filter
+    let mut ckf = CubatureKalmanFilter::new(
+        TestNonlinearSystem::new(state_dim, measurement_dim),
+        vec![0.0; state_dim],
+        create_identity_matrix(state_dim),
+        create_identity_matrix(state_dim),
+        create_identity_matrix(measurement_dim),
+        0.01,
+    )
+    .unwrap();
+
+    group.bench_function("cubature_kalman_filter", |b| {
+        b.iter(|| {
+            ckf.predict();
+            black_box(ckf.update(black_box(&measurement)).unwrap());
+        });
+    });
+
     // Information Filter
     let mut if_filter = InformationFilter::new(
         state_dim,
         measurement_dim,
-        vec![0.0; state_dim],
-        create_identity_matrix(state_dim),
-        create_identity_matrix(state_dim),
-        create_identity_matrix(state_dim),
-        create_identity_matrix(measurement_dim),
-        create_identity_matrix(measurement_dim),
+        create_identity_matrix(state_dim),  // initial_Y
+        vec![0.0; state_dim],                // initial_y
+        create_identity_matrix(state_dim),  // F
+        create_identity_matrix(state_dim),  // Q
+        create_observation_matrix(measurement_dim, state_dim), // H
+        create_identity_matrix(measurement_dim), // R
     )
     .unwrap();
 
@@ -192,6 +210,26 @@ fn bench_filter_variants(c: &mut Criterion) {
                 })
                 .unwrap(),
             );
+        });
+    });
+
+    // Ensemble Kalman Filter
+    let enkf_system = TestNonlinearSystem::new(state_dim, measurement_dim);
+    let mut enkf = EnsembleKalmanFilter::new(
+        enkf_system,
+        vec![0.0; state_dim],            // initial_mean
+        vec![1.0; state_dim],            // initial_spread
+        100,                              // ensemble_size
+        create_scaled_identity_matrix(state_dim, 0.01), // process_noise
+        create_scaled_identity_matrix(measurement_dim, 0.1), // measurement_noise
+        0.01,                            // dt
+    )
+    .unwrap();
+
+    group.bench_function("ensemble_kalman_filter_100", |b| {
+        b.iter(|| {
+            enkf.forecast();
+            black_box(enkf.update(black_box(&measurement)).unwrap());
         });
     });
 
@@ -289,6 +327,43 @@ fn bench_particle_scaling(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmarks ensemble filter performance scaling with ensemble member count.
+/// Tests from 100 to 1000 members to understand computational cost scaling.
+/// Relevant for data assimilation and weather forecasting applications.
+fn bench_ensemble_scaling(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ensemble_filter_scaling");
+    group.warm_up_time(Duration::from_secs(2));
+
+    let ensemble_counts = vec![100, 250, 500, 1000];
+    let state_dim = 4;
+    let measurement_dim = 2;
+    let measurement = vec![1.0; measurement_dim];
+
+    for &count in &ensemble_counts {
+        let enkf_system = TestNonlinearSystem::new(state_dim, measurement_dim);
+        let mut enkf = EnsembleKalmanFilter::new(
+            enkf_system,
+            vec![0.0; state_dim],            // initial_mean
+            vec![1.0; state_dim],            // initial_spread
+            count,                            // ensemble_size
+            create_scaled_identity_matrix(state_dim, 0.01), // process_noise
+            create_scaled_identity_matrix(measurement_dim, 0.1), // measurement_noise
+            0.01,                            // dt
+        )
+        .unwrap();
+
+        group.throughput(Throughput::Elements(count as u64));
+        group.bench_with_input(BenchmarkId::new("ensemble_count", count), &count, |b, _| {
+            b.iter(|| {
+                enkf.forecast();
+                black_box(enkf.update(black_box(&measurement)).unwrap());
+            });
+        });
+    }
+
+    group.finish();
+}
+
 // ============================================================================
 // SPARSE VS DENSE OPERATIONS
 // ============================================================================
@@ -374,7 +449,182 @@ fn bench_memory_allocations(c: &mut Criterion) {
                 black_box(kf.state().to_vec());
             });
         });
+
+        // Benchmark covariance cloning (typically larger than state)
+        group.bench_with_input(BenchmarkId::new("covariance_clone", dim), &dim, |b, _| {
+            b.iter(|| {
+                black_box(kf.covariance().to_vec());
+            });
+        });
+
+        // Benchmark predict step allocations
+        let mut kf_predict = create_test_kalman_filter(dim, dim / 2);
+        group.bench_with_input(BenchmarkId::new("predict_allocations", dim), &dim, |b, _| {
+            b.iter(|| {
+                black_box(kf_predict.predict());
+            });
+        });
+
+        // Benchmark update step allocations
+        let mut kf_update = create_test_kalman_filter(dim, dim / 2);
+        let measurement = vec![1.0; dim / 2];
+        group.bench_with_input(BenchmarkId::new("update_allocations", dim), &dim, |b, _| {
+            b.iter(|| {
+                black_box(kf_update.update(black_box(&measurement)).unwrap());
+            });
+        });
     }
+
+    group.finish();
+}
+
+/// Tests memory stability over long-running filter operations.
+/// Ensures no memory leaks or unbounded growth during continuous use.
+/// Critical for embedded and long-running applications.
+fn bench_memory_stability(c: &mut Criterion) {
+    let mut group = c.benchmark_group("memory_stability");
+    group.warm_up_time(Duration::from_secs(1));
+    group.sample_size(10); // Fewer samples for long-running test
+
+    let state_dim = 10;
+    let measurement_dim = 5;
+
+    // Test Kalman Filter stability over 10000 iterations
+    group.bench_function("kalman_filter_10k_iterations", |b| {
+        b.iter(|| {
+            let mut kf = create_test_kalman_filter(state_dim, measurement_dim);
+            let measurement = vec![1.0; measurement_dim];
+
+            for _ in 0..10000 {
+                kf.predict();
+                black_box(kf.update(black_box(&measurement)).unwrap());
+            }
+        });
+    });
+
+    // Test particle filter stability (allocation-heavy)
+    group.bench_function("particle_filter_1k_iterations", |b| {
+        b.iter(|| {
+            let mut pf = ParticleFilter::new(
+                state_dim,
+                100, // particles
+                vec![0.0; state_dim],
+                vec![1.0; state_dim],
+                vec![0.1; state_dim],
+                vec![0.1; measurement_dim],
+                0.01,
+            )
+            .unwrap();
+            let measurement = vec![1.0; measurement_dim];
+
+            for _ in 0..1000 {
+                pf.predict(|state, dt| state.iter().map(|&x| x + 0.01 * dt).collect());
+                black_box(
+                    pf.update(black_box(&measurement), |state, measurement| {
+                        let mut likelihood = 1.0f64;
+                        for i in 0..measurement.len().min(state.len()) {
+                            let diff = state[i] - measurement[i];
+                            likelihood *= (-0.5f64 * diff * diff / 0.01f64).exp();
+                        }
+                        likelihood
+                    })
+                    .unwrap(),
+                );
+            }
+        });
+    });
+
+    group.finish();
+}
+
+/// Benchmarks per-filter memory footprint comparison.
+/// Helps identify which filter types are most memory-efficient for given dimensions.
+fn bench_filter_memory_footprint(c: &mut Criterion) {
+    let mut group = c.benchmark_group("filter_memory_footprint");
+    group.warm_up_time(Duration::from_secs(1));
+
+    let state_dim = 10;
+    let measurement_dim = 5;
+
+    // Kalman Filter
+    group.bench_function("kf_footprint", |b| {
+        b.iter(|| {
+            black_box(create_test_kalman_filter(state_dim, measurement_dim));
+        });
+    });
+
+    // Extended Kalman Filter
+    group.bench_function("ekf_footprint", |b| {
+        b.iter(|| {
+            let system = TestNonlinearSystem::new(state_dim, measurement_dim);
+            black_box(
+                ExtendedKalmanFilter::new(
+                    system,
+                    vec![0.0; state_dim],
+                    create_identity_matrix(state_dim),
+                    create_identity_matrix(state_dim),
+                    create_identity_matrix(measurement_dim),
+                    0.01,
+                )
+                .unwrap(),
+            );
+        });
+    });
+
+    // Unscented Kalman Filter (2n+1 sigma points)
+    group.bench_function("ukf_footprint", |b| {
+        b.iter(|| {
+            let system = TestNonlinearSystem::new(state_dim, measurement_dim);
+            black_box(
+                UnscentedKalmanFilter::new(
+                    system,
+                    vec![0.0; state_dim],
+                    create_identity_matrix(state_dim),
+                    create_identity_matrix(state_dim),
+                    create_identity_matrix(measurement_dim),
+                    0.01,
+                )
+                .unwrap(),
+            );
+        });
+    });
+
+    // Particle Filter (100 particles)
+    group.bench_function("pf_100_footprint", |b| {
+        b.iter(|| {
+            black_box(
+                ParticleFilter::new(
+                    state_dim,
+                    100,
+                    vec![0.0; state_dim],
+                    vec![1.0; state_dim],
+                    vec![0.1; state_dim],
+                    vec![0.1; measurement_dim],
+                    0.01,
+                )
+                .unwrap(),
+            );
+        });
+    });
+
+    // Ensemble Kalman Filter (100 members)
+    group.bench_function("enkf_100_footprint", |b| {
+        b.iter(|| {
+            let system = TestNonlinearSystem::new(state_dim, measurement_dim);
+            black_box(
+                EnsembleKalmanFilter::new(
+                    system,
+                    vec![0.0; state_dim],
+                    vec![1.0; state_dim],
+                    100,
+                    create_scaled_identity_matrix(state_dim, 0.01),
+                    create_scaled_identity_matrix(measurement_dim, 0.1),
+                    0.01,
+                )
+                .unwrap(),
+            );
+        });
+    });
 
     group.finish();
 }
@@ -762,12 +1012,18 @@ criterion_group!(
 criterion_group!(
     scaling_tests,
     bench_dimension_scaling,
-    bench_particle_scaling
+    bench_particle_scaling,
+    bench_ensemble_scaling
 );
 
 criterion_group!(sparse_operations, bench_sparse_operations);
 
-criterion_group!(memory_tests, bench_memory_allocations);
+criterion_group!(
+    memory_tests,
+    bench_memory_allocations,
+    bench_memory_stability,
+    bench_filter_memory_footprint
+);
 
 criterion_group!(real_world, bench_real_world_scenarios);
 
