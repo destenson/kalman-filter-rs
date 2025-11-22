@@ -3,12 +3,19 @@
 [env]
 # Set C++ include path for opencv-rust binding generation
 # This ensures that clang can find the C++ standard library headers when building opencv bindings
+#
+# NOTE: Adjust the version number (13) to match your system's g++ version:
+#   - Ubuntu 24.04: g++ 13 or 14
+#   - Ubuntu 22.04: g++ 11 or 12
+#   - Check your version: g++ --version
+#
+# You may need to adjust the paths based on your system:
+#   Linux (gcc):   /usr/include/c++/VERSION:/usr/include/ARCH-linux-gnu/c++/VERSION
+#   macOS (clang): /Library/Developer/CommandLineTools/usr/include/c++/v1
 CPLUS_INCLUDE_PATH = "/usr/include/c++/13:/usr/include/x86_64-linux-gnu/c++/13"
 
-# Note: BLAS backend features are mutually exclusive. When using --all-features,
-# cargo will enable both openblas-static and openblas-system due to additive feature resolution.
-# To avoid conflicts, use specific feature combinations:
-#   cargo build --features "openblas-static,serde,parallel"
+# Note: BLAS backend features are mutually exclusive. The Cargo.toml has been configured
+# to enable only openblas-static by default for --all-features compatibility.
+# Other BLAS backends (openblas-system, intel-mkl-*, netlib-*) are commented out.
+# To use a different backend, enable it explicitly:
 #   cargo build --features "openblas-system,serde,parallel"
-# or exclude opencv:
-#   cargo build --all-features --exclude-features opencv

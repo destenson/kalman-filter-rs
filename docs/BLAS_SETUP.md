@@ -66,6 +66,19 @@ cargo build --features "ndarray-linalg,accelerate"
 - `netlib` - Reference BLAS implementation
 - `blis` - BLIS BLAS implementation
 
+## Configuration
+
+### Cargo Config
+
+The project includes a `.cargo/config.toml` file that sets up environment variables for OpenCV builds:
+
+```toml
+[env]
+CPLUS_INCLUDE_PATH = "/usr/include/c++/13:/usr/include/x86_64-linux-gnu/c++/13"
+```
+
+This ensures that the opencv-rust binding generator can find C++ standard library headers. Adjust the version number (13) to match your system's g++ version if needed.
+
 ## Troubleshooting
 
 ### Linker Errors with System BLAS
@@ -83,10 +96,29 @@ If you get undefined symbol errors like `cblas_dgemm` or `dpotrf_`, the linker c
    export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
    ```
 
-3. **Use static build** instead:
+3. **Use static build** instead (recommended):
    ```bash
-   cargo build --features "ndarray-linalg,openblas-static"
+   cargo build --features "openblas-static"
    ```
+
+### Mutually Exclusive BLAS Features
+
+**Important**: Only enable ONE BLAS backend at a time. The following features are mutually exclusive:
+- `openblas-static` (default for `--all-features`)
+- `openblas-system` (commented out by default, enable explicitly if needed)
+- `intel-mkl-*` variants
+- `netlib-*` variants
+
+When using `cargo build --all-features` or `cargo test --all-features`, only `openblas-static` will be enabled to avoid conflicts.
+
+To use a different BLAS backend, specify features explicitly:
+```bash
+# Use system OpenBLAS
+cargo build --features "openblas-system,serde,parallel"
+
+# Use Intel MKL
+cargo build --features "intel-mkl-static-lp64,serde,parallel"
+```
 
 ### Performance Considerations
 
