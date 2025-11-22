@@ -68,7 +68,7 @@ where
             process_noise: None,
             measurement_noise: None,
             dt: None,
-            inflation_factor: T::from(1.05).unwrap_or_else(|| T::from(1.05f64).unwrap()), // 5% default inflation
+            inflation_factor: T::from_f64(1.05), // 5% default inflation
             localization_radius: T::zero(),
             control: None,
         }

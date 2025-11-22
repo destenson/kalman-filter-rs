@@ -139,7 +139,7 @@ where
         }
 
         // Cubature weight is always 1/(2n)
-        let weight = T::one() / T::from(2 * n).unwrap();
+        let weight = T::one() / T::from_usize(2 * n);
 
         let mut filter = Self {
             system,
@@ -166,7 +166,7 @@ where
     /// Generate cubature points from current state and covariance
     fn generate_cubature_points(&mut self) -> KalmanResult<()> {
         let n = self.state_dim;
-        let sqrt_n = T::from(n).unwrap().sqrt();
+        let sqrt_n = T::from_usize(n).sqrt();
 
         trace!(
             "CKF: Generating {} cubature points with weight={:.6}",
@@ -283,7 +283,7 @@ where
         // Ensure symmetry
         for i in 0..n {
             for j in i + 1..n {
-                let avg = (new_P[i * n + j] + new_P[j * n + i]) * T::from(0.5).unwrap();
+                let avg = (new_P[i * n + j] + new_P[j * n + i]) * T::from_f64(0.5);
                 new_P[i * n + j] = avg;
                 new_P[j * n + i] = avg;
             }
@@ -442,7 +442,7 @@ where
         // Ensure symmetry
         for i in 0..n {
             for j in i + 1..n {
-                let avg = (self.P[i * n + j] + self.P[j * n + i]) * T::from(0.5).unwrap();
+                let avg = (self.P[i * n + j] + self.P[j * n + i]) * T::from_f64(0.5);
                 self.P[i * n + j] = avg;
                 self.P[j * n + i] = avg;
             }

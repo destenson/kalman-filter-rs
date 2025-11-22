@@ -61,7 +61,7 @@ impl<T: KalmanScalar> AverageConsensus<T> {
 
             for neighbor in neighbors {
                 let d_j = degrees[neighbor];
-                let weight = T::one() / T::from(d_i.max(d_j) + 1).unwrap();
+                let weight = T::one() / T::from_usize(d_i.max(d_j) + 1);
                 weights.insert((*node, *neighbor), weight);
                 weights.insert((*neighbor, *node), weight);
                 self_weight = self_weight - weight;
@@ -210,10 +210,10 @@ impl<T: KalmanScalar> ConsensusAlgorithm<T> for AverageConsensus<T> {
 
         for state in self.prev_states.values() {
             for i in 0..n * n {
-                avg_Y[i] = avg_Y[i] + state.Y[i] / T::from(num_nodes).unwrap();
+                avg_Y[i] = avg_Y[i] + state.Y[i] / T::from_usize(num_nodes);
             }
             for i in 0..n {
-                avg_y[i] = avg_y[i] + state.y[i] / T::from(num_nodes).unwrap();
+                avg_y[i] = avg_y[i] + state.y[i] / T::from_usize(num_nodes);
             }
         }
 
@@ -418,7 +418,7 @@ impl<T: KalmanScalar> ConsensusAlgorithm<T> for MaxConsensus<T> {
             );
 
             // Propagate max to neighbors
-            let max_state = self.max_state.as_ref().unwrap().clone();
+            let max_state = self.max_state.as_ref().expect("max_state should be set during iteration").clone();
 
             for (current_node, neighbors) in topology {
                 if neighbors.contains(&node_id) || *current_node == node_id {

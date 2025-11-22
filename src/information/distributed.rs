@@ -265,7 +265,8 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
             let mut to_process = Vec::new();
             while let Some(msg) = node.message_queue.front() {
                 if msg.timestamp <= self.timestamp {
-                    to_process.push(node.message_queue.pop_front().unwrap());
+                    // We just checked that front() is Some, so pop_front() must succeed
+                    to_process.push(node.message_queue.pop_front().expect("message queue should have front element"));
                 } else {
                     break;
                 }
@@ -333,10 +334,10 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
 
         for node in self.nodes.values() {
             for i in 0..n * n {
-                avg_Y[i] = avg_Y[i] + node.local_state.Y[i] / T::from(num_nodes).unwrap();
+                avg_Y[i] = avg_Y[i] + node.local_state.Y[i] / T::from_usize(num_nodes);
             }
             for i in 0..n {
-                avg_y[i] = avg_y[i] + node.local_state.y[i] / T::from(num_nodes).unwrap();
+                avg_y[i] = avg_y[i] + node.local_state.y[i] / T::from_usize(num_nodes);
             }
         }
 

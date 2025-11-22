@@ -72,9 +72,9 @@ pub struct UKFParameters<T: KalmanScalar> {
 impl<T: KalmanScalar> Default for UKFParameters<T> {
     fn default() -> Self {
         Self {
-            alpha: T::from(1e-3).unwrap(),
-            beta: T::from(2.0).unwrap(),
-            kappa: T::from(0.0).unwrap(),
+            alpha: T::from_f64(1e-3),
+            beta: T::from_f64(2.0),
+            kappa: T::from_f64(0.0),
         }
     }
 }
@@ -191,19 +191,19 @@ where
         let num_sigma_points = 2 * n + 1;
 
         // Compute lambda
-        let lambda = params.alpha * params.alpha * (T::from(n).unwrap() + params.kappa)
-            - T::from(n).unwrap();
+        let lambda = params.alpha * params.alpha * (T::from_usize(n) + params.kappa)
+            - T::from_usize(n);
 
         // Compute weights
         let mut weights_mean = vec![T::zero(); num_sigma_points];
         let mut weights_cov = vec![T::zero(); num_sigma_points];
 
-        weights_mean[0] = lambda / (T::from(n).unwrap() + lambda);
-        weights_cov[0] = lambda / (T::from(n).unwrap() + lambda)
+        weights_mean[0] = lambda / (T::from_usize(n) + lambda);
+        weights_cov[0] = lambda / (T::from_usize(n) + lambda)
             + (T::one() - params.alpha * params.alpha + params.beta);
 
         for i in 1..num_sigma_points {
-            let weight = T::from(0.5).unwrap() / (T::from(n).unwrap() + lambda);
+            let weight = T::from_f64(0.5) / (T::from_usize(n) + lambda);
             weights_mean[i] = weight;
             weights_cov[i] = weight;
         }
@@ -233,16 +233,16 @@ where
         let n = self.state_dim;
 
         // Recompute lambda
-        self.lambda = params.alpha * params.alpha * (T::from(n).unwrap() + params.kappa)
-            - T::from(n).unwrap();
+        self.lambda = params.alpha * params.alpha * (T::from_usize(n) + params.kappa)
+            - T::from_usize(n);
 
         // Recompute weights
-        self.weights_mean[0] = self.lambda / (T::from(n).unwrap() + self.lambda);
-        self.weights_cov[0] = self.lambda / (T::from(n).unwrap() + self.lambda)
+        self.weights_mean[0] = self.lambda / (T::from_usize(n) + self.lambda);
+        self.weights_cov[0] = self.lambda / (T::from_usize(n) + self.lambda)
             + (T::one() - params.alpha * params.alpha + params.beta);
 
         for i in 1..(2 * n + 1) {
-            let weight = T::from(0.5).unwrap() / (T::from(n).unwrap() + self.lambda);
+            let weight = T::from_f64(0.5) / (T::from_usize(n) + self.lambda);
             self.weights_mean[i] = weight;
             self.weights_cov[i] = weight;
         }
@@ -256,7 +256,7 @@ where
     /// Generate sigma points from current state and covariance
     fn generate_sigma_points(&mut self) -> KalmanResult<()> {
         let n = self.state_dim;
-        let sqrt_n_lambda = (T::from(n).unwrap() + self.lambda).sqrt();
+        let sqrt_n_lambda = (T::from_usize(n) + self.lambda).sqrt();
 
         trace!(
             "UKF: Generating {} sigma points with lambda={:.6}",
@@ -383,7 +383,7 @@ where
         // Ensure symmetry
         for i in 0..n {
             for j in i + 1..n {
-                let avg = (new_P[i * n + j] + new_P[j * n + i]) * T::from(0.5).unwrap();
+                let avg = (new_P[i * n + j] + new_P[j * n + i]) * T::from_f64(0.5);
                 new_P[i * n + j] = avg;
                 new_P[j * n + i] = avg;
             }
@@ -570,7 +570,7 @@ where
         // Ensure symmetry
         for i in 0..n {
             for j in i + 1..n {
-                let avg = (self.P[i * n + j] + self.P[j * n + i]) * T::from(0.5).unwrap();
+                let avg = (self.P[i * n + j] + self.P[j * n + i]) * T::from_f64(0.5);
                 self.P[i * n + j] = avg;
                 self.P[j * n + i] = avg;
             }

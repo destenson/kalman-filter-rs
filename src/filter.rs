@@ -392,7 +392,7 @@ where
         // Ensure symmetry
         for i in 0..n {
             for j in i + 1..n {
-                let avg = (new_p[i * n + j] + new_p[j * n + i]) * T::from(0.5).unwrap();
+                let avg = (new_p[i * n + j] + new_p[j * n + i]) * T::from_f64(0.5);
                 new_p[i * n + j] = avg;
                 new_p[j * n + i] = avg;
             }
@@ -582,7 +582,7 @@ where
         self.P = (I - &K * &self.H) * &self.P;
 
         // Ensure symmetry and positive semi-definiteness
-        self.P = (&self.P + self.P.transpose()) * T::from(0.5).unwrap();
+        self.P = (&self.P + self.P.transpose()) * T::from_f64(0.5);
 
         Ok(())
     }

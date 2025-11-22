@@ -286,7 +286,7 @@ where
             let x_new = self.state.recover_state()?;
             let mut converged = true;
             for i in 0..n {
-                if (x_new[i] - x_current[i]).abs() > T::from(1e-6).unwrap() {
+                if (x_new[i] - x_current[i]).abs() > T::from_f64(1e-6) {
                     converged = false;
                     break;
                 }
@@ -303,7 +303,7 @@ where
     /// Compute numerical Jacobian for state transition
     fn compute_numerical_jacobian_state(&self, state: &[T], step_size: f64) -> Vec<T> {
         let n = self.state_dim;
-        let step = T::from(step_size).unwrap();
+        let step = T::from_f64(step_size);
         let mut jacobian = vec![T::zero(); n * n];
 
         for j in 0..n {
@@ -331,7 +331,7 @@ where
     fn compute_numerical_jacobian_measurement(&self, state: &[T], step_size: f64) -> Vec<T> {
         let n = self.state_dim;
         let m = self.measurement_dim;
-        let step = T::from(step_size).unwrap();
+        let step = T::from_f64(step_size);
         let mut jacobian = vec![T::zero(); m * n];
 
         for j in 0..n {

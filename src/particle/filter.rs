@@ -134,7 +134,7 @@ where
         // Initialize particles from initial distribution
         let mut particles = Vec::with_capacity(num_particles);
         let mut rng = rng();
-        let initial_weight = T::one() / T::from(num_particles).unwrap();
+        let initial_weight = T::one() / T::from_usize(num_particles);
         let initial_log_weight = initial_weight.ln();
 
         for _ in 0..num_particles {
@@ -144,8 +144,9 @@ where
                 let std_f64 = KalmanScalar::to_f64(&initial_std[i]);
 
                 if std_f64 > 0.0f64 {
-                    let normal = Normal::new(mean_f64, std_f64).unwrap();
-                    state[i] = T::from(normal.sample(&mut rng)).unwrap();
+                    let normal = Normal::new(mean_f64, std_f64)
+                        .expect("Normal distribution creation should succeed for positive std");
+                    state[i] = T::from_f64(normal.sample(&mut rng));
                 } else {
                     state[i] = initial_mean[i];
                 }
@@ -165,7 +166,7 @@ where
             process_noise_std,
             measurement_noise_std,
             resampling_strategy: ResamplingStrategy::Systematic,
-            ess_threshold: T::from(num_particles / 2).unwrap(),
+            ess_threshold: T::from_usize(num_particles / 2),
             dt,
         })
     }
@@ -200,8 +201,9 @@ where
             for i in 0..self.state_dim {
                 let noise_std = KalmanScalar::to_f64(&self.process_noise_std[i]);
                 if noise_std > 0.0f64 {
-                    let normal = Normal::new(0.0, noise_std).unwrap();
-                    new_state[i] = new_state[i] + T::from(normal.sample(&mut rng)).unwrap();
+                    let normal = Normal::new(0.0, noise_std)
+                        .expect("Normal distribution creation should succeed for positive std");
+                    new_state[i] = new_state[i] + T::from_f64(normal.sample(&mut rng));
                 }
             }
 
@@ -237,14 +239,14 @@ where
         );
 
         // Update weights based on measurement likelihood
-        let mut max_log_weight = T::from(-1e308).unwrap();
+        let mut max_log_weight = T::from_f64(-1e308);
 
         for particle in &mut self.particles {
             // Compute likelihood
             let likelihood = likelihood_fn(&particle.state, measurement);
 
             if likelihood <= T::zero() {
-                particle.log_weight = T::from(-1e308).unwrap();
+                particle.log_weight = T::from_f64(-1e308);
             } else {
                 particle.log_weight = particle.log_weight + likelihood.ln();
             }
@@ -357,12 +359,12 @@ where
         }
 
         // Sample new particles
-        let uniform_weight = T::one() / T::from(self.num_particles).unwrap();
+        let uniform_weight = T::one() / T::from_usize(self.num_particles);
         let log_weight = uniform_weight.ln();
 
         for _ in 0..self.num_particles {
             let u: f64 = rng.random();
-            let u_t = T::from(u).unwrap();
+            let u_t = T::from_f64(u);
 
             // Binary search for particle
             let mut idx = 0;
@@ -397,14 +399,14 @@ where
         }
 
         // Systematic resampling
-        let step = T::one() / T::from(self.num_particles).unwrap();
+        let step = T::one() / T::from_usize(self.num_particles);
         let u0: f64 = rng.random::<f64>() / self.num_particles as f64;
         let uniform_weight = step;
         let log_weight = uniform_weight.ln();
 
         let mut j = 0;
         for i in 0..self.num_particles {
-            let u = T::from(u0).unwrap() + step * T::from(i).unwrap();
+            let u = T::from_f64(u0) + step * T::from_usize(i);
 
             while j < self.num_particles - 1 && cumsum[j] < u {
                 j += 1;
@@ -434,13 +436,13 @@ where
         }
 
         // Stratified resampling
-        let step = T::one() / T::from(self.num_particles).unwrap();
+        let step = T::one() / T::from_usize(self.num_particles);
         let uniform_weight = step;
         let log_weight = uniform_weight.ln();
 
         for i in 0..self.num_particles {
             let u: f64 = (i as f64 + rng.random::<f64>()) / self.num_particles as f64;
-            let u_t = T::from(u).unwrap();
+            let u_t = T::from_f64(u);
 
             // Find particle
             let mut j = 0;
@@ -507,7 +509,7 @@ where
         }
 
         // Reset weights
-        let uniform_weight = T::one() / T::from(self.num_particles).unwrap();
+        let uniform_weight = T::one() / T::from_usize(self.num_particles);
         let log_weight = uniform_weight.ln();
 
         for particle in &mut new_particles {
@@ -555,8 +557,8 @@ where
     pub fn best_particle(&self) -> &Particle<T> {
         self.particles
             .iter()
-            .max_by(|a, b| a.weight.partial_cmp(&b.weight).unwrap())
-            .unwrap()
+            .max_by(|a, b| a.weight.partial_cmp(&b.weight).unwrap_or(std::cmp::Ordering::Equal))
+            .expect("Particle filter should have at least one particle")
     }
 }
 

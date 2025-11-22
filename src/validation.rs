@@ -23,7 +23,7 @@ pub fn validate_covariance<T: KalmanScalar>(P: &[T], n: usize) -> KalmanResult<(
         if diag < T::zero() {
             return Err(KalmanError::InvalidCovariance);
         }
-        if diag < T::from(MIN_CONDITION_NUMBER).unwrap() {
+        if diag < T::from_f64(MIN_CONDITION_NUMBER) {
             return Err(KalmanError::InvalidCovariance);
         }
     }
@@ -32,7 +32,7 @@ pub fn validate_covariance<T: KalmanScalar>(P: &[T], n: usize) -> KalmanResult<(
     for i in 0..n {
         for j in i + 1..n {
             let diff = (P[i * n + j] - P[j * n + i]).abs();
-            if diff > T::from(1e-10).unwrap() {
+            if diff > T::from_f64(1e-10) {
                 return Err(KalmanError::InvalidCovariance);
             }
         }
@@ -56,7 +56,7 @@ pub fn validate_measurement_noise<T: KalmanScalar>(R: &[T], m: usize) -> KalmanR
         if diag <= T::zero() {
             return Err(KalmanError::InvalidNoiseCovariance);
         }
-        if diag < T::from(MIN_CONDITION_NUMBER).unwrap() {
+        if diag < T::from_f64(MIN_CONDITION_NUMBER) {
             return Err(KalmanError::InvalidNoiseCovariance);
         }
     }
@@ -66,7 +66,7 @@ pub fn validate_measurement_noise<T: KalmanScalar>(R: &[T], m: usize) -> KalmanR
 
 /// Regularize a nearly singular matrix by adding small values to diagonal
 pub fn regularize_matrix<T: KalmanScalar>(matrix: &mut [T], n: usize) {
-    let epsilon = T::from(REGULARIZATION_EPSILON).unwrap();
+    let epsilon = T::from_f64(REGULARIZATION_EPSILON);
     for i in 0..n {
         matrix[i * n + i] = matrix[i * n + i] + epsilon;
     }
@@ -109,7 +109,7 @@ pub fn estimate_condition_number<T: KalmanScalar>(matrix: &[T], n: usize) -> T {
     if min_diag > T::zero() {
         max_diag / min_diag
     } else {
-        T::from(f64::INFINITY).unwrap_or(T::from(1e20).unwrap())
+        T::infinity()
     }
 }
 

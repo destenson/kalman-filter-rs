@@ -19,6 +19,33 @@ pub trait KalmanScalar: Float + Default + fmt::Debug + fmt::Display + 'static {
     fn to_f64(&self) -> f64 {
         num_traits::cast::ToPrimitive::to_f64(self).unwrap_or(f64::NAN)
     }
+
+    /// Safely convert from f64, using a fallback for invalid conversions
+    fn from_f64(value: f64) -> Self {
+        Self::from(value).unwrap_or_else(|| {
+            // Fallback: try to return a reasonable approximation
+            if value.is_nan() {
+                Self::nan()
+            } else if value.is_infinite() {
+                if value.is_sign_positive() {
+                    Self::infinity()
+                } else {
+                    Self::neg_infinity()
+                }
+            } else {
+                // This should rarely happen - most Float types support f64 conversion
+                Self::zero()
+            }
+        })
+    }
+
+    /// Safely convert from usize, using a fallback for invalid conversions
+    fn from_usize(value: usize) -> Self {
+        Self::from(value).unwrap_or_else(|| {
+            // Fallback: convert via f64 for very large usize values
+            Self::from_f64(value as f64)
+        })
+    }
 }
 
 impl KalmanScalar for f32 {

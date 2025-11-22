@@ -278,7 +278,7 @@ where
         let trace_val = (0..n)
             .map(|i| new_p[i * n + i])
             .fold(T::zero(), |a, b| a + b);
-        if trace_val > T::from(1e6).unwrap() {
+        if trace_val > T::from_f64(1e6) {
             warn!(
                 "EKF covariance trace is large: {:.6e}, filter may be diverging",
                 KalmanScalar::to_f64(&trace_val)
@@ -442,7 +442,7 @@ where
         // Ensure symmetry
         for i in 0..n {
             for j in i + 1..n {
-                let avg = (new_p[i * n + j] + new_p[j * n + i]) * T::from(0.5).unwrap();
+                let avg = (new_p[i * n + j] + new_p[j * n + i]) * T::from_f64(0.5);
                 new_p[i * n + j] = avg;
                 new_p[j * n + i] = avg;
             }
@@ -461,7 +461,7 @@ where
     /// Compute numerical Jacobian for state transition using finite differences
     fn compute_numerical_jacobian_state(&self, step_size: f64) -> Vec<T> {
         let n = self.state_dim;
-        let step = T::from(step_size).unwrap();
+        let step = T::from_f64(step_size);
         let mut jacobian = vec![T::zero(); n * n];
 
         for j in 0..n {
@@ -492,7 +492,7 @@ where
     fn compute_numerical_jacobian_measurement(&self, step_size: f64) -> Vec<T> {
         let n = self.state_dim;
         let m = self.measurement_dim;
-        let step = T::from(step_size).unwrap();
+        let step = T::from_f64(step_size);
         let mut jacobian = vec![T::zero(); m * n];
 
         for j in 0..n {

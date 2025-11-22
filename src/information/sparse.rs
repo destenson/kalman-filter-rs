@@ -106,7 +106,8 @@ impl<T: KalmanScalar> SparseMatrix<T> {
         // Build row pointers for transpose
         let mut t_row_ptr = vec![0];
         for count in &col_counts {
-            t_row_ptr.push(t_row_ptr.last().unwrap() + count);
+            let last = *t_row_ptr.last().expect("t_row_ptr should never be empty");
+            t_row_ptr.push(last + count);
         }
 
         // Fill values and column indices

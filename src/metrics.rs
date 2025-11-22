@@ -236,7 +236,7 @@ pub fn registry() -> &'static Registry {
     REGISTRY.get().unwrap_or_else(|| {
         // Auto-initialize if not done explicitly
         init();
-        REGISTRY.get().unwrap()
+        REGISTRY.get().expect("Registry should be initialized after init() call")
     })
 }
 

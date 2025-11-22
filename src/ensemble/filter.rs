@@ -129,7 +129,7 @@ where
             process_noise,
             measurement_noise,
             dt,
-            T::from(1.05).unwrap(), // Default 5% inflation
+            T::from_f64(1.05), // Default 5% inflation
             T::zero(),              // No localization by default
             None,
         )
@@ -195,8 +195,8 @@ where
                 let spread_f64 = KalmanScalar::to_f64(&initial_spread[i]);
 
                 if spread_f64 > 0.0f64 {
-                    let normal = Normal::new(mean_f64, spread_f64).unwrap();
-                    ensemble[i * ensemble_size + j] = T::from(normal.sample(&mut rng)).unwrap();
+                    let normal = Normal::new(mean_f64, spread_f64).expect("Normal distribution creation should succeed for valid parameters");
+                    ensemble[i * ensemble_size + j] = T::from_f64(normal.sample(&mut rng));
                 } else {
                     ensemble[i * ensemble_size + j] = initial_mean[i];
                 }
@@ -244,7 +244,7 @@ where
             for j in 0..m {
                 *mean_i = *mean_i + self.ensemble[i * m + j];
             }
-            *mean_i = *mean_i / T::from(m).unwrap();
+            *mean_i = *mean_i / T::from_usize(m);
         }
 
         // Compute anomalies and spread
@@ -256,7 +256,7 @@ where
                 anomalies[i * m + j] = self.ensemble[i * m + j] - mean[i];
                 spread[i] = spread[i] + anomalies[i * m + j] * anomalies[i * m + j];
             }
-            spread[i] = (spread[i] / T::from(m - 1).unwrap()).sqrt();
+            spread[i] = (spread[i] / T::from_usize(m - 1)).sqrt();
         }
 
         EnsembleStatistics {
@@ -360,8 +360,8 @@ where
                 let noise_var = KalmanScalar::to_f64(&self.R[i * m_obs + i]).sqrt();
 
                 if noise_var > 0.0f64 {
-                    let normal = Normal::new(obs_f64, noise_var).unwrap();
-                    obs_ensemble[i * m_state + j] = T::from(normal.sample(&mut rng)).unwrap();
+                    let normal = Normal::new(obs_f64, noise_var).expect("Normal distribution creation should succeed for valid parameters");
+                    obs_ensemble[i * m_state + j] = T::from_f64(normal.sample(&mut rng));
                 } else {
                     obs_ensemble[i * m_state + j] = observation[i];
                 }
@@ -389,7 +389,7 @@ where
             for j in 0..m_state {
                 H_mean[i] = H_mean[i] + H_ensemble[i * m_state + j];
             }
-            H_mean[i] = H_mean[i] / T::from(m_state).unwrap();
+            H_mean[i] = H_mean[i] / T::from_usize(m_state);
         }
 
         // Compute cross-covariance P_xh and observation covariance P_hh
@@ -405,7 +405,7 @@ where
                     let x_anomaly = self.ensemble[i * m_state + j] - stats.mean[i];
                     let h_anomaly = H_ensemble[k * m_state + j] - H_mean[k];
                     P_xh[i * m_obs + k] =
-                        P_xh[i * m_obs + k] + x_anomaly * h_anomaly / T::from(m_state - 1).unwrap();
+                        P_xh[i * m_obs + k] + x_anomaly * h_anomaly / T::from_usize(m_state - 1);
                 }
             }
         }
@@ -416,7 +416,7 @@ where
                     let h_anomaly_i = H_ensemble[i * m_state + j] - H_mean[i];
                     let h_anomaly_k = H_ensemble[k * m_state + j] - H_mean[k];
                     P_hh[i * m_obs + k] = P_hh[i * m_obs + k]
-                        + h_anomaly_i * h_anomaly_k / T::from(m_state - 1).unwrap();
+                        + h_anomaly_i * h_anomaly_k / T::from_usize(m_state - 1);
                 }
             }
         }
@@ -477,7 +477,7 @@ where
         for i in 0..size {
             // Find pivot
             let mut pivot = a[i * size + i];
-            if pivot.abs() < T::from(1e-10).unwrap() {
+            if pivot.abs() < T::from_f64(1e-10) {
                 error!(
                     "EnKF matrix inversion: Singular matrix encountered at pivot ({}, {}) = {:.6e}",
                     i,
