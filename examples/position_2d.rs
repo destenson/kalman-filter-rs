@@ -228,7 +228,7 @@ fn main() {
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let omega = 0.1; // Angular velocity for circular motion
     let radius = 5.0;
-    let noise_dist = Uniform::new(-0.3, 0.3);
+    let noise_dist = Uniform::new(-0.3, 0.3).unwrap();
 
     println!(
         "\nTime |  True X  |  True Y  | Meas. X  | Meas. Y  | Est. X   | Est. Y   | Est. Vx  | Est. Vy"
