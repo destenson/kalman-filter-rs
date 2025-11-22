@@ -2,9 +2,20 @@
 //!
 //! This example demonstrates the CKF's numerical stability advantages
 //! for higher-dimensional systems compared to UKF.
+//!
+//! ## Usage
+//! ```bash
+//! # Run with random noise (different output each time)
+//! cargo run --example ckf_high_dimensional
+//!
+//! # Run with a specific seed for reproducible results
+//! cargo run --example ckf_high_dimensional -- --seed 42
+//! ```
 #![allow(unused, non_snake_case)] // DO NOT CHANGE
 
 use kalman_filters::{CubatureKalmanFilter, NonlinearSystem};
+use rand::SeedableRng;
+use rand_distr::{Distribution, Normal};
 
 /// High-dimensional nonlinear system (6D state)
 struct HighDimensionalSystem;
@@ -49,6 +60,21 @@ impl NonlinearSystem<f64> for HighDimensionalSystem {
 
 fn main() {
     println!("=== CKF High-Dimensional System Example ===\n");
+
+    // Parse command-line arguments for optional seed
+    let args: Vec<String> = std::env::args().collect();
+    let seed = if args.len() > 2 && args[1] == "--seed" {
+        let seed_value = args[2].parse::<u64>().expect("Invalid seed value");
+        println!("Using seed: {}\n", seed_value);
+        seed_value
+    } else {
+        let seed_value = rand::random::<u64>();
+        println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
+        seed_value
+    };
+
+    // Create RNG with the selected seed
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
 
     let system = HighDimensionalSystem;
 
@@ -97,6 +123,11 @@ fn main() {
     println!("\nTime | Meas 1 | Meas 2 | Meas 3 | State Norm | Cov Trace");
     println!("-----|--------|--------|--------|------------|----------");
 
+    // Create noise distributions matching the measurement noise covariance
+    let noise_dist1 = Normal::new(0.0, 0.05_f64.sqrt()).unwrap();
+    let noise_dist2 = Normal::new(0.0, 0.05_f64.sqrt()).unwrap();
+    let noise_dist3 = Normal::new(0.0, 0.02_f64.sqrt()).unwrap();
+
     for t in 1..=20 {
         // Predict
         ckf.predict().expect("CKF prediction failed");
@@ -107,11 +138,11 @@ fn main() {
         let true_meas2 = (state[1].powi(2) + state[2].powi(2)).sqrt();
         let true_meas3 = state[0] + state[1] + state[2];
 
-        // Add noise
+        // Add random noise
         let measurements = vec![
-            true_meas1 + 0.02 * (t as f64 * 0.3).sin(),
-            true_meas2 + 0.02 * (t as f64 * 0.5).cos(),
-            true_meas3 + 0.01 * (t as f64 * 0.7).sin(),
+            true_meas1 + noise_dist1.sample(&mut rng),
+            true_meas2 + noise_dist2.sample(&mut rng),
+            true_meas3 + noise_dist3.sample(&mut rng),
         ];
 
         // Update

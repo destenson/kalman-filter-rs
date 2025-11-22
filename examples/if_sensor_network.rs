@@ -3,12 +3,22 @@
 //! This example demonstrates a 20-node sensor network tracking a moving target.
 //! Each sensor has limited range and can only communicate with neighbors.
 //! The Information Filter enables efficient distributed fusion.
+//!
+//! ## Usage
+//! ```bash
+//! # Run with random noise (different output each time)
+//! cargo run --example if_sensor_network
+//!
+//! # Run with a specific seed for reproducible results
+//! cargo run --example if_sensor_network -- --seed 42
+//! ```
 #![allow(unused, non_snake_case)] // DO NOT CHANGE!
 
 use kalman_filters::information::{
     AverageConsensus, ConsensusAlgorithm, DistributedInformationFilter, InformationForm,
 };
-use rand::Rng;
+use rand::SeedableRng;
+use rand_distr::{Distribution, Uniform};
 use std::collections::HashMap;
 
 /// Simulate a sensor network tracking a moving target
@@ -16,6 +26,21 @@ fn main() {
     println!("Distributed Sensor Network with Information Filter");
     println!("==================================================");
     println!("20 sensors tracking a moving target\n");
+
+    // Parse command-line arguments for optional seed
+    let args: Vec<String> = std::env::args().collect();
+    let seed = if args.len() > 2 && args[1] == "--seed" {
+        let seed_value = args[2].parse::<u64>().expect("Invalid seed value");
+        println!("Using seed: {}\n", seed_value);
+        seed_value
+    } else {
+        let seed_value = rand::random::<u64>();
+        println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
+        seed_value
+    };
+
+    // Create RNG with the selected seed
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
 
     // Network parameters
     const NUM_SENSORS: usize = 20;
@@ -70,6 +95,7 @@ fn main() {
 
     // Connect nodes within communication range
     let mut num_connections = 0;
+    let delay_dist = Uniform::new(0, 3);
     for i in 0..sensor_positions.len() {
         for j in i + 1..sensor_positions.len() {
             let (x1, y1) = sensor_positions[i];
@@ -78,7 +104,7 @@ fn main() {
 
             if dist <= COMM_RANGE {
                 // Add small random delay (0-2 time steps)
-                let delay = rand::thread_rng().gen_range(0..3);
+                let delay = delay_dist.sample(&mut rng);
                 dif.connect_nodes(i, j, delay).unwrap();
                 num_connections += 1;
             }
@@ -88,7 +114,6 @@ fn main() {
     println!("- {} communication links established", num_connections);
 
     // Target trajectory (circular motion)
-    let mut rng = rand::thread_rng();
     let center_x = GRID_SIZE / 2.0;
     let center_y = GRID_SIZE / 2.0;
     let radius = GRID_SIZE / 3.0;
@@ -119,8 +144,9 @@ fn main() {
 
                 // Generate noisy measurement
                 let noise_std = 1.0 + dist_to_target * 0.1; // Distance-dependent noise
-                let meas_x = true_x + rng.gen_range(-noise_std..noise_std);
-                let meas_y = true_y + rng.gen_range(-noise_std..noise_std);
+                let noise_dist = Uniform::new(-noise_std, noise_std);
+                let meas_x = true_x + noise_dist.sample(&mut rng);
+                let meas_y = true_y + noise_dist.sample(&mut rng);
 
                 // Observation matrix (position only)
                 let H = vec![1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0];

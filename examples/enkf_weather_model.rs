@@ -2,9 +2,20 @@
 //!
 //! This example demonstrates EnKF for high-dimensional data assimilation
 //! using a simplified weather model (Lorenz-96).
+//!
+//! ## Usage
+//! ```bash
+//! # Run with random noise (different output each time)
+//! cargo run --example enkf_weather_model
+//!
+//! # Run with a specific seed for reproducible results
+//! cargo run --example enkf_weather_model -- --seed 42
+//! ```
 #![allow(unused, non_snake_case)] // DO NOT CHANGE
 
 use kalman_filters::{EnsembleKalmanFilter, NonlinearSystem};
+use rand::SeedableRng;
+use rand_distr::{Distribution, Normal};
 
 /// Lorenz-96 model - a simplified weather model
 struct Lorenz96Model {
@@ -65,6 +76,21 @@ impl NonlinearSystem<f64> for Lorenz96Model {
 fn main() {
     println!("=== EnKF Weather Model Data Assimilation Example ===\n");
 
+    // Parse command-line arguments for optional seed
+    let args: Vec<String> = std::env::args().collect();
+    let seed = if args.len() > 2 && args[1] == "--seed" {
+        let seed_value = args[2].parse::<u64>().expect("Invalid seed value");
+        println!("Using seed: {}\n", seed_value);
+        seed_value
+    } else {
+        let seed_value = rand::random::<u64>();
+        println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
+        seed_value
+    };
+
+    // Create RNG with the selected seed
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+
     // Create Lorenz-96 model with 40 grid points (typical test case)
     let n = 40;
     let system = Lorenz96Model { n, forcing: 8.0 };
@@ -112,6 +138,9 @@ fn main() {
     println!("Time | Ensemble Mean Energy | Ensemble Spread | ESS");
     println!("-----|---------------------|-----------------|--------");
 
+    // Create noise distribution for observations
+    let obs_noise = Normal::new(0.0, 0.1_f64.sqrt()).unwrap(); // σ² = 0.1
+
     // Run data assimilation for 100 time steps
     for t in 1..=100 {
         // Forecast step
@@ -121,7 +150,7 @@ fn main() {
         let ensemble_mean = enkf.mean();
         let mut observations = Vec::new();
         for i in (0..n).step_by(2) {
-            observations.push(ensemble_mean[i] + 0.1 * ((t as f64) * 0.1).sin());
+            observations.push(ensemble_mean[i] + obs_noise.sample(&mut rng));
         }
 
         // Analysis step (update with observations)

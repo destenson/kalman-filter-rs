@@ -3,14 +3,23 @@
 //! This example demonstrates fusing data from multiple sensors with different
 //! characteristics to track a moving object. We simulate:
 //! - GPS sensor: Provides position measurements with moderate noise
-//! - IMU accelerometer: Provides acceleration measurements  
+//! - IMU accelerometer: Provides acceleration measurements
 //! - Radar: Provides position and velocity with different noise characteristics
 //!
 //! The Kalman filter combines these measurements optimally based on their
 //! respective noise characteristics.
+//!
+//! ## Usage
+//! ```bash
+//! # Run with random noise (different output each time)
+//! cargo run --example sensor_fusion
+//!
+//! # Run with a specific seed for reproducible results
+//! cargo run --example sensor_fusion -- --seed 42
+//! ```
 #![allow(unused, non_snake_case)]
 
-use rand::Rng;
+use rand::SeedableRng;
 use rand_distr::{Distribution, Normal};
 
 #[cfg(not(feature = "nalgebra"))]
@@ -26,6 +35,18 @@ fn main() {
     println!("Multi-Sensor Fusion Example (Vec-based)");
     println!("========================================");
     println!("Fusing GPS, IMU, and Radar measurements\n");
+
+    // Parse command-line arguments for optional seed
+    let args: Vec<String> = std::env::args().collect();
+    let seed = if args.len() > 2 && args[1] == "--seed" {
+        let seed_value = args[2].parse::<u64>().expect("Invalid seed value");
+        println!("Using seed: {}\n", seed_value);
+        seed_value
+    } else {
+        let seed_value = rand::random::<u64>();
+        println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
+        seed_value
+    };
 
     // Time step
     let dt = 0.1f64;
@@ -144,7 +165,7 @@ fn main() {
     .expect("Failed to build Kalman filter");
 
     // Simulation parameters
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let gps_noise = Normal::new(0.0, 0.5).unwrap();
     let radar_noise = Normal::new(0.0, 0.2).unwrap();
     let imu_noise = Normal::new(0.0, 0.05).unwrap();
@@ -257,6 +278,18 @@ fn main() {
     println!("=============================================");
     println!("Fusing GPS, IMU, and Radar measurements\n");
 
+    // Parse command-line arguments for optional seed
+    let args: Vec<String> = std::env::args().collect();
+    let seed = if args.len() > 2 && args[1] == "--seed" {
+        let seed_value = args[2].parse::<u64>().expect("Invalid seed value");
+        println!("Using seed: {}\n", seed_value);
+        seed_value
+    } else {
+        let seed_value = rand::random::<u64>();
+        println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
+        seed_value
+    };
+
     // Time step
     let dt = 0.1;
 
@@ -328,7 +361,7 @@ fn main() {
     let mut kf = StaticKalmanFilter::new(x0, P0, F, Q, H_gps, R_gps);
 
     // Simulation parameters
-    let mut rng = rand::rng();
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let gps_noise = Normal::new(0.0, 0.5).unwrap();
 
     // True trajectory

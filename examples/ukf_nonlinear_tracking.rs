@@ -3,9 +3,20 @@
 //! This example demonstrates tracking a target with nonlinear dynamics
 //! using the UKF, which handles nonlinearity better than EKF without
 //! requiring Jacobian calculations.
+//!
+//! ## Usage
+//! ```bash
+//! # Run with random noise (different output each time)
+//! cargo run --example ukf_nonlinear_tracking
+//!
+//! # Run with a specific seed for reproducible results
+//! cargo run --example ukf_nonlinear_tracking -- --seed 42
+//! ```
 #![allow(unused, non_snake_case)] // DO NOT CHANGE
 
 use kalman_filters::{NonlinearSystem, UKFParameters, UnscentedKalmanFilter};
+use rand::SeedableRng;
+use rand_distr::{Distribution, Normal};
 
 /// Nonlinear target dynamics with coordinated turn model
 struct CoordinatedTurnModel {
@@ -68,6 +79,21 @@ impl NonlinearSystem<f64> for CoordinatedTurnModel {
 fn main() {
     println!("=== UKF Nonlinear Target Tracking Example ===\n");
 
+    // Parse command-line arguments for optional seed
+    let args: Vec<String> = std::env::args().collect();
+    let seed = if args.len() > 2 && args[1] == "--seed" {
+        let seed_value = args[2].parse::<u64>().expect("Invalid seed value");
+        println!("Using seed: {}\n", seed_value);
+        seed_value
+    } else {
+        let seed_value = rand::random::<u64>();
+        println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
+        seed_value
+    };
+
+    // Create RNG with the selected seed
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+
     // Create coordinated turn model
     let system = CoordinatedTurnModel { omega: 0.1 }; // 0.1 rad/s turn rate
 
@@ -117,6 +143,10 @@ fn main() {
     println!("Time | Range | Bearing | Est. X | Est. Y | Est. Vx | Est. Vy");
     println!("-----|-------|---------|--------|--------|---------|--------");
 
+    // Create noise distributions matching the measurement noise covariance
+    let range_noise = Normal::new(0.0, 1.0_f64.sqrt()).unwrap(); // σ² = 1.0
+    let bearing_noise = Normal::new(0.0, 0.01_f64.sqrt()).unwrap(); // σ² = 0.01
+
     for t in 1..=10 {
         // Predict
         ukf.predict().unwrap();
@@ -126,9 +156,9 @@ fn main() {
         let true_range = (true_state[0].powi(2) + true_state[1].powi(2)).sqrt();
         let true_bearing = true_state[1].atan2(true_state[0]);
 
-        // Add measurement noise
-        let measured_range = true_range + 0.5 * (t as f64).sin();
-        let measured_bearing = true_bearing + 0.01 * (t as f64 * 0.7).cos();
+        // Add random measurement noise
+        let measured_range = true_range + range_noise.sample(&mut rng);
+        let measured_bearing = true_bearing + bearing_noise.sample(&mut rng);
 
         // Update with measurement
         ukf.update(&[measured_range, measured_bearing]).unwrap();

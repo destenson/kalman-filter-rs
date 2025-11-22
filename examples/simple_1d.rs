@@ -5,12 +5,22 @@
 //! - State: [position, velocity]
 //! - Measurement: position only
 //!
+//! ## Usage
+//! ```bash
+//! # Run with random noise (different output each time)
+//! cargo run --example simple_1d
+//!
+//! # Run with a specific seed for reproducible results
+//! cargo run --example simple_1d -- --seed 42
+//! ```
+//!
 //! This example works with both Vec-based and nalgebra implementations.
 //! Use `cargo run --example simple_1d` for Vec-based
 //! Use `cargo run --example simple_1d --features nalgebra` for nalgebra-based
 #![allow(unused, non_snake_case)]
 
-use rand::Rng;
+use rand::SeedableRng;
+use rand_distr::{Distribution, Uniform};
 
 #[cfg(not(feature = "nalgebra"))]
 use kalman_filters::{KalmanFilter, KalmanFilterBuilder};
@@ -24,6 +34,18 @@ use nalgebra::{SMatrix, SVector};
 fn main() {
     println!("Simple 1D Kalman Filter Example (Vec-based)");
     println!("============================================");
+
+    // Parse command-line arguments for optional seed
+    let args: Vec<String> = std::env::args().collect();
+    let seed = if args.len() > 2 && args[1] == "--seed" {
+        let seed_value = args[2].parse::<u64>().expect("Invalid seed value");
+        println!("Using seed: {}\n", seed_value);
+        seed_value
+    } else {
+        let seed_value = rand::random::<u64>();
+        println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
+        seed_value
+    };
 
     // Time step
     let dt = 0.1;
@@ -60,9 +82,10 @@ fn main() {
         .expect("Failed to build Kalman filter");
 
     // Simulate true system and noisy measurements
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let true_velocity = 1.0;
     let measurement_noise_std = 0.3;
+    let noise_dist = Uniform::new(-measurement_noise_std, measurement_noise_std);
 
     println!("\nTime | True Pos | Measured | Estimated | Est. Vel");
     println!("-----|----------|----------|-----------|----------");
@@ -72,7 +95,7 @@ fn main() {
         let true_position = true_velocity * t;
 
         // Generate noisy measurement
-        let noise = rng.gen_range(-measurement_noise_std..measurement_noise_std);
+        let noise = noise_dist.sample(&mut rng);
         let measured_position = true_position + noise;
 
         // Kalman filter predict step
@@ -109,6 +132,18 @@ fn main() {
     println!("Simple 1D Kalman Filter Example (nalgebra-based)");
     println!("=================================================");
 
+    // Parse command-line arguments for optional seed
+    let args: Vec<String> = std::env::args().collect();
+    let seed = if args.len() > 2 && args[1] == "--seed" {
+        let seed_value = args[2].parse::<u64>().expect("Invalid seed value");
+        println!("Using seed: {}\n", seed_value);
+        seed_value
+    } else {
+        let seed_value = rand::random::<u64>();
+        println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
+        seed_value
+    };
+
     // Time step
     let dt = 0.1;
 
@@ -134,9 +169,10 @@ fn main() {
     let mut kf = StaticKalmanFilter::new(x0, P0, F, Q, H, R);
 
     // Simulate true system and noisy measurements
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let true_velocity = 1.0;
     let measurement_noise_std = 0.3;
+    let noise_dist = Uniform::new(-measurement_noise_std, measurement_noise_std);
 
     println!("\nTime | True Pos | Measured | Estimated | Est. Vel");
     println!("-----|----------|----------|-----------|----------");
@@ -146,7 +182,7 @@ fn main() {
         let true_position = true_velocity * t;
 
         // Generate noisy measurement
-        let noise = rng.gen_range(-measurement_noise_std..measurement_noise_std);
+        let noise = noise_dist.sample(&mut rng);
         let measured_position = true_position + noise;
 
         // Kalman filter predict step

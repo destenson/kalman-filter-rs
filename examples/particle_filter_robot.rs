@@ -2,12 +2,38 @@
 //!
 //! This example demonstrates particle filter for robot localization where
 //! the posterior can be multimodal (multiple possible locations).
+//!
+//! ## Usage
+//! ```bash
+//! # Run with random noise (different output each time)
+//! cargo run --example particle_filter_robot
+//!
+//! # Run with a specific seed for reproducible results
+//! cargo run --example particle_filter_robot -- --seed 42
+//! ```
 
 use kalman_filters::{ParticleFilter, ResamplingStrategy};
+use rand::SeedableRng;
+use rand_distr::{Distribution, Normal};
 use std::f64::consts::PI;
 
 fn main() {
     println!("=== Particle Filter Robot Localization Example ===\n");
+
+    // Parse command-line arguments for optional seed
+    let args: Vec<String> = std::env::args().collect();
+    let seed = if args.len() > 2 && args[1] == "--seed" {
+        let seed_value = args[2].parse::<u64>().expect("Invalid seed value");
+        println!("Using seed: {}\n", seed_value);
+        seed_value
+    } else {
+        let seed_value = rand::random::<u64>();
+        println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
+        seed_value
+    };
+
+    // Create RNG with the selected seed
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
 
     // Robot state: [x, y, theta] (position and heading)
     let state_dim = 3;
@@ -94,6 +120,9 @@ fn main() {
     println!("\nTime | Observed | Distance | Est. X | Est. Y | Est. θ | ESS");
     println!("-----|----------|----------|--------|--------|--------|------");
 
+    // Create noise distribution for measurements
+    let measurement_noise = Normal::new(0.0, 0.5).unwrap(); // σ = 0.5
+
     // Simulate robot motion and observations
     for t in 1..=10 {
         // Predict step (motion update)
@@ -107,8 +136,8 @@ fn main() {
         let best = pf.best_particle();
         let true_dist = ((best.state[0] - lx).powi(2) + (best.state[1] - ly).powi(2)).sqrt();
 
-        // Observed distance with noise
-        let observed_dist = true_dist + 0.3 * ((t as f64) * 0.5).sin();
+        // Observed distance with random noise
+        let observed_dist = true_dist + measurement_noise.sample(&mut rng);
 
         // Update step with measurement
         let measurement = vec![landmark_idx as f64, observed_dist];

@@ -3,12 +3,22 @@
 //! This example demonstrates tracking a 2D position (x, y) with velocity.
 //! The state vector contains [x, y, vx, vy] and we measure [x, y].
 //!
+//! ## Usage
+//! ```bash
+//! # Run with random noise (different output each time)
+//! cargo run --example position_2d
+//!
+//! # Run with a specific seed for reproducible results
+//! cargo run --example position_2d -- --seed 42
+//! ```
+//!
 //! This example works with both Vec-based and nalgebra implementations.
 //! Use `cargo run --example position_2d` for Vec-based
 //! Use `cargo run --example position_2d --features nalgebra` for nalgebra-based
 #![allow(unused, non_snake_case)] // DO NOT CHANGE
 
-use rand::Rng;
+use rand::SeedableRng;
+use rand_distr::{Distribution, Uniform};
 
 #[cfg(not(feature = "nalgebra"))]
 use kalman_filters::{KalmanFilter, KalmanFilterBuilder};
@@ -22,6 +32,18 @@ use nalgebra::{SMatrix, SVector};
 fn main() {
     println!("2D Position Tracking with Kalman Filter (Vec-based)");
     println!("====================================================");
+
+    // Parse command-line arguments for optional seed
+    let args: Vec<String> = std::env::args().collect();
+    let seed = if args.len() > 2 && args[1] == "--seed" {
+        let seed_value = args[2].parse::<u64>().expect("Invalid seed value");
+        println!("Using seed: {}\n", seed_value);
+        seed_value
+    } else {
+        let seed_value = rand::random::<u64>();
+        println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
+        seed_value
+    };
 
     // Time step
     let dt = 0.1;
@@ -86,9 +108,10 @@ fn main() {
         .expect("Failed to build Kalman filter");
 
     // Simulate a moving object with circular motion
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let omega = 0.1; // Angular velocity for circular motion
     let radius = 5.0;
+    let noise_dist = Uniform::new(-0.3, 0.3);
 
     println!(
         "\nTime |  True X  |  True Y  | Meas. X  | Meas. Y  | Est. X   | Est. Y   | Est. Vx  | Est. Vy"
@@ -105,8 +128,8 @@ fn main() {
         let true_y = radius * (omega * t).sin();
 
         // Generate noisy measurements
-        let noise_x = rng.gen_range(-0.3..0.3);
-        let noise_y = rng.gen_range(-0.3..0.3);
+        let noise_x = noise_dist.sample(&mut rng);
+        let noise_y = noise_dist.sample(&mut rng);
         let measured_x = true_x + noise_x;
         let measured_y = true_y + noise_y;
 
@@ -143,6 +166,18 @@ fn main() {
 fn main() {
     println!("2D Position Tracking with Kalman Filter (nalgebra-based)");
     println!("=========================================================");
+
+    // Parse command-line arguments for optional seed
+    let args: Vec<String> = std::env::args().collect();
+    let seed = if args.len() > 2 && args[1] == "--seed" {
+        let seed_value = args[2].parse::<u64>().expect("Invalid seed value");
+        println!("Using seed: {}\n", seed_value);
+        seed_value
+    } else {
+        let seed_value = rand::random::<u64>();
+        println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
+        seed_value
+    };
 
     // Time step
     let dt = 0.1;
@@ -190,9 +225,10 @@ fn main() {
     let mut kf = StaticKalmanFilter::new(x0, P0, F, Q, H, R);
 
     // Simulate a moving object with circular motion
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let omega = 0.1; // Angular velocity for circular motion
     let radius = 5.0;
+    let noise_dist = Uniform::new(-0.3, 0.3);
 
     println!(
         "\nTime |  True X  |  True Y  | Meas. X  | Meas. Y  | Est. X   | Est. Y   | Est. Vx  | Est. Vy"
@@ -209,8 +245,8 @@ fn main() {
         let true_y = radius * (omega * t).sin();
 
         // Generate noisy measurements
-        let noise_x = rng.gen_range(-0.3..0.3);
-        let noise_y = rng.gen_range(-0.3..0.3);
+        let noise_x = noise_dist.sample(&mut rng);
+        let noise_y = noise_dist.sample(&mut rng);
         let measured_x = true_x + noise_x;
         let measured_y = true_y + noise_y;
 

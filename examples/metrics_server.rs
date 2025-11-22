@@ -5,7 +5,14 @@
 //! - Run Kalman filters with metrics collection
 //! - Expose metrics via an HTTP endpoint for Prometheus scraping
 //!
-//! Run with: cargo run --example metrics_server --features prometheus-metrics
+//! ## Usage
+//! ```bash
+//! # Run with random noise (different output each time)
+//! cargo run --example metrics_server --features prometheus-metrics
+//!
+//! # Run with a specific seed for reproducible results
+//! cargo run --example metrics_server --features prometheus-metrics -- --seed 42
+//! ```
 //!
 //! Then access metrics at: http://localhost:9090/metrics
 
@@ -18,16 +25,32 @@ fn main() {
 #[cfg(feature = "prometheus-metrics")]
 fn main() {
     use kalman_filters::KalmanFilterBuilder;
+    use rand::SeedableRng;
+    use rand_distr::{Distribution, Normal};
     use std::net::TcpListener;
     use std::thread;
     use std::time::Duration;
+
+    // Parse command-line arguments for optional seed
+    let args: Vec<String> = std::env::args().collect();
+    let seed = if args.len() > 2 && args[1] == "--seed" {
+        let seed_value = args[2].parse::<u64>().expect("Invalid seed value");
+        println!("Using seed: {}\n", seed_value);
+        seed_value
+    } else {
+        let seed_value = rand::random::<u64>();
+        println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
+        seed_value
+    };
 
     // Initialize metrics system
     kalman_filters::metrics::init();
     println!("Metrics system initialized");
 
     // Create a thread to run filters and generate metrics
-    thread::spawn(|| {
+    thread::spawn(move || {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let noise_dist = Normal::new(0.0, 0.2).unwrap();
         // Create a simple 2D position-velocity Kalman filter
         let mut kf = KalmanFilterBuilder::new(2, 1)
             .initial_state(vec![0.0, 0.0])
@@ -49,8 +72,7 @@ fn main() {
 
             // Generate synthetic measurement (true position with noise)
             let true_position = time;
-            // Simple noise generation without rand dependency
-            let noise = ((time.sin() * 100.0) % 1.0 - 0.5) * 0.2;
+            let noise = noise_dist.sample(&mut rng);
             let measurement = vec![true_position + noise];
 
             // Update step
