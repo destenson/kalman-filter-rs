@@ -10,8 +10,13 @@ use std::time::Duration;
 // CORE OPERATIONS BENCHMARKS
 // ============================================================================
 
+/// Benchmarks core Kalman filter operations (predict, update, full cycle) across
+/// multiple dimensions. Establishes baseline performance metrics before BLAS optimization.
+/// Tests standard KF implementation with varying state and measurement dimensions.
 fn bench_kalman_filter_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("kalman_filter_core_operations");
+    group.warm_up_time(Duration::from_secs(3));
+    group.measurement_time(Duration::from_secs(10));
 
     // Test different dimensions: 2D, 4D, 10D, 50D, 100D
     let dimensions = vec![2, 4, 10, 50, 100];
@@ -51,8 +56,12 @@ fn bench_kalman_filter_operations(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmarks low-level matrix operations that are bottlenecks in filter computations.
+/// Focuses on matrix inversion performance across different dimensions, which is the
+/// primary computational cost in the update step.
 fn bench_matrix_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("matrix_operations");
+    group.warm_up_time(Duration::from_secs(2));
 
     let dimensions = vec![2, 4, 10, 50, 100];
 
@@ -75,8 +84,12 @@ fn bench_matrix_operations(c: &mut Criterion) {
 // FILTER VARIANT COMPARISONS
 // ============================================================================
 
+/// Compares performance across all filter implementations (KF, EKF, UKF, IF, PF).
+/// Uses fixed 4D state (2D position + velocity) to enable direct comparison.
+/// Benchmarks full predict-update cycle for each filter variant.
 fn bench_filter_variants(c: &mut Criterion) {
     let mut group = c.benchmark_group("filter_variants");
+    group.warm_up_time(Duration::from_secs(3));
     group.measurement_time(Duration::from_secs(10));
 
     let state_dim = 4; // 2D position + velocity
@@ -189,8 +202,12 @@ fn bench_filter_variants(c: &mut Criterion) {
 // SCALING BENCHMARKS
 // ============================================================================
 
+/// Tests how performance scales with state dimension from 2D to 1000D.
+/// Critical for understanding computational complexity and identifying
+/// asymptotic behavior. Uses reduced sample size for large dimensions.
 fn bench_dimension_scaling(c: &mut Criterion) {
     let mut group = c.benchmark_group("dimension_scaling");
+    group.warm_up_time(Duration::from_secs(2));
     group.sample_size(50); // Reduce sample size for large dimensions
 
     // Test scaling from 2D to 1000D
@@ -225,8 +242,12 @@ fn bench_dimension_scaling(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmarks particle filter performance scaling with particle count.
+/// Tests from 100 to 10,000 particles to understand scaling for large-scale
+/// Monte Carlo simulations. Useful for GPU acceleration planning.
 fn bench_particle_scaling(c: &mut Criterion) {
     let mut group = c.benchmark_group("particle_filter_scaling");
+    group.warm_up_time(Duration::from_secs(2));
 
     let particle_counts = vec![100, 500, 1000, 5000, 10000];
     let state_dim = 4;
@@ -272,8 +293,12 @@ fn bench_particle_scaling(c: &mut Criterion) {
 // SPARSE VS DENSE OPERATIONS
 // ============================================================================
 
+/// Compares sparse vs dense matrix-vector multiplication performance.
+/// Tests varying sparsity levels to identify thresholds where sparse
+/// representations become beneficial. Relevant for Information Filter optimization.
 fn bench_sparse_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("sparse_vs_dense");
+    group.warm_up_time(Duration::from_secs(2));
 
     // Test different sparsity levels
     let dimensions = vec![50, 100, 200];
@@ -321,8 +346,12 @@ fn bench_sparse_operations(c: &mut Criterion) {
 // MEMORY AND ALLOCATION BENCHMARKS
 // ============================================================================
 
+/// Benchmarks memory allocation overhead in filter construction and operation.
+/// Identifies allocation hotspots and measures cloning costs. Important for
+/// real-time systems where allocation must be minimized.
 fn bench_memory_allocations(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory_allocations");
+    group.warm_up_time(Duration::from_secs(1));
 
     let dimensions = vec![10, 50, 100];
 
@@ -354,8 +383,12 @@ fn bench_memory_allocations(c: &mut Criterion) {
 // REAL-WORLD SCENARIOS
 // ============================================================================
 
+/// Benchmarks realistic application scenarios: IMU fusion, GPS tracking, radar tracking.
+/// Uses problem sizes and dimensions typical of production systems to provide
+/// actionable performance data for end users.
 fn bench_real_world_scenarios(c: &mut Criterion) {
     let mut group = c.benchmark_group("real_world_scenarios");
+    group.warm_up_time(Duration::from_secs(3));
     group.measurement_time(Duration::from_secs(10));
 
     // IMU fusion (6DOF: position + velocity)
@@ -398,9 +431,13 @@ fn bench_real_world_scenarios(c: &mut Criterion) {
 // COMPARATIVE BENCHMARKS
 // ============================================================================
 
+/// Compares performance against adskalman reference implementation (when feature enabled).
+/// Ensures our implementation is competitive with established Rust Kalman filter libraries.
 #[cfg(feature = "adskalman")]
 fn bench_vs_adskalman(c: &mut Criterion) {
     let mut group = c.benchmark_group("comparison_with_adskalman");
+    group.warm_up_time(Duration::from_secs(2));
+    group.measurement_time(Duration::from_secs(10));
 
     let state_dim = 4;
     let measurement_dim = 2;
@@ -435,8 +472,12 @@ fn bench_vs_adskalman(c: &mut Criterion) {
     group.finish();
 }
 
+/// Compares f32 vs f64 precision performance to quantify the speed/accuracy tradeoff.
+/// Useful for embedded systems and GPU acceleration where f32 may be preferred.
 fn bench_precision_comparison(c: &mut Criterion) {
     let mut group = c.benchmark_group("precision_comparison");
+    group.warm_up_time(Duration::from_secs(2));
+    group.measurement_time(Duration::from_secs(10));
 
     let state_dim = 10;
     let measurement_dim = 5;
