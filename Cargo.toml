@@ -16,7 +16,7 @@ readme = "README.md"
 
 
 [features]
-default = ["std", "nalgebra"]
+default = ["std", "nalgebra", "naive-matrix", "openblas-static", "opencv", "parallel", "serde"]
 dev = ["serde", "parallel", "tracing-subscriber", "prometheus-metrics", "nalgebra"]
 std = ["rand_distr/std"]
 alloc = ["rand_distr/alloc"]
@@ -26,7 +26,8 @@ nalgebra = ["dep:nalgebra"]
 naive-matrix = []
 blas-backend = ["dep:ndarray", "std"]
 # Base ndarray-linalg without specific BLAS backend
-ndarray-linalg = ["blas-backend", "dep:ndarray-linalg", "std"]
+ndarray-linalg-blas = ["blas-backend"]
+ndarray-linalg = ["dep:ndarray-linalg", "std"]
 
 # BLAS backend selection (choose one when using ndarray-linalg)
 # These features enable both ndarray-linalg and a specific BLAS implementation
@@ -35,20 +36,19 @@ ndarray-linalg = ["blas-backend", "dep:ndarray-linalg", "std"]
 # TODO: remove "ndarray-linalg" as a dependency (use the feature to select static iff ndarray-linalg is enabled)
 # To use system OpenBLAS instead, explicitly enable it:
 #   cargo build --features "openblas-system,serde,parallel"
-openblas-static = ["dep:ndarray-linalg", "ndarray-linalg/openblas-static"]
-openblas-system = ["dep:ndarray-linalg", "ndarray-linalg/openblas-system"]  # Commented to prevent conflicts with openblas-static
-# intel-mkl-dynamic-lp64 = ["dep:ndarray-linalg", "ndarray-linalg/intel-mkl-dynamic-lp64-iomp"]
-# intel-mkl-dynamic-seq = ["dep:ndarray-linalg", "ndarray-linalg/intel-mkl-dynamic-lp64-seq"]
-# intel-mkl-static-lp64 = ["dep:ndarray-linalg", "ndarray-linalg/intel-mkl-static-lp64-iomp"]
+openblas-static = ["dep:ndarray-linalg", "ndarray-linalg?/openblas-static"]
+openblas-system = ["dep:ndarray-linalg", "ndarray-linalg?/openblas-system"]
+# intel-mkl-dynamic-lp64 = ["dep:ndarray-linalg", "ndarray-linalg?/intel-mkl-dynamic-lp64-iomp"]
+# intel-mkl-dynamic-seq = ["dep:ndarray-linalg", "ndarray-linalg?/intel-mkl-dynamic-lp64-seq"]
+# intel-mkl-static-lp64 = ["dep:ndarray-linalg", "ndarray-linalg?/intel-mkl-static-lp64-iomp"]
 # intel-mkl-static-seq = ["dep:ndarray-linalg", "ndarray-linalg?/intel-mkl-static-lp64-seq"]
-# netlib-system = ["dep:ndarray-linalg", "ndarray-linalg/netlib-system"]
-# netlib-static = ["dep:ndarray-linalg", "ndarray-linalg/netlib-static"]
+# netlib-system = ["dep:ndarray-linalg", "ndarray-linalg?/netlib-system"]
+# netlib-static = ["dep:ndarray-linalg", "ndarray-linalg?/netlib-static"]
 
 # Other features
 opencv = ["dep:opencv"]
 parallel = ["rayon"]
 serde = ["dep:serde", "serde/derive"]
-legacy = []
 tracing-subscriber = ["dep:tracing-subscriber"]
 prometheus-metrics = ["dep:prometheus-client", "dep:once_cell"]
 
