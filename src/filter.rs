@@ -582,7 +582,7 @@ where
         self.P = (I - &K * &self.H) * &self.P;
 
         // Ensure symmetry and positive semi-definiteness
-        self.P = (&self.P + self.P.transpose()) * T::from_f64(0.5);
+        self.P = (&self.P + self.P.transpose()) * <T as KalmanScalar>::from_f64(0.5);
 
         Ok(())
     }

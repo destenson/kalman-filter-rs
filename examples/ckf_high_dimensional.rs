@@ -99,7 +99,7 @@ fn main() {
 
     for t in 1..=20 {
         // Predict
-        ckf.predict().unwrap();
+        ckf.predict().expect("CKF prediction failed");
 
         // Generate simulated measurements
         let state = ckf.state();

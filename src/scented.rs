@@ -231,11 +231,13 @@ where
         let n = self.state_dim;
         let num_points = 2 * n;
 
-        trace!(
-            "CKF predict: {} prior={:.4}",
-            format_state(&self.x, "state"),
-            state_norm(&self.x)
-        );
+        if log::log_enabled!(log::Level::Trace) {
+            trace!(
+                "CKF predict: {} prior={:.4}",
+                format_state(&self.x, "state"),
+                state_norm(&self.x)
+            );
+        }
 
         // Generate cubature points
         self.generate_cubature_points()?;
@@ -289,11 +291,13 @@ where
             }
         }
 
-        trace!(
-            "CKF predict: {} posterior={:.4}",
-            format_state(&new_x, "state"),
-            state_norm(&new_x)
-        );
+        if log::log_enabled!(log::Level::Trace) {
+            trace!(
+                "CKF predict: {} posterior={:.4}",
+                format_state(&new_x, "state"),
+                state_norm(&new_x)
+            );
+        }
         check_numerical_stability(&new_P, n, "CKF predict covariance");
 
         self.x = new_x;

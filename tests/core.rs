@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 //! Unit tests for core Kalman filter functions
 //!
 //! These tests verify actual business logic and mathematical correctness
