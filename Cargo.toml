@@ -1,6 +1,6 @@
 [package]
 name = "kalman_filters"
-version = "1.1.0"
+version = "1.1.0-dev"
 authors = [
     "Dennis E <git+kalman-filters@destenson.digital>",
     "Claude AI Assistant",
@@ -16,7 +16,8 @@ readme = "README.md"
 
 
 [features]
-default = ["std"]
+default = ["std","dev"]
+dev=["serde", "parallel", "tracing-subscriber", "prometheus-metrics","nalgebra"]
 std = ["rand_distr/std", "adskalman?/std"]
 alloc = ["rand_distr/alloc"]
 nalgebra = ["dep:nalgebra"]

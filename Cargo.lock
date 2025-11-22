@@ -529,7 +529,7 @@ dependencies = [
 
 [[package]]
 name = "kalman_filters"
-version = "1.1.0"
+version = "1.1.0-dev"
 dependencies = [
  "adskalman",
  "approx",
