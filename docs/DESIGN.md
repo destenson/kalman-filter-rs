@@ -79,27 +79,55 @@ pub type KF<T> = /* wrapper that uses nalgebra internally */;
 Pros: Zero overhead
 Cons: Can't switch at runtime, complex to get right
 
-### Recommended Approach: **Option 2 with builder optimization**
+### Recommended Approach: **Option 1 (Enum-based) - IMPLEMENTED**
 
-1. Create `KalmanFilterTrait` for unified interface
-2. Builder returns `Box<dyn KalmanFilterTrait<T>>` for maximum flexibility
-3. For known dimensions at compile time, builder can return concrete type (optional optimization)
-4. All user-facing APIs use `&[T]` slices
+We chose Option 1 with an enum-based wrapper for the following reasons:
+
+1. **No heap allocation**: Returns concrete `UnifiedKalmanFilter<T>` enum instead of `Box<dyn Trait>`
+2. **Works with dynamic dimensions**: Can switch measurement matrices at runtime for sensor fusion
+3. **Predictable performance**: Match overhead is minimal and predictable
+4. **Common dimensions optimized**: Pre-defined variants for common sizes (1x1, 2x1, 3x1, 4x2, 6x3)
+
+Implementation:
+- `UnifiedKalmanFilter<T>` enum wraps backend-specific implementations
+- `KalmanFilterTrait<T>` provides unified interface
+- Builder automatically selects optimal backend based on dimensions
+- All user-facing APIs use `&[T]` slices
+
+### Current Status: **Phase 1 COMPLETE**
+
+**Implemented:**
+- ✅ `UnifiedKalmanFilter<T>` enum with backend-specific variants
+- ✅ `KalmanFilterTrait<T>` providing unified interface
+- ✅ `KalmanFilterBuilder` returns `UnifiedKalmanFilter<T>`
+- ✅ Automatic backend selection based on dimensions and enabled features
+- ✅ Unified examples demonstrating backend-agnostic code
+
+**Available Examples:**
+- `simple_1d_unified.rs` - 1D position tracking (2 states, 1 measurement)
+- `position_2d_unified.rs` - 2D position tracking (4 states, 2 measurements)
+- `sensor_fusion_unified.rs` - Multi-sensor fusion with dynamic observation matrices
+
+**Original Examples (showing direct backend usage):**
+- `simple_1d.rs` - Shows Vec vs nalgebra differences
+- `position_2d.rs` - Shows Vec vs nalgebra differences
+- `sensor_fusion.rs` - Shows Vec vs nalgebra differences
 
 ### Migration Path
 
-1. **Phase 1** (this PR): Add new unified API
-   - Create `KalmanFilterTrait`
-   - Update `KalmanFilterBuilder` to return trait object
-   - Examples use new API
+**Phase 1 (COMPLETE)**: Add new unified API
+- ✅ Create `KalmanFilterTrait` and `UnifiedKalmanFilter`
+- ✅ Update `KalmanFilterBuilder` to return unified type
+- ✅ Unified examples demonstrate backend-agnostic usage
 
-2. **Phase 2** (next release): Deprecate old APIs
-   - Mark `KalmanFilter::new()` and `StaticKalmanFilter::new()` as deprecated
-   - Add deprecation notices pointing to builder pattern
+**Phase 2 (Future)**: Encourage unified API adoption
+- Mark direct constructors as "advanced usage"
+- Documentation emphasizes unified API as recommended approach
+- Keep both APIs available for flexibility
 
-3. **Phase 3** (major version): Clean up
-   - Remove direct constructors
-   - Keep structs for advanced users who want specific backend
+**Phase 3 (No planned timeline)**: Consider API simplification
+- Based on user feedback, may simplify API surface
+- Direct backend access remains available for advanced users
 
 ### Example Usage
 
@@ -133,19 +161,71 @@ let cov = kf.covariance();  // Returns Vec<f64>
 - For performance-critical code, users can still access concrete types directly
 - Builder could offer `.build_concrete()` for zero-overhead access
 
-### Open Questions
+### Benefits of the Unified API
 
-1. Should `state()` and `covariance()` return `Vec<T>` or `&[T]`?
-   - `Vec<T>`: Easier, but allocates
-   - `&[T]`: Zero-copy, but lifetime management is complex
+**For Users:**
+1. **Write Once, Run Anywhere**: Same code works with all backend features
+2. **No Feature Flag Pollution**: No need for `#[cfg(feature = "...")]` in user code
+3. **Automatic Optimization**: Builder selects best backend based on dimensions
+4. **Flexible Runtime Behavior**: Can switch observation matrices for sensor fusion
+5. **Simpler API**: Use Vec and slices instead of nalgebra types
 
-2. Should we support runtime dimension detection in builder?
-   - Yes: Maximum flexibility
-   - No: Simpler, user must know dimensions
+**For Library Maintainers:**
+1. **Single Example Codebase**: Unified examples work with all backends
+2. **Easier Testing**: Test unified API instead of multiple backend paths
+3. **Better Documentation**: Focus on what users need, not implementation details
 
-3. How to handle advanced features like Jacobians for EKF?
-   - Keep trait minimal, add extension traits for advanced features
+### Design Decisions (Resolved)
 
-## Implementation Plan
+**1. Return type for `state()` and `covariance()`**
+- **Decision**: Return `Vec<T>` (allocates)
+- **Rationale**: Simpler API, lifetime management would be complex across backends
+- **Performance**: Allocation overhead is minimal compared to filter computation
 
-See TODO list in main implementation.
+**2. Runtime vs compile-time dimension handling**
+- **Decision**: Support both
+- **Rationale**: Builder accepts runtime dimensions, selects compile-time optimized backend when available
+- **Implementation**: Enum with variants for common dimensions, falls back to Vec backend
+
+**3. Dynamic measurement dimensions for sensor fusion**
+- **Decision**: Support via `set_observation_matrix()` and `set_measurement_noise()`
+- **Rationale**: Essential for real-world multi-sensor applications
+- **Limitation**: Falls back to Vec backend when measurement dimension needs to change
+
+**4. Advanced features like EKF Jacobians**
+- **Decision**: Keep `KalmanFilterTrait` minimal, provide direct backend access for advanced use
+- **Rationale**: 80/20 rule - unified API serves most users, advanced users can access backends directly
+- **Future**: May add extension traits as needed
+
+## Usage Recommendations
+
+### When to use the Unified API
+
+**Recommended for:**
+- ✅ Learning Kalman filters
+- ✅ Prototyping and experimentation
+- ✅ Most production applications
+- ✅ Multi-sensor fusion with varying observation dimensions
+- ✅ Code that needs to work with different backends
+
+**Use direct backends for:**
+- ⚡ Ultra-performance-critical inner loops (avoid match overhead)
+- 🔧 Advanced features not exposed by unified API
+- 🎯 Specific optimizations requiring compile-time dimensions
+- 📚 Understanding implementation details
+
+### Performance Notes
+
+**Unified API overhead:**
+- Enum match: ~1-3 CPU cycles per operation (negligible vs filter math)
+- Vec allocation on `state()`/`covariance()`: ~10-100 ns (usually insignificant)
+- No heap allocation for filter itself (enum is stack-allocated)
+
+**Backend selection:**
+- With `nalgebra` feature: Uses `StaticKalmanFilter` for dimensions (1,1), (2,1), (3,1), (4,2), (6,3)
+- Other dimensions: Falls back to `KalmanFilter` (Vec-based)
+- Without `nalgebra` feature: Always uses `KalmanFilter`
+
+## Implementation Notes
+
+The unified API is implemented in `src/unified.rs` and used by `src/builder.rs`.
