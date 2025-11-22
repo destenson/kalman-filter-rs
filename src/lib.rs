@@ -48,6 +48,7 @@ pub mod extended;
 pub mod filter;
 pub mod information;
 pub mod logging;
+pub mod matrix;
 
 #[cfg(feature = "prometheus-metrics")]
 pub mod metrics;
