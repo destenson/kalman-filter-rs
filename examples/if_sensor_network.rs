@@ -152,7 +152,7 @@ fn main() {
 
     // Connect nodes within communication range
     let mut num_connections = 0;
-    let delay_dist = Uniform::new(0, 3);
+    let delay_dist = Uniform::new(0, 3).unwrap();
     for i in 0..sensor_positions.len() {
         for j in i + 1..sensor_positions.len() {
             let (x1, y1) = sensor_positions[i];
@@ -200,7 +200,7 @@ fn main() {
 
                 // Generate noisy measurement
                 let noise_std = 1.0 + dist_to_target * 0.1; // Distance-dependent noise
-                let noise_dist = Uniform::new(-noise_std, noise_std);
+                let noise_dist = Uniform::new(-noise_std, noise_std).unwrap();
                 let meas_x = true_x + noise_dist.sample(&mut rng);
                 let meas_y = true_y + noise_dist.sample(&mut rng);
 
