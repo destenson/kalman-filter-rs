@@ -1,0 +1,174 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Install stable toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-
+
+    - name: Cache cargo index
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-git-
+
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-benchmark-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-build-benchmark-
+
+    - name: Cache criterion baselines
+      uses: actions/cache@v4
+      with:
+        path: target/criterion
+        key: ${{ runner.os }}-criterion-${{ github.ref }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-criterion-${{ github.ref }}-
+          ${{ runner.os }}-criterion-refs/heads/master-
+
+    - name: Run benchmarks
+      run: |
+        cargo bench --bench kalman_benchmarks -- --output-format bencher | tee benchmark_output.txt
+
+    - name: Store benchmark result
+      uses: benchmark-action/github-action-benchmark@v1
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      with:
+        tool: 'cargo'
+        output-file-path: benchmark_output.txt
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        auto-push: true
+        alert-threshold: '110%'
+        comment-on-alert: true
+        fail-on-alert: false
+        alert-comment-cc-users: '@destenson'
+
+    - name: Store benchmark result for PR
+      uses: benchmark-action/github-action-benchmark@v1
+      if: github.event_name == 'pull_request'
+      with:
+        tool: 'cargo'
+        output-file-path: benchmark_output.txt
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        auto-push: false
+        alert-threshold: '110%'
+        comment-on-alert: true
+        fail-on-alert: false
+        comment-always: true
+
+    - name: Upload criterion reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: criterion-reports
+        path: target/criterion/
+        retention-days: 30
+
+    - name: Performance regression check
+      id: regression-check
+      if: github.event_name == 'pull_request'
+      run: |
+        echo "Checking for performance regressions..."
+        REGRESSION=false
+        # Parse criterion output for changes > 10%
+        if grep -E "Performance has regressed|change:.*\+[2-9][0-9]\..*%" benchmark_output.txt; then
+          echo "::warning::Performance regression detected (>20%)"
+          REGRESSION=true
+        elif grep -E "change:.*\+1[0-9]\..*%" benchmark_output.txt; then
+          echo "::warning::Performance regression detected (>10%)"
+          REGRESSION=true
+        else
+          echo "No significant performance regressions detected"
+        fi
+        echo "regression=$REGRESSION" >> $GITHUB_OUTPUT
+
+    - name: Fail on significant regression
+      if: github.event_name == 'pull_request' && steps.regression-check.outputs.regression == 'true'
+      run: |
+        echo "::error::Significant performance regression detected. Please investigate."
+        exit 1
+
+  benchmark-comparison:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+
+    - name: Checkout base branch
+      run: |
+        git fetch origin ${{ github.base_ref }}
+        git checkout origin/${{ github.base_ref }}
+
+    - name: Install stable toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Run baseline benchmarks
+      run: |
+        cargo bench --bench kalman_benchmarks -- --save-baseline base
+
+    - name: Checkout PR branch
+      run: |
+        git checkout ${{ github.event.pull_request.head.sha }}
+
+    - name: Run PR benchmarks
+      run: |
+        cargo bench --bench kalman_benchmarks -- --baseline base
+
+    - name: Generate comparison summary
+      run: |
+        echo "# Benchmark Comparison" > comparison.md
+        echo "" >> comparison.md
+        echo "Comparing PR branch against \`${{ github.base_ref }}\`" >> comparison.md
+        echo "" >> comparison.md
+        echo "See the detailed criterion reports in the artifacts." >> comparison.md
+
+    - name: Comment PR with comparison
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const comparison = fs.readFileSync('comparison.md', 'utf8');
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comparison
+          });
