@@ -20,3 +20,29 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+    - name: Check the default feature set pulls no system libraries
+      run: |
+        if cargo tree -e normal | grep -Eiq 'opencv|openblas|lapack|ndarray'; then
+          echo "::error::default features must not pull OpenCV, OpenBLAS, LAPACK or ndarray; see Cargo.toml [features]" >&2
+          cargo tree -e normal --depth 1 >&2
+          exit 1
+        fi
+
+  features:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - "std,naive-matrix"
+          - "std,naive-matrix,serde"
+          - "std,naive-matrix,parallel"
+          - "std,naive-matrix,prometheus-metrics"
+          - "std,naive-matrix,tracing-subscriber"
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Check ${{ matrix.features }}
+      run: cargo check --verbose --no-default-features --features "${{ matrix.features }}"

@@ -723,7 +723,6 @@ dependencies = [
  "ndarray",
  "ndarray-linalg",
  "num-traits",
- "once_cell",
  "opencv",
  "prometheus-client",
  "quickcheck",

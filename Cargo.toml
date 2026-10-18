@@ -16,12 +16,12 @@ readme = "README.md"
 
 
 [features]
-default = ["std", "naive-matrix", "openblas-static", "opencv", "parallel", "serde"]
+default = ["std", "naive-matrix"]
 dev = ["serde", "parallel", "tracing-subscriber", "prometheus-metrics", "nalgebra"]
 std = ["rand_distr/std"]
 alloc = ["rand_distr/alloc"]
 
-# Matrix operation backends (choose one, nalgebra is default)
+# Matrix operation backends (choose one; naive-matrix is the default)
 nalgebra = ["dep:nalgebra"]
 naive-matrix = []
 blas-backend = ["dep:ndarray", "std"]
@@ -32,7 +32,7 @@ ndarray-linalg = ["dep:ndarray-linalg", "std"]
 # BLAS backend selection (choose one when using ndarray-linalg)
 # These features enable both ndarray-linalg and a specific BLAS implementation
 # NOTE: Only ONE BLAS backend should be enabled at a time to avoid linker conflicts.
-# openblas-static is enabled by default for --all-features compatibility.
+# openblas-static is opt-in: it builds OpenBLAS from source and needs a Fortran toolchain.
 # TODO: remove "ndarray-linalg" as a dependency (use the feature to select static iff ndarray-linalg is enabled)
 # To use system OpenBLAS instead, explicitly enable it:
 #   cargo build --features "openblas-system,serde,parallel"
@@ -50,7 +50,7 @@ opencv = ["dep:opencv"]
 parallel = ["rayon"]
 serde = ["dep:serde", "serde/derive"]
 tracing-subscriber = ["dep:tracing-subscriber"]
-prometheus-metrics = ["dep:prometheus-client", "dep:once_cell"]
+prometheus-metrics = ["dep:prometheus-client"]
 
 [target.'cfg(target_os = "macos")'.features]
 # macOS-only BLAS backend
@@ -71,7 +71,6 @@ serde = { version = "1.0", features = ["derive"], optional = true }
 log = "0.4.28"
 tracing-subscriber = { version = "0.3", features = ["env-filter",], optional = true }
 prometheus-client = { version = "0.24.0", optional = true }
-once_cell = { version = "1.21.3", optional = true }
 
 [dev-dependencies]
 clap = { version = "4.5", features = ["derive"] }
