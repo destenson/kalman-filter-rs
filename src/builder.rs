@@ -108,7 +108,7 @@ where
     ///
     /// # Example
     /// ```
-    /// use kalman_filters::KalmanFilterBuilder;
+    /// use kalman_filters::{KalmanFilterBuilder, KalmanFilterTrait};
     ///
     /// let mut kf = KalmanFilterBuilder::new(2, 1)
     ///     .initial_state(vec![0.0, 0.0])

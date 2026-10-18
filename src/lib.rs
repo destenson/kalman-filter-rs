@@ -17,7 +17,7 @@
 //! ## Example
 //!
 //! ```
-//! use kalman_filters::KalmanFilterBuilder;
+//! use kalman_filters::{KalmanFilterBuilder, KalmanFilterTrait};
 //!
 //! // Create a simple 1D Kalman filter using the builder
 //! let mut kf = KalmanFilterBuilder::new(1, 1)

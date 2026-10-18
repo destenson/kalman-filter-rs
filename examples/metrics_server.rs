@@ -37,7 +37,7 @@ fn main() {
 #[cfg(feature = "prometheus-metrics")]
 fn main() {
     use clap::Parser;
-    use kalman_filters::KalmanFilterBuilder;
+    use kalman_filters::{KalmanFilterBuilder, KalmanFilterTrait};
     use rand::SeedableRng;
     use rand_distr::{Distribution, Normal};
     use std::net::TcpListener;
