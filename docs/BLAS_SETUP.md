@@ -68,16 +68,16 @@ cargo build --features "ndarray-linalg,accelerate"
 
 ## Configuration
 
-### Cargo Config
+### OpenCV Bindings
 
-The project includes a `.cargo/config.toml` file that sets up environment variables for OpenCV builds:
+The `opencv` feature builds the opencv-rust bindings, whose generator needs to find the C++ standard library headers. If it cannot, set `CPLUS_INCLUDE_PATH` in your own environment (or in a `.cargo/config.toml` you do not commit), adjusting the version (13) to match your g++:
 
 ```toml
 [env]
 CPLUS_INCLUDE_PATH = "/usr/include/c++/13:/usr/include/x86_64-linux-gnu/c++/13"
 ```
 
-This ensures that the opencv-rust binding generator can find C++ standard library headers. Adjust the version number (13) to match your system's g++ version if needed.
+The crate does not ship a cargo config: one in a package root would override the include path of every downstream build.
 
 ## Troubleshooting
 

@@ -3,3 +3,5 @@
 **/*.rs.bk
 **/*.local.*
 
+/.cargo/
+/tarpaulin-report.html

@@ -13,6 +13,8 @@ description = "Comprehensive Kalman filter library with multiple variants (EKF, 
 keywords = ["kalman", "filter", "estimation", "tracking", "sensor-fusion"]
 categories = ["algorithms", "mathematics", "science", "simulation"]
 readme = "README.md"
+# Keep CI definitions, host-specific cargo config and generated reports out of the published package
+exclude = [".github/", ".cargo/", "tarpaulin-report.html", "TODO.md"]
 
 
 [features]
@@ -51,11 +53,6 @@ parallel = ["rayon"]
 serde = ["dep:serde", "serde/derive"]
 tracing-subscriber = ["dep:tracing-subscriber"]
 prometheus-metrics = ["dep:prometheus-client"]
-
-[target.'cfg(target_os = "macos")'.features]
-# macOS-only BLAS backend
-accelerate = ["blas-src/accelerate"]
-
 
 [dependencies]
 approx = "0.5"
