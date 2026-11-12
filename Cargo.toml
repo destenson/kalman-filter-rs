@@ -54,6 +54,11 @@ serde = ["dep:serde", "serde/derive"]
 tracing-subscriber = ["dep:tracing-subscriber"]
 prometheus-metrics = ["dep:prometheus-client"]
 
+[target.'cfg(target_os = "macos")'.features]
+# macOS-only BLAS backend
+accelerate = ["blas-src/accelerate"]
+
+
 [dependencies]
 approx = "0.5"
 num-traits = "0.2"
