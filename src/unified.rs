@@ -79,7 +79,7 @@ where
 ///     .process_noise(vec![0.001, 0.0, 0.0, 0.001])
 ///     .observation_matrix(vec![1.0, 0.0])
 ///     .measurement_noise(vec![0.1])
-///     .build()
+///     .build_unified()
 ///     .unwrap();
 ///
 /// // Works the same way regardless of backend!

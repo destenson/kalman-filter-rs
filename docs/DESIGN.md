@@ -20,7 +20,7 @@ This violates the principle of abstraction - users shouldn't need to know about 
 
 ## Solution
 
-The `KalmanFilterBuilder` will automatically construct the appropriate backend implementation and return a unified interface.
+`KalmanFilterBuilder::build_unified()` automatically constructs the appropriate backend implementation and returns a unified interface. `build()` keeps returning the Vec-backed `KalmanFilter<T>`, as in v1.0.1.
 
 ### Design Principles
 
@@ -99,7 +99,7 @@ Implementation:
 **Implemented:**
 - ✅ `UnifiedKalmanFilter<T>` enum with backend-specific variants
 - ✅ `KalmanFilterTrait<T>` providing unified interface
-- ✅ `KalmanFilterBuilder` returns `UnifiedKalmanFilter<T>`
+- ✅ `KalmanFilterBuilder::build_unified()` returns `UnifiedKalmanFilter<T>`; `build()` keeps returning `KalmanFilter<T>`
 - ✅ Automatic backend selection based on dimensions and enabled features
 - ✅ Unified examples demonstrating backend-agnostic code
 
@@ -117,7 +117,7 @@ Implementation:
 
 **Phase 1 (COMPLETE)**: Add new unified API
 - ✅ Create `KalmanFilterTrait` and `UnifiedKalmanFilter`
-- ✅ Update `KalmanFilterBuilder` to return unified type
+- ✅ Add `KalmanFilterBuilder::build_unified()`, returning the unified type (`build()` is unchanged)
 - ✅ Unified examples demonstrate backend-agnostic usage
 
 **Phase 2 (Future)**: Encourage unified API adoption
@@ -134,7 +134,7 @@ Implementation:
 After unification, user code looks like this:
 
 ```rust
-use kalman_filters::KalmanFilterBuilder;
+use kalman_filters::{KalmanFilterBuilder, KalmanFilterTrait};
 
 // Works with ANY backend - no feature flags needed!
 let mut kf = KalmanFilterBuilder::new(2, 1)  // state_dim=2, measurement_dim=1
@@ -144,7 +144,7 @@ let mut kf = KalmanFilterBuilder::new(2, 1)  // state_dim=2, measurement_dim=1
     .process_noise(vec![0.001, 0.0, 0.0, 0.001])
     .observation_matrix(vec![1.0, 0.0])
     .measurement_noise(vec![0.1])
-    .build()?;
+    .build_unified()?;
 
 // Unified API - works identically regardless of backend
 kf.predict();

@@ -27,9 +27,7 @@
 //! ```
 
 use clap::Parser;
-use kalman_filters::{
-    ExtendedKalmanFilter, KalmanFilterBuilder, KalmanFilterTrait, NonlinearSystem,
-};
+use kalman_filters::{ExtendedKalmanFilter, KalmanFilterBuilder, NonlinearSystem};
 use log::{debug, info, warn};
 
 #[cfg(feature = "tracing-subscriber")]

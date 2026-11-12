@@ -32,7 +32,7 @@ use rand::SeedableRng;
 use rand_distr::{Distribution, Uniform};
 
 #[cfg(not(feature = "nalgebra"))]
-use kalman_filters::{KalmanFilter, KalmanFilterBuilder, KalmanFilterTrait};
+use kalman_filters::{KalmanFilter, KalmanFilterBuilder};
 
 #[cfg(feature = "nalgebra")]
 use kalman_filters::StaticKalmanFilter;

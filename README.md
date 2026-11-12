@@ -42,7 +42,7 @@ kalman_filters = "1"
 ### Basic Example
 
 ```rust
-use kalman_filters::{KalmanFilterBuilder, KalmanFilterTrait};
+use kalman_filters::KalmanFilterBuilder;
 
 // Create a 2D position/velocity tracker
 let mut kf = KalmanFilterBuilder::new(2, 1)  // 2 states, 1 measurement

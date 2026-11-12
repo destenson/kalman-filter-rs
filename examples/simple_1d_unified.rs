@@ -106,7 +106,7 @@ fn main() {
         ])
         .observation_matrix(vec![1.0, 0.0])
         .measurement_noise(vec![args.meas_noise])
-        .build()
+        .build_unified()
         .unwrap();
 
     println!("Step | True Pos | Measured | Estimated | Error");

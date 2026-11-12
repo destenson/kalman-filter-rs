@@ -214,7 +214,7 @@ fn main() {
         .process_noise(q)
         .observation_matrix(h_gps.clone())
         .measurement_noise(r_gps.clone())
-        .build()
+        .build_unified()
         .unwrap();
 
     // Simulation parameters

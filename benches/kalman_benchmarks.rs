@@ -6,7 +6,7 @@ use kalman_filters::{
 use std::hint::black_box;
 use std::time::Duration;
 
-use kalman_filters::{KalmanFilterTrait, UnifiedKalmanFilter};
+use kalman_filters::KalmanFilter;
 
 // ============================================================================
 // CORE OPERATIONS BENCHMARKS
@@ -727,7 +727,7 @@ fn bench_precision_comparison(c: &mut Criterion) {
 fn create_test_kalman_filter(
     state_dim: usize,
     measurement_dim: usize,
-) -> UnifiedKalmanFilter<f64> {
+) -> KalmanFilter<f64> {
     KalmanFilterBuilder::new(state_dim, measurement_dim)
         .initial_state(vec![0.0; state_dim])
         .initial_covariance(create_identity_matrix(state_dim))
@@ -742,7 +742,7 @@ fn create_test_kalman_filter(
 fn create_test_kalman_filter_f32(
     state_dim: usize,
     measurement_dim: usize,
-) -> UnifiedKalmanFilter<f32> {
+) -> KalmanFilter<f32> {
     KalmanFilterBuilder::new(state_dim, measurement_dim)
         .initial_state(vec![0.0f32; state_dim])
         .initial_covariance(create_identity_matrix_f32(state_dim))

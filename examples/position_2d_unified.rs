@@ -169,7 +169,7 @@ fn main() {
         .process_noise(q)
         .observation_matrix(h)
         .measurement_noise(r)
-        .build()
+        .build_unified()
         .unwrap();
 
     println!("Configuration:");
