@@ -15,8 +15,8 @@ on top of it. This spec says *what* the filter must do, not *how* it is built.
 
 **The existing API may break**, provided `DESIGN_NOTES.md` has a short migration note
 (old type or method → new one). Callers may rely only on the items below. Anything else a
-candidate exposes is the candidate's choice, but there must still be exactly one way to
-construct the linear filter (see Q5).
+candidate exposes is the candidate's choice, but there must still be one validated way to
+construct the linear filter, plus at most one delegating front end (see B16, Q5).
 
 ```rust
 // crate root
@@ -189,7 +189,10 @@ symmetric input must always pass the symmetry check.
   (no validation at all, `src/filter.rs:484`), `KalmanFilterBuilder::build`
   (`src/builder.rs:128,200`; it picks different backends by dimension and validates
   differently per path), `UnifiedKalmanFilter`/`IntoUnified`, and `legacy::KalmanFilter`.
-  These collapse to `LinearKalmanFilter::new`.
+  These collapse to one *validated* path: `LinearKalmanFilter::new`. A candidate may
+  add **one** typed or ergonomic front end (e.g. compile-time dimensions, or a
+  builder) provided it delegates to the same validation and adds no behavior of its
+  own. Wrappers, unified enums and per-backend constructors are not allowed.
 - **B17 (KEEP): `f32` and `f64` are both supported** (`KalmanScalar` impls,
   `src/types.rs:51-62`).
 
@@ -225,7 +228,7 @@ symmetric input must always pass the symmetry check.
 - **Q4 Separation of concerns:** `log` and Prometheus calls are never interleaved with the
   numeric steps of predict/update. If instrumentation is kept, it wraps the math (for
   example before and after a call) or lives in a separate layer.
-- **Q5 One construction path** with validation (B16, B2–B6).
+- **Q5 One validated construction path** (B16, B2–B6), plus at most one front end that delegates to it.
 - **Q6 Build:** Rust edition 2024. `cargo build --all-targets` is green with default
   features and needs no system libraries. nalgebra may become a required dependency, or
   the matrix layer may stay own-code. The choice must be justified in `DESIGN_NOTES.md`.
