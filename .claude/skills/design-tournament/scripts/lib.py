@@ -173,7 +173,7 @@ WORKTREE_ROOT=""
 # A harness file kept in this run dir, written against the spec's public interface.
 # It is copied (untracked) into each worktree, run, and removed. It must print one JSON
 # object per line: {{"case": "id", "ok": true, "values": [numbers...]}} or
-# {{"case": "id", "ok": false, "error": "Kind"}}; optional "tol" overrides DIFFTEST_REL_TOL.
+# {{"case": "id", "ok": false, "error": "Kind"}}; optional "tol"/"abs" override the tolerances per case.
 DIFFTEST_HARNESS=""        # e.g. difftest/harness.rs (relative to this run dir)
 DIFFTEST_INSTALL=""        # where it goes in a worktree, e.g. tests/zz_difftest.rs
 DIFFTEST_CMD=""            # e.g. cargo test --release --quiet --test zz_difftest -- --nocapture
@@ -384,6 +384,15 @@ def _load_jsonl(path: Path) -> dict[str, dict]:
     return out
 
 
+def _num(v) -> float | None:
+    """Finite float, or None for null/NaN/inf/non-numeric."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f and abs(f) != float("inf") else None
+
+
 def _status(d: dict | None) -> str:
     if d is None:
         return "missing"
@@ -430,7 +439,10 @@ def cmd_difftest_summary(a):
             if cons_status == "ok" and vals:
                 n = max(set(map(len, vals)), key=[len(v) for v in vals].count)
                 vals = [v for v in vals if len(v) == n]
-                cons_vals = [statistics.median(col) for col in zip(*vals)]
+                cons_vals = []
+                for col in zip(*vals):
+                    fin = [f for f in map(_num, col) if f is not None]
+                    cons_vals.append(statistics.median(fin) if len(fin) * 2 > len(col) else None)
         dissent = []
         for t, r in recs.items():
             if t == "reference":
@@ -443,20 +455,21 @@ def cmd_difftest_summary(a):
             if st == "ok" and cons_vals is not None:
                 v = r.get("values") or []
                 rel_tol = float(r.get("tol", a.rel))
+                abs_tol = float(r.get("abs", a.abs))
                 if len(v) != len(cons_vals):
                     stats[t]["value"] += 1; dissent.append(f"{t}:len{len(v)}"); continue
                 worst_rel = 0.0
                 bad = False
                 for x, y in zip(v, cons_vals):
-                    try:
-                        x, y = float(x), float(y)
-                    except (TypeError, ValueError):
-                        bad = True; worst_rel = float("inf"); break
+                    fx, fy = _num(x), _num(y)
+                    if fx is None or fy is None:  # non-finite: agree only if both are
+                        if (fx is None) != (fy is None):
+                            bad = True; worst_rel = float("inf"); break
+                        continue
+                    x, y = fx, fy
                     err = abs(x - y)
-                    if err != err:  # NaN
-                        bad = True; worst_rel = float("inf"); break
                     rel = err / max(abs(y), 1e-300)
-                    if err > a.abs + rel_tol * abs(y):
+                    if err > abs_tol + rel_tol * abs(y):
                         bad = True
                         worst_rel = max(worst_rel, rel)
                 if bad:

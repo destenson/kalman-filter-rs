@@ -55,8 +55,9 @@ compiles against the original code (via the spec adapter) and every candidate.
   extreme scales, and error-triggering inputs.
 - Print one JSON object per case to stdout:
   `{"case":"c042","ok":true,"values":[...]}` or
-  `{"case":"c043","ok":false,"error":"DimensionMismatch"}`. Add `"tol":1e-3` to a case
-  whose precision is lower (e.g. a 32-bit variant). Other stdout lines are ignored.
+  `{"case":"c043","ok":false,"error":"DimensionMismatch"}`. A case may set its own
+  `"tol"` (relative) and `"abs"` tolerance, e.g. for a 32-bit variant or a scaled case.
+  Other stdout lines are ignored.
 - Optional reference oracle: if the harness contains a simple, obviously-correct
   implementation, switch to it on an environment variable (`DIFFTEST_REFERENCE_ENV`).
   The comparison then uses the oracle as ground truth instead of the majority.
