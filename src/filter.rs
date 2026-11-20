@@ -546,6 +546,80 @@ where
     }
 }
 
+/// Contract adapter for the new linear-filter interface defined in SPEC.md.
+///
+/// This is a thin mapping of the SPEC.md interface onto the *current*
+/// implementation (`KalmanFilter<T>`). It deliberately fixes nothing: the
+/// `spec_change_*` tests in `tests/spec_linear_kf.rs` are expected to fail on
+/// it. Tournament candidates replace this module.
+pub mod linear {
+    use super::KalmanFilter;
+    use crate::types::{KalmanResult, KalmanScalar};
+
+    /// Linear Kalman filter (SPEC.md "Public interface").
+    pub struct LinearKalmanFilter<T: KalmanScalar> {
+        inner: KalmanFilter<T>,
+    }
+
+    impl<T: KalmanScalar> LinearKalmanFilter<T> {
+        /// Construct a filter. All matrices are row-major slices.
+        #[allow(clippy::too_many_arguments)]
+        pub fn new(
+            state_dim: usize,
+            measurement_dim: usize,
+            x0: &[T],
+            p0: &[T],
+            f: &[T],
+            q: &[T],
+            h: &[T],
+            r: &[T],
+        ) -> KalmanResult<Self> {
+            let inner = KalmanFilter::initialize(
+                state_dim,
+                measurement_dim,
+                x0.to_vec(),
+                p0.to_vec(),
+                f.to_vec(),
+                q.to_vec(),
+                h.to_vec(),
+                r.to_vec(),
+            )?;
+            Ok(Self { inner })
+        }
+
+        /// State dimension n.
+        pub fn state_dim(&self) -> usize {
+            self.inner.state_dim
+        }
+
+        /// Measurement dimension m.
+        pub fn measurement_dim(&self) -> usize {
+            self.inner.measurement_dim
+        }
+
+        /// Time update.
+        pub fn predict(&mut self) -> KalmanResult<()> {
+            self.inner.predict();
+            Ok(())
+        }
+
+        /// Measurement update.
+        pub fn update(&mut self, z: &[T]) -> KalmanResult<()> {
+            self.inner.update(z)
+        }
+
+        /// Current state estimate (length n).
+        pub fn state(&self) -> &[T] {
+            self.inner.state()
+        }
+
+        /// Current state covariance, n×n row-major.
+        pub fn covariance(&self) -> &[T] {
+            self.inner.covariance()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -805,8 +879,10 @@ mod tests {
         );
     }
 
+    // Test curation (SPEC.md): formerly `test_measurement_outlier_robustness`;
+    // it asserts the filter is NOT robust to outliers, so the name was inverted.
     #[test]
-    fn test_measurement_outlier_robustness() {
+    fn test_measurement_outlier_pulls_estimate() {
         // Standard KF is not robust to outliers - this test documents that behavior
         // (A robust filter would need different handling)
         let mut kf = KalmanFilter::<f64>::new(1, 1);
@@ -1061,9 +1137,13 @@ mod tests {
         );
     }
 
+    // Test curation (SPEC.md): formerly `test_joseph_form`. The name lied: the
+    // implementation uses the simple form P = (I - KH)P, and these assertions
+    // (P > 0, P shrinks) hold for the simple form too, so the test could not
+    // fail. Joseph-form-level stability is now specified by
+    // tests/spec_linear_kf.rs::spec_change_covariance_stays_psd_ill_conditioned_*.
     #[test]
-    fn test_joseph_form() {
-        // Test Joseph form covariance update for numerical stability
+    fn test_scalar_update_shrinks_covariance() {
         let mut kf = KalmanFilter::<f64>::new(1, 1);
         kf.x = vec![0.0];
         kf.P = vec![1.0];

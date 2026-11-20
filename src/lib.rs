@@ -72,6 +72,8 @@ pub use error::KalmanError;
 pub use extended::ExtendedKalmanFilter;
 
 pub use filter::KalmanFilter;
+/// New linear Kalman filter interface (see SPEC.md).
+pub use filter::linear;
 
 pub use information::filter::InformationFilter;
 pub use particle::{Particle, ParticleFilter, ResamplingStrategy};
