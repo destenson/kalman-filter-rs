@@ -1,0 +1,373 @@
+#!/usr/bin/env bash
+# tourney: multi-agent design tournament orchestrator.
+# Diverge (N stances) -> measure -> probe -> judge (blind) -> synthesize -> build.
+# Run from inside the target git repository. See ../SKILL.md.
+set -euo pipefail
+
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LIB="$SKILL_DIR/scripts/lib.py"
+TEMPLATES="$SKILL_DIR/templates"
+
+die() { echo "tourney: $*" >&2; exit 1; }
+log() { echo "[tourney $(date +%H:%M:%S)] $*" >&2; }
+py()  { python3 -I "$LIB" "$@"; }
+
+REPO="$(git rev-parse --show-toplevel 2>/dev/null)" || die "run inside a git repository"
+TROOT="$REPO/.tournament"
+
+usage() {
+  cat <<'EOF'
+usage: tourney <command> <run> [args]
+
+  init <run> [--mode greenfield|reboot]   create .tournament/<run>/ from templates
+  spec <run>                              agent drafts SPEC.md + acceptance tests (branch .../spec)
+  freeze <run>                            commit spec worktree edits, hash FROZEN_PATHS
+  diverge <run> [LETTER...] [--force]     one agent per stance, in parallel
+  measure <run> [TARGET...]               build/test/lint/LOC/frozen-check (targets: letters, 'final')
+  probe <run> [TARGET...]                 hidden follow-up features on each target, in parallel
+  judge <run>                             blind export + judge agents, in parallel
+  synthesize <run>                        judge reports -> synthesis/DESIGN.md
+  build <run>                             fresh agent implements DESIGN.md (branch .../final)
+  all <run>                               diverge, measure, probe, judge, synthesize
+  status <run>                            progress and spend
+  render <run> <template> [file]          print a rendered prompt (for in-session Agent fallback)
+  clean <run> [--branches]                remove worktrees (and optionally branches)
+EOF
+}
+
+# ---------------------------------------------------------------- run state
+load_run() {
+  RUN="${1:-}"; [ -n "$RUN" ] || die "missing <run>"
+  RD="$TROOT/$RUN"
+  [ -f "$RD/config.sh" ] || die "no run '$RUN' (did you 'tourney init $RUN'?)"
+  # defaults, overridable in config.sh
+  MODE=greenfield; BUILD_CMD=""; TEST_CMD=""; LINT_CMD=""; LINT_COUNT_PATTERN='^(warning|error)'
+  TEST_PASSED_REGEX='([0-9]+) passed'; TEST_FAILED_REGEX='([0-9]+) failed'
+  SCOPE_PATHS="src"; FROZEN_PATHS="SPEC.md tests"; LOC_EXTENSIONS=""
+  EXTRA_METRICS=(); MODEL=""; EFFORT=""; BUDGET_USD=""; PARALLEL=4; MEASURE_PARALLEL=1
+  PERMISSION_MODE="acceptEdits"; ALLOWED_TOOLS="Read Edit Write Glob Grep Bash"
+  JUDGE_TOOLS="Read Glob Grep Bash(ls *) Bash(wc *) Bash(git diff *)"
+  WORKTREE_ROOT=""
+  # shellcheck disable=SC1091
+  source "$RD/config.sh"
+  WT="${WORKTREE_ROOT:-$(dirname "$REPO")/$(basename "$REPO").tourney/$RUN}"
+  BR="tourney/$RUN"
+  mkdir -p "$RD"/{logs,state,metrics,probe,reports,synthesis}
+  export_template_vars
+}
+
+export_template_vars() {
+  export TV_RUN="$RUN" TV_MODE="$MODE" TV_SCOPE_PATHS="$SCOPE_PATHS" TV_FROZEN_PATHS="$FROZEN_PATHS"
+  export TV_BUILD_CMD="$BUILD_CMD" TV_TEST_CMD="$TEST_CMD" TV_LINT_CMD="$LINT_CMD"
+  TV_BRIEF="$(cat "$RD/brief.md" 2>/dev/null || true)"; export TV_BRIEF
+}
+
+spec_ref() { cat "$RD/state/spec_ref" 2>/dev/null || die "spec not frozen: run 'tourney freeze $RUN'"; }
+letters()  { [ -f "$RD/mapping.tsv" ] && cut -f1 "$RD/mapping.tsv" || true; }
+
+# worktree <name> <branch> <start-point>: create (or reuse) a worktree
+worktree() {
+  local name=$1 branch=$2 start=$3 dir="$WT/$1"
+  if [ -d "$dir" ]; then echo "$dir"; return; fi
+  mkdir -p "$WT"
+  if git -C "$REPO" show-ref --verify --quiet "refs/heads/$branch"; then
+    git -C "$REPO" worktree add -q "$dir" "$branch" >&2
+  else
+    git -C "$REPO" worktree add -q -b "$branch" "$dir" "$start" >&2
+  fi
+  echo "$dir"
+}
+
+# commit everything in a worktree with a neutral message (no stance names: keeps judges blind)
+commit_wt() {
+  local dir=$1 msg=$2
+  git -C "$dir" add -A
+  git -C "$dir" -c user.name="tourney" -c user.email="tourney@localhost" \
+    commit -q --allow-empty --no-verify -m "$msg"
+}
+
+# run_agent <logname> <cwd> <prompt-file> [extra claude args...]
+run_agent() {
+  local name=$1 cwd=$2 pf=$3; shift 3
+  command -v claude >/dev/null || die "'claude' CLI not found; use the in-session fallback (SKILL.md)"
+  local args=(-p --output-format json --permission-mode "$PERMISSION_MODE")
+  [ -n "$MODEL" ] && args+=(--model "$MODEL")
+  [ -n "$EFFORT" ] && args+=(--effort "$EFFORT")
+  [ -n "$BUDGET_USD" ] && args+=(--max-budget-usd "$BUDGET_USD")
+  log "agent $name: start (cwd $cwd)"
+  local t0=$SECONDS rc=0
+  # prompt goes on stdin; --allowedTools is variadic, so it comes last
+  (cd "$cwd" && claude "${args[@]}" "$@" --allowedTools "$ALLOWED_TOOLS" \
+      < "$pf" > "$RD/logs/$name.json" 2> "$RD/logs/$name.err") || rc=$?
+  log "agent $name: done rc=$rc in $((SECONDS - t0))s $(py agent-stats "$RD/logs/$name.json" --oneline)"
+  return 0
+}
+
+# throttle: block until fewer than $1 background jobs are running
+throttle() { while [ "$(jobs -rp | wc -l)" -ge "$1" ]; do wait -n || true; done; }
+
+render() { py render "$1" > "$2"; }   # template -> file (uses TV_* env)
+
+# ---------------------------------------------------------------- commands
+cmd_init() {
+  local run="${1:-}"; shift || true; [ -n "$run" ] || die "missing <run>"
+  local mode=greenfield
+  while [ $# -gt 0 ]; do case "$1" in --mode) mode=$2; shift 2;; *) die "unknown arg $1";; esac; done
+  [[ "$mode" =~ ^(greenfield|reboot)$ ]] || die "--mode must be greenfield or reboot"
+  RD="$TROOT/$run"; [ -e "$RD" ] && die "$RD already exists"
+  mkdir -p "$RD"
+  cp -r "$TEMPLATES/prompts" "$TEMPLATES/stances" "$TEMPLATES/judges" "$TEMPLATES/probes" "$RD/"
+  cp "$TEMPLATES/brief.md" "$RD/brief.md"
+  py detect-config "$REPO" "$mode" > "$RD/config.sh"
+  git -C "$REPO" rev-parse HEAD > "$RD/base_ref"
+  local excl; excl="$(git -C "$REPO" rev-parse --git-common-dir)/info/exclude"
+  mkdir -p "$(dirname "$excl")"
+  grep -qxF '.tournament/' "$excl" 2>/dev/null || echo '.tournament/' >> "$excl"
+  cat <<EOF
+Created $RD
+Next:
+  1. edit $RD/config.sh      (commands, SCOPE_PATHS, FROZEN_PATHS, budget)
+  2. write $RD/brief.md      (goal, constraints, known defects, non-goals)
+  3. prune/add $RD/stances/*.md and write hidden $RD/probes/*.md
+  4. tourney spec $run   -> review -> tourney freeze $run
+EOF
+}
+
+cmd_spec() {
+  load_run "$1"
+  local dir; dir=$(worktree spec "$BR/spec" "$(cat "$RD/base_ref")")
+  render "$RD/prompts/spec-$MODE.md" "$RD/state/prompt-spec.md"
+  run_agent spec "$dir" "$RD/state/prompt-spec.md"
+  commit_wt "$dir" "tournament spec draft"
+  echo "Spec drafted in $dir (branch $BR/spec)."
+  echo "Review SPEC.md and the tests, edit them in place if needed, then: tourney freeze $RUN"
+}
+
+cmd_freeze() {
+  load_run "$1"
+  local dir="$WT/spec"; [ -d "$dir" ] || die "no spec worktree; run 'tourney spec $RUN' first"
+  if [ -n "$(git -C "$dir" status --porcelain)" ]; then commit_wt "$dir" "tournament spec (human edits)"; fi
+  git -C "$dir" rev-parse HEAD > "$RD/state/spec_ref"
+  py freeze "$dir" "$FROZEN_PATHS" > "$RD/state/frozen.json"
+  log "frozen $(py count-json "$RD/state/frozen.json") files at $(cut -c1-10 "$RD/state/spec_ref")"
+  if [ -n "$TEST_CMD" ]; then
+    log "baseline test run on spec (in greenfield, failures are expected)"
+    (cd "$dir" && bash -c "$TEST_CMD") > "$RD/state/spec-tests.log" 2>&1 \
+      && log "spec tests: PASS" || log "spec tests: FAIL (see state/spec-tests.log)"
+  fi
+}
+
+assign_letters() {
+  [ -f "$RD/mapping.tsv" ] && return
+  local i=0 abc=ABCDEFGHIJKLMNOPQRSTUVWXYZ f
+  for f in "$RD"/stances/*.md; do
+    [ -e "$f" ] || die "no stances in $RD/stances"
+    case "$(basename "$f")" in _*) continue;; esac
+    printf '%s\t%s\n' "${abc:$i:1}" "$(basename "$f" .md)" >> "$RD/mapping.tsv"
+    i=$((i + 1))
+  done
+  log "assigned $i candidates (mapping.tsv is for humans/scripts only)"
+}
+
+diverge_one() {
+  local L=$1 stance=$2 dir
+  dir=$(worktree "$L" "$BR/$L" "$(spec_ref)")
+  TV_STANCE="$(cat "$RD/stances/$stance.md")" TV_LETTER="$L" \
+    py render "$RD/prompts/implement.md" > "$RD/state/prompt-implement-$L.md"
+  run_agent "implement-$L" "$dir" "$RD/state/prompt-implement-$L.md"
+  commit_wt "$dir" "candidate $L"
+}
+
+cmd_diverge() {
+  load_run "$1"; shift; spec_ref >/dev/null
+  local force=0 want=()
+  for a in "$@"; do [ "$a" = --force ] && force=1 || want+=("$a"); done
+  assign_letters
+  while IFS=$'\t' read -r L stance; do
+    if [ ${#want[@]} -gt 0 ] && [[ ! " ${want[*]} " =~ " $L " ]]; then continue; fi
+    if [ $force = 0 ] && [ -s "$RD/logs/implement-$L.json" ]; then log "skip $L (done; --force to redo)"; continue; fi
+    throttle "$PARALLEL"
+    diverge_one "$L" "$stance" &
+  done < "$RD/mapping.tsv"
+  wait
+  log "diverge complete"
+}
+
+targets_or_default() {
+  if [ $# -gt 0 ]; then printf '%s\n' "$@"; return; fi
+  letters
+  [ -d "$WT/final" ] && echo final || true
+}
+
+measure_one() {
+  local T=$1 dir="$WT/$1" out="$RD/metrics/$1"
+  [ -d "$dir" ] || { log "measure: no worktree for $T"; return; }
+  local b_rc=0 t_rc=0 l_rc=0 t0 tsec
+  if [ -n "$BUILD_CMD" ]; then (cd "$dir" && bash -c "$BUILD_CMD") > "$out.build.log" 2>&1 || b_rc=$?; fi
+  t0=$SECONDS
+  if [ -n "$TEST_CMD" ]; then (cd "$dir" && bash -c "$TEST_CMD") > "$out.test.log" 2>&1 || t_rc=$?; fi
+  tsec=$((SECONDS - t0))
+  if [ -n "$LINT_CMD" ]; then (cd "$dir" && bash -c "$LINT_CMD") > "$out.lint.log" 2>&1 || l_rc=$?; fi
+  : > "$out.extra.tsv"
+  local m name cmd val
+  for m in "${EXTRA_METRICS[@]}"; do
+    name="${m%%|*}"; cmd="${m#*|}"
+    val=$(cd "$dir" && bash -c "$cmd" 2>/dev/null | tail -1 || true)
+    printf '%s\t%s\n' "$name" "$val" >> "$out.extra.tsv"
+  done
+  local agent_log="$RD/logs/implement-$T.json"; [ "$T" = final ] && agent_log="$RD/logs/build.json"
+  py measure "$dir" "$T" "$(spec_ref)" "$RD/state/frozen.json" \
+     --build-rc "$b_rc" --test-rc "$t_rc" --lint-rc "$l_rc" --test-seconds "$tsec" \
+     --scope "$SCOPE_PATHS" --frozen-paths "$FROZEN_PATHS" --ext "$LOC_EXTENSIONS" \
+     --lint-pattern "${LINT_CMD:+$LINT_COUNT_PATTERN}" --passed-re "$TEST_PASSED_REGEX" --failed-re "$TEST_FAILED_REGEX" \
+     --logs "$out" --agent-log "$agent_log" > "$out.json"
+  log "measured $T: $(py brief-metrics "$out.json")"
+}
+
+cmd_measure() {
+  load_run "$1"; shift; spec_ref >/dev/null
+  local T
+  for T in $(targets_or_default "$@"); do
+    throttle "$MEASURE_PARALLEL"; measure_one "$T" &
+  done
+  wait
+  py metrics-summary "$RD" > "$RD/metrics/summary.md"
+  py metrics-summary "$RD" --blind > "$RD/metrics/summary.blind.md"
+  cat "$RD/metrics/summary.md"
+}
+
+probe_files() { for f in "$RD"/probes/*.md; do [ -e "$f" ] || continue; case "$(basename "$f")" in _*) ;; *) echo "$f";; esac; done; }
+
+probe_one() {
+  local T=$1 pf=$2 p dir base
+  p=$(basename "$pf" .md)
+  base=$(git -C "$REPO" rev-parse "$BR/$T")
+  dir=$(worktree "probe-$T-$p" "$BR/probe/$T/$p" "$base")
+  TV_PROBE="$(cat "$pf")" py render "$RD/prompts/probe.md" > "$RD/state/prompt-probe-$T-$p.md"
+  run_agent "probe-$T-$p" "$dir" "$RD/state/prompt-probe-$T-$p.md"
+  commit_wt "$dir" "probe $p"
+  local t_rc=0
+  if [ -n "$TEST_CMD" ]; then (cd "$dir" && bash -c "$TEST_CMD") > "$RD/probe/${T}__$p.test.log" 2>&1 || t_rc=$?; fi
+  git -C "$REPO" diff "$base" "$BR/probe/$T/$p" > "$RD/probe/${T}__$p.diff"
+  py probe-record "$dir" "$T" "$p" "$base" "$RD/state/frozen.json" --test-rc "$t_rc" \
+     --frozen-paths "$FROZEN_PATHS" --agent-log "$RD/logs/probe-$T-$p.json" \
+     --notes-out "$RD/probe/${T}__$p.notes.md" > "$RD/probe/${T}__$p.json"
+}
+
+cmd_probe() {
+  load_run "$1"; shift
+  [ -n "$(probe_files)" ] || die "no probes in $RD/probes (files starting with _ are ignored)"
+  local T pf
+  for T in $(targets_or_default "$@"); do
+    git -C "$REPO" show-ref --verify --quiet "refs/heads/$BR/$T" || { log "probe: no branch for $T"; continue; }
+    for pf in $(probe_files); do
+      if [ -s "$RD/probe/${T}__$(basename "$pf" .md).json" ]; then log "skip probe $T/$(basename "$pf")"; continue; fi
+      throttle "$PARALLEL"; probe_one "$T" "$pf" &
+    done
+  done
+  wait
+  py probe-summary "$RD" > "$RD/probe/summary.md"
+  py probe-summary "$RD" --blind > "$RD/probe/summary.blind.md"
+  cat "$RD/probe/summary.md"
+}
+
+# Blind export: candidates as plain trees (no git history), evidence without stance names.
+build_blind() {
+  local B="$RD/blind" L p
+  rm -rf "$B"; mkdir -p "$B/_evidence"
+  for L in $(letters); do
+    mkdir -p "$B/$L"; git -C "$REPO" archive "$BR/$L" | tar -x -C "$B/$L"
+  done
+  mkdir -p "$B/_baseline"; git -C "$REPO" archive "$(cat "$RD/base_ref")" | tar -x -C "$B/_baseline"
+  cp "$RD/metrics/summary.blind.md" "$B/_evidence/metrics.md" 2>/dev/null || echo "(not measured)" > "$B/_evidence/metrics.md"
+  cp "$RD/probe/summary.blind.md" "$B/_evidence/probes.md" 2>/dev/null || echo "(no probes run)" > "$B/_evidence/probes.md"
+  for p in "$RD"/probe/*__*.diff "$RD"/probe/*__*.notes.md; do
+    [ -e "$p" ] || continue
+    case "$(basename "$p")" in final__*) continue;; esac
+    cp "$p" "$B/_evidence/"
+  done
+  for p in "$RD"/probes/*.md; do case "$(basename "$p")" in _*) ;; *) cp "$p" "$B/_evidence/probe-request-$(basename "$p")";; esac; done
+  cp "$RD/brief.md" "$B/BRIEF.md"
+}
+
+cmd_judge() {
+  load_run "$1"
+  [ -f "$RD/mapping.tsv" ] || die "run diverge first"
+  build_blind
+  export TV_LETTERS; TV_LETTERS="$(letters | tr '\n' ' ')"
+  local j name
+  for j in "$RD"/judges/*.md; do
+    case "$(basename "$j")" in _*) continue;; esac
+    name=$(basename "$j" .md)
+    TV_LENS="$(cat "$j")" py render "$RD/prompts/judge.md" > "$RD/state/prompt-judge-$name.md"
+    throttle "$PARALLEL"
+    ( ALLOWED_TOOLS="$JUDGE_TOOLS" PERMISSION_MODE=default \
+        run_agent "judge-$name" "$RD/blind" "$RD/state/prompt-judge-$name.md"
+      py extract-result "$RD/logs/judge-$name.json" > "$RD/reports/judge-$name.md" ) &
+  done
+  wait
+  ls -1 "$RD/reports"
+}
+
+cmd_synthesize() {
+  load_run "$1"
+  [ -d "$RD/blind" ] || die "run judge first"
+  cp "$RD"/reports/judge-*.md "$RD/blind/_evidence/" 2>/dev/null || die "no judge reports"
+  export TV_LETTERS; TV_LETTERS="$(letters | tr '\n' ' ')"
+  render "$RD/prompts/synthesize.md" "$RD/state/prompt-synthesize.md"
+  ALLOWED_TOOLS="$JUDGE_TOOLS" PERMISSION_MODE=default \
+    run_agent synthesize "$RD/blind" "$RD/state/prompt-synthesize.md"
+  py extract-result "$RD/logs/synthesize.json" > "$RD/synthesis/DESIGN.md"
+  echo "Wrote $RD/synthesis/DESIGN.md. Review/edit it before: tourney build $RUN"
+}
+
+cmd_build() {
+  load_run "$1"
+  [ -s "$RD/synthesis/DESIGN.md" ] || die "no synthesis/DESIGN.md"
+  local dir; dir=$(worktree final "$BR/final" "$(spec_ref)")
+  cp "$RD/synthesis/DESIGN.md" "$dir/TOURNAMENT_DESIGN.md"
+  export TV_BLIND_DIR="$RD/blind"
+  render "$RD/prompts/build.md" "$RD/state/prompt-build.md"
+  run_agent build "$dir" "$RD/state/prompt-build.md" --add-dir "$RD/blind"
+  commit_wt "$dir" "tournament final build"
+  echo "Built $BR/final. Verify: tourney measure $RUN final && tourney probe $RUN final"
+}
+
+cmd_all() {
+  local run=$1
+  cmd_diverge "$run"; ( cmd_measure "$run" ); ( cmd_probe "$run" ); ( cmd_judge "$run" ); ( cmd_synthesize "$run" )
+  echo "Stopped before build: review .tournament/$run/synthesis/DESIGN.md"
+}
+
+cmd_status() { load_run "$1"; py status "$RD" "$WT"; }
+
+cmd_render() {
+  load_run "$1"; local tpl=$2 extra="${3:-}"
+  [ -f "$RD/prompts/$tpl.md" ] || die "no template prompts/$tpl.md"
+  if [ -n "$extra" ]; then export TV_STANCE TV_PROBE TV_LENS; TV_STANCE="$(cat "$extra")"; TV_PROBE="$TV_STANCE"; TV_LENS="$TV_STANCE"; fi
+  export TV_LETTERS; TV_LETTERS="$(letters | tr '\n' ' ')"; export TV_BLIND_DIR="$RD/blind"
+  py render "$RD/prompts/$tpl.md"
+}
+
+cmd_clean() {
+  load_run "$1"; local del=0; [ "${2:-}" = --branches ] && del=1
+  local d
+  for d in "$WT"/*/; do [ -d "$d" ] && git -C "$REPO" worktree remove --force "$d" && log "removed $d"; done
+  git -C "$REPO" worktree prune
+  if [ $del = 1 ]; then
+    git -C "$REPO" for-each-ref --format='%(refname:short)' "refs/heads/$BR/" | xargs -r git -C "$REPO" branch -D
+  fi
+}
+
+main() {
+  local cmd="${1:-}"; shift || true
+  case "$cmd" in
+    init) cmd_init "$@";; spec) cmd_spec "$@";; freeze) cmd_freeze "$@";;
+    diverge) cmd_diverge "$@";; measure) cmd_measure "$@";; probe) cmd_probe "$@";;
+    judge) cmd_judge "$@";; synthesize) cmd_synthesize "$@";; build) cmd_build "$@";;
+    all) cmd_all "$@";; status) cmd_status "$@";; render) cmd_render "$@";; clean) cmd_clean "$@";;
+    ""|-h|--help|help) usage;;
+    *) usage; die "unknown command '$cmd'";;
+  esac
+}
+main "$@"
