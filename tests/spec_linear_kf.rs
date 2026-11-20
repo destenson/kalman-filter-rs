@@ -806,3 +806,358 @@ fn spec_change_no_heap_allocation_in_steady_state() {
     assert_eq!(f64_allocs, 0, "f64: heap allocations in 100 predict+update cycles");
     assert_eq!(f32_allocs, 0, "f32: heap allocations in 100 predict+update cycles");
 }
+
+// ===========================================================================
+// B18: covariance validation is scale-invariant (CHANGE)
+// ===========================================================================
+
+/// 1-D random walk with every variance multiplied by s² (and states by s).
+/// Returns (x / s, P / s²) after 10 predict+update cycles.
+fn scaled_random_walk(s: f64) -> Result<(f64, f64), String> {
+    let s2 = s * s;
+    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0 * s2], &[1.0], &[0.01 * s2], &[1.0], &[0.5 * s2])
+        .map_err(|e| format!("new: {e:?}"))?;
+    for k in 0..10 {
+        kf.predict().map_err(|e| format!("predict {k}: {e:?}"))?;
+        kf.update(&[(k as f64 * 0.1) * s]).map_err(|e| format!("update {k}: {e:?}"))?;
+    }
+    Ok((v(kf.state())[0] / s, v(kf.covariance())[0] / s2))
+}
+
+#[test]
+fn spec_change_noise_covariance_validation_is_scale_invariant() {
+    // The same model in different units is equally valid and gives the same
+    // result in scaled units. Today validate_measurement_noise rejects any
+    // diag(R) below an ABSOLUTE 1e-12 (src/validation.rs:58-60, via
+    // src/filter.rs:150).
+    let unit = scaled_random_walk(1.0).expect("unit-scale model must be accepted");
+    for s in [1e-7, 1e-4, 1e4, 1e7] {
+        let r = scaled_random_walk(s).unwrap_or_else(|e| panic!("scale {s:e}: valid model rejected: {e}"));
+        assert!((r.0 - unit.0).abs() <= 1e-9 * unit.0.abs().max(1.0), "scale {s:e}: state {r:?} vs {unit:?}");
+        assert!((r.1 - unit.1).abs() <= 1e-9 * unit.1.abs(), "scale {s:e}: covariance {r:?} vs {unit:?}");
+    }
+
+    // A tiny R next to P0 = 1: S = 1 + 1e-14 is perfectly conditioned, so this
+    // isolates construction from B10. Closed form: x = z/(1+R), P = R/(1+R).
+    let r = 1e-14;
+    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[r])
+        .unwrap_or_else(|e| panic!("f64 R = {r:e} is positive definite but rejected: {e:?}"));
+    kf.update(&[1.0]).expect("S = 1 + 1e-14 is well conditioned");
+    assert_close(&v(kf.state()), &[1.0 / (1.0 + r)], 1e-15, "x");
+    let p = v(kf.covariance())[0];
+    assert!((p - r / (1.0 + r)).abs() <= 1e-9 * r, "P = {p:e}, expected {:e}", r / (1.0 + r));
+
+    // f32 (1e-13 is a normal f32) and a multichannel R with one precise channel.
+    let r32 = LinearKalmanFilter::<f32>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[1e-13]);
+    assert!(r32.is_ok(), "f32 R = 1e-13 rejected: {:?}", r32.err());
+    let i2 = [1.0, 0.0, 0.0, 1.0];
+    let res = LinearKalmanFilter::<f64>::new(2, 2, &[0.0, 0.0], &i2, &i2, &[0.0; 4], &i2, &[1.0, 0.0, 0.0, 1e-13]);
+    assert!(res.is_ok(), "R = diag(1, 1e-13) rejected: {:?}", res.err());
+}
+
+// ===========================================================================
+// B19: dimension arithmetic cannot overflow into a panic (CHANGE)
+// ===========================================================================
+
+#[test]
+fn spec_change_overflowing_dimensions_are_rejected_without_panic() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    // n = 2 and a huge m: the length check `m * n` (src/filter.rs:127)
+    // overflows ("attempt to multiply with overflow"). In release builds it
+    // wraps instead, and validate_measurement_noise then indexes R out of bounds.
+    let empty: [f64; 0] = [];
+    let cases: [(usize, &[f64], &[f64]); 3] = [
+        (usize::MAX, &H, &R),
+        (usize::MAX / 2 + 1, &H, &R),
+        (usize::MAX / 2 + 1, &empty, &empty),
+    ];
+    let mut failures = Vec::new();
+    for (m, h, r) in cases {
+        let res = catch_unwind(AssertUnwindSafe(|| {
+            LinearKalmanFilter::<f64>::new(2, m, &X0, &P0, &F, &Q, h, r).map(|_| ())
+        }));
+        match res {
+            Ok(Err(_)) => {}
+            Ok(Ok(())) => failures.push(format!("measurement_dim = {m}, h.len() = {}: accepted", h.len())),
+            Err(_) => failures.push(format!("measurement_dim = {m}, h.len() = {}: panicked", h.len())),
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+// ===========================================================================
+// B20: predict/update never commit a non-finite estimate (CHANGE)
+// ===========================================================================
+
+/// `Ok` must leave a finite state and covariance; `Err` must leave both unchanged.
+fn assert_finite_or_unchanged(
+    what: &str,
+    res: Result<(), KalmanError>,
+    before: (Vec<f64>, Vec<f64>),
+    after: (Vec<f64>, Vec<f64>),
+) {
+    match res {
+        Ok(()) => assert!(
+            after.0.iter().chain(&after.1).all(|a| a.is_finite()),
+            "{what}: returned Ok but state = {:?}, covariance = {:?}",
+            after.0,
+            after.1
+        ),
+        Err(e) => assert!(before == after, "{what}: returned {e:?} but changed the filter: {before:?} -> {after:?}"),
+    }
+}
+
+#[test]
+fn spec_change_predict_never_commits_non_finite_estimate() {
+    // F x overflows: x0 = 1e200, F = 1e200 (all inputs finite and valid).
+    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[1e200], &[1.0], &[1e200], &[0.0], &[1.0], &[1.0]).unwrap();
+    let before = (v(kf.state()), v(kf.covariance()));
+    let res = kf.predict();
+    assert_finite_or_unchanged("predict, F x overflows", res, before, (v(kf.state()), v(kf.covariance())));
+
+    // F P Fᵀ overflows: P0 = 1e200, F = 1e200. Today P becomes inf with Ok, and
+    // the next update returns Ok with a NaN state.
+    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[1.0], &[1e200], &[1e200], &[0.0], &[1.0], &[1.0]).unwrap();
+    let before = (v(kf.state()), v(kf.covariance()));
+    let res = kf.predict();
+    assert_finite_or_unchanged("predict, F P F^T overflows", res, before, (v(kf.state()), v(kf.covariance())));
+    let before = (v(kf.state()), v(kf.covariance()));
+    let res = kf.update(&[0.0]);
+    assert_finite_or_unchanged("update after overflowing predict", res, before, (v(kf.state()), v(kf.covariance())));
+}
+
+#[test]
+fn spec_change_update_never_commits_non_finite_estimate() {
+    // Finite x0 and z whose difference overflows: y = z - H x = +inf
+    // (src/filter.rs:266-270, :315-317; nothing is checked before committing).
+    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[-1e308], &[1.0], &[1.0], &[0.0], &[1.0], &[1.0]).unwrap();
+    let before = (v(kf.state()), v(kf.covariance()));
+    let res = kf.update(&[1e308]);
+    assert_finite_or_unchanged("f64 update, innovation overflows", res, before, (v(kf.state()), v(kf.covariance())));
+
+    let mut kf = LinearKalmanFilter::<f32>::new(1, 1, &[-3e38], &[1.0], &[1.0], &[0.0], &[1.0], &[1.0]).unwrap();
+    let before = (to_f64(&v(kf.state())), to_f64(&v(kf.covariance())));
+    let res = kf.update(&[3e38]);
+    let after = (to_f64(&v(kf.state())), to_f64(&v(kf.covariance())));
+    assert_finite_or_unchanged("f32 update, innovation overflows", res, before, after);
+}
+
+// ===========================================================================
+// B21: singular S is detected relative to its own scale; a successful
+// update never yields an indefinite covariance (CHANGE)
+// ===========================================================================
+
+/// Cholesky with a pivot tolerance RELATIVE to the diagonal: d_k <= 1e3·eps·S_kk
+/// means singular. Feasibility reference for the test below.
+fn ref_cholesky_is_singular(s: &[f64], m: usize) -> bool {
+    let mut l = vec![0.0; m * m];
+    for j in 0..m {
+        let mut d = s[j * m + j];
+        for k in 0..j {
+            d -= l[j * m + k] * l[j * m + k];
+        }
+        if !(d > 1e3 * f64::EPSILON * s[j * m + j]) {
+            return true;
+        }
+        l[j * m + j] = d.sqrt();
+        for i in j + 1..m {
+            let mut acc = s[i * m + j];
+            for k in 0..j {
+                acc -= l[i * m + k] * l[j * m + k];
+            }
+            l[i * m + j] = acc / l[j * m + j];
+        }
+    }
+    false
+}
+
+#[test]
+fn spec_change_large_scale_singular_innovation_is_detected() {
+    // n = 1, m = 2, H = h, R = scale·h hᵀ (rank-1 PSD, valid per B5), P0 = scale:
+    // S = 2·scale·h hᵀ has rank 1 at every scale, and z = [0, 1] has a component
+    // outside range(S). The absolute pivot threshold (src/matrix/naive.rs:147)
+    // lets the rounding residual of the zero pivot through at large scale, and
+    // the update returns Ok with a NEGATIVE variance (e.g. h = [1, 0.1] at 1e8).
+    let mut hbs = vec![1.0 / 3.0, 0.1, 0.7, 1.0 / 7.0, 0.123456789, std::f64::consts::SQRT_2, 1.1];
+    let mut rng = Rng(0xA0D1_7006);
+    hbs.extend((0..40).map(|_| 2.0 * rng.uniform() - 1.0));
+    let scales = [1.0f64, 1e2, 1e4, 1e6, 1e8, 1e9, 1e10, 1e12];
+    let (mut bad, mut total) = (Vec::new(), 0);
+    for &hb in &hbs {
+        for &scale in &scales {
+            total += 1;
+            let h = [1.0, hb];
+            let r = [scale, hb * scale, hb * scale, hb * hb * scale];
+            let s = [scale + r[0], scale * hb + r[1], scale * hb + r[2], scale * hb * hb + r[3]];
+            assert!(ref_cholesky_is_singular(&s, 2), "reference failed to flag h=[1,{hb}] scale={scale:e}");
+            let mut kf = LinearKalmanFilter::<f64>::new(1, 2, &[0.0], &[scale], &[1.0], &[0.0], &h, &r).unwrap();
+            let res = kf.update(&[0.0, 1.0]);
+            let (x, p) = (v(kf.state())[0], v(kf.covariance())[0]);
+            match res {
+                Err(KalmanError::SingularMatrix) if (x, p) == (0.0, scale) => {}
+                // Tolerated only if the result is still a sane posterior.
+                Ok(()) if x.is_finite() && x.abs() < 10.0 && p >= -1e-9 * scale && p <= scale => {}
+                other => bad.push(format!("h=[1,{hb}] scale={scale:e}: {other:?}, x={x:e}, P={p:e}")),
+            }
+        }
+    }
+    assert!(bad.is_empty(), "singular S mishandled in {}/{total} cases:\n{}", bad.len(), bad.join("\n"));
+}
+
+/// Joseph form with S solved by Cholesky (relative pivot test); 2×2 row-major.
+/// Returns None if S is numerically singular. Feasibility reference.
+fn joseph_cholesky_ref_2x2(x: &[f64], p: &[f64], h: &[f64], r: &[f64], z: &[f64]) -> Option<(Vec<f64>, Vec<f64>)> {
+    let pht = mat_mul(p, &transpose(h, 2, 2), 2, 2, 2);
+    let hp = transpose(&pht, 2, 2);
+    let s: Vec<f64> = mat_mul(h, &pht, 2, 2, 2).iter().zip(r).map(|(a, b)| a + b).collect();
+    let l00 = s[0].sqrt();
+    let l10 = s[2] / l00;
+    let d = s[3] - l10 * l10;
+    if !(d > 1e-15 * s[3].abs().max(s[0].abs())) {
+        return None;
+    }
+    let l11 = d.sqrt();
+    // Solve S Kᵀ = H P column by column.
+    let mut kt = vec![0.0; 4];
+    for c in 0..2 {
+        let y0 = hp[c] / l00;
+        let y1 = (hp[2 + c] - l10 * y0) / l11;
+        let k1 = y1 / l11;
+        kt[c] = (y0 - l10 * k1) / l00;
+        kt[2 + c] = k1;
+    }
+    let k = transpose(&kt, 2, 2);
+    let hx = mat_mul(h, x, 2, 2, 1);
+    let y = [z[0] - hx[0], z[1] - hx[1]];
+    let ky = mat_mul(&k, &y, 2, 2, 1);
+    let xn = vec![x[0] + ky[0], x[1] + ky[1]];
+    let kh = mat_mul(&k, h, 2, 2, 2);
+    let a = [1.0 - kh[0], -kh[1], -kh[2], 1.0 - kh[3]];
+    let apa = mat_mul(&mat_mul(&a, p, 2, 2, 2), &transpose(&a, 2, 2), 2, 2, 2);
+    let krk = mat_mul(&mat_mul(&k, r, 2, 2, 2), &kt, 2, 2, 2);
+    let mut pn: Vec<f64> = apa.iter().zip(&krk).map(|(u, w)| u + w).collect();
+    let off = 0.5 * (pn[1] + pn[2]);
+    pn[1] = off;
+    pn[2] = off;
+    Some((xn, pn))
+}
+
+#[test]
+fn spec_change_successful_update_never_yields_indefinite_covariance() {
+    // P0 = 1e30·I (huge but finite prior), R = I, two nearly collinear sensors
+    // H = [[1,1],[1,1+1e-15]]. All inputs are valid under B2-B6. Today one
+    // update returns Ok with P = [[0, -1e30], [-1e30, -2.7e15]]: the absolute
+    // pivot test (src/matrix/naive.rs:147) accepts the numerically singular S
+    // and the simple-form update (src/filter.rs:329-347) produces garbage.
+    let p0 = [1e30f64, 0.0, 0.0, 1e30];
+    let h = [1.0, 1.0, 1.0, 1.0 + 1e-15];
+    let i2 = [1.0, 0.0, 0.0, 1.0];
+    let x0 = [0.0, 0.0];
+    let z = [h[0] + h[1], h[2] + h[3]];
+
+    // A correct implementation can meet the bar.
+    if let Some((xr, pr)) = joseph_cholesky_ref_2x2(&x0, &p0, &h, &i2, &z) {
+        assert!(xr.iter().all(|a| a.is_finite()), "reference state not finite");
+        check_covariance(&pr, 2, 1e-10, 1e-9).expect("reference Joseph+Cholesky must be PSD");
+    }
+
+    let mut kf = LinearKalmanFilter::<f64>::new(2, 2, &x0, &p0, &i2, &[0.0; 4], &h, &i2).unwrap();
+    match kf.update(&z) {
+        Err(KalmanError::SingularMatrix) => {
+            assert_eq!(v(kf.state()), x0.to_vec());
+            assert_eq!(v(kf.covariance()), p0.to_vec());
+        }
+        Err(e) => panic!("unexpected error {e:?}"),
+        Ok(()) => {
+            let (x, p) = (v(kf.state()), v(kf.covariance()));
+            assert!(x.iter().all(|a| a.is_finite()), "state not finite: {x:?}");
+            assert!(p[0] >= 0.0 && p[3] >= 0.0, "negative variance: P = {p:?}");
+            if let Err(msg) = check_covariance(&p, 2, 1e-10, 1e-9) {
+                panic!("update returned Ok but posterior is not PSD: {msg}");
+            }
+        }
+    }
+}
+
+// ===========================================================================
+// B22: results do not depend on the units of individual measurement
+// components (CHANGE)
+// ===========================================================================
+
+/// Rescale measurement component i by c_i: row i of H by c_i, R -> D R D.
+fn rich_model_unit_scaled(c: &[f64]) -> RefKf {
+    let mut md = rich_model();
+    let (n, m) = (md.n, md.m);
+    for i in 0..m {
+        for j in 0..n {
+            md.h[i * n + j] *= c[i];
+        }
+        for j in 0..m {
+            md.r[i * m + j] *= c[i] * c[j];
+        }
+    }
+    md
+}
+
+fn rel_err(a: &[f64], b: &[f64]) -> f64 {
+    let d = a.iter().zip(b).fold(0.0f64, |acc, (x, y)| acc.max((x - y).abs()));
+    d / b.iter().fold(f64::MIN_POSITIVE, |acc, x| acc.max(x.abs()))
+}
+
+#[test]
+fn spec_change_measurement_unit_change_does_not_change_estimate() {
+    // z_i -> c_i z_i, H_i -> c_i H_i, R -> D R D leaves the exact posterior
+    // unchanged. Today the absolute pivot test (src/matrix/naive.rs:147)
+    // reports SingularMatrix when one component is in small units, although
+    // S's largest entry is O(1), so B10's uniform-scaling test does not cover
+    // it. The factors keep every diag(R) >= 1e-12, so B18 plays no part.
+    for c1 in [3e-6, 1e6] {
+        let c = [1.0, c1];
+        let sm = rich_model_unit_scaled(&c);
+        let mut oracle = rich_model();
+        // Feasibility: the textbook oracle run directly on the rescaled model.
+        let mut oracle_scaled = rich_model_unit_scaled(&c);
+        let mut kf = LinearKalmanFilter::<f64>::new(sm.n, sm.m, &sm.x, &sm.p, &sm.f, &sm.q, &sm.h, &sm.r)
+            .unwrap_or_else(|e| panic!("f64 c={c1:e}: construction failed: {e:?}"));
+        for k in 0..20 {
+            let z = rich_measurement(k);
+            let zc: Vec<f64> = z.iter().zip(&c).map(|(a, b)| a * b).collect();
+            oracle.predict();
+            oracle.update(&z);
+            oracle_scaled.predict();
+            oracle_scaled.update(&zc);
+            let eo = rel_err(&oracle_scaled.x, &oracle.x).max(rel_err(&oracle_scaled.p, &oracle.p));
+            assert!(eo < 1e-10, "oracle itself not unit-invariant: {eo:e}");
+            kf.predict().unwrap();
+            kf.update(&zc).unwrap_or_else(|e| panic!("f64 c={c1:e} step {k}: update failed: {e:?}"));
+            let ex = rel_err(&v(kf.state()), &oracle.x).max(rel_err(&v(kf.covariance()), &oracle.p));
+            assert!(ex < 1e-8, "f64 c={c1:e} step {k}: rel err {ex:e}");
+        }
+    }
+
+    // f32: component 2 in units 1e3 times smaller.
+    let c = [1.0, 1e-3];
+    let sm = rich_model_unit_scaled(&c);
+    let mut oracle = rich_model();
+    let mut kf = LinearKalmanFilter::<f32>::new(
+        sm.n,
+        sm.m,
+        &to_f32(&sm.x),
+        &to_f32(&sm.p),
+        &to_f32(&sm.f),
+        &to_f32(&sm.q),
+        &to_f32(&sm.h),
+        &to_f32(&sm.r),
+    )
+    .unwrap_or_else(|e| panic!("f32: construction failed: {e:?}"));
+    for k in 0..20 {
+        let z = rich_measurement(k);
+        let zc: Vec<f64> = z.iter().zip(&c).map(|(a, b)| a * b).collect();
+        oracle.predict();
+        oracle.update(&z);
+        kf.predict().unwrap();
+        kf.update(&to_f32(&zc)).unwrap_or_else(|e| panic!("f32 c=1e-3 step {k}: update failed: {e:?}"));
+        let ex = rel_err(&to_f64(&v(kf.state())), &oracle.x).max(rel_err(&to_f64(&v(kf.covariance())), &oracle.p));
+        assert!(ex < 1e-3, "f32 c=1e-3 step {k}: rel err {ex:e}");
+    }
+}

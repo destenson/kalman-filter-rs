@@ -100,8 +100,11 @@ symmetric input must always pass the symmetry check.
     indefinite `q` is accepted. `r` is only checked on its diagonal
     (`src/validation.rs:45-65`), so an asymmetric `r`, or an indefinite `r` with a
     positive diagonal, is accepted.
-  - Not specified: whether `r` with a zero diagonal is accepted. Today it is rejected, and
-    the tests do not cover it.
+  - Not specified: whether an `r` with an exactly zero diagonal entry (for example the
+    rank-deficient `diag(1, 0)`) is accepted. Today it is rejected, and the tests do not
+    cover it. A rank-deficient `r` whose diagonal is strictly positive (for example
+    `[[1,1],[1,1]]`) must be accepted. Any strictly positive diagonal must be accepted
+    at every magnitude (B18).
 - **B6 (CHANGE): Non-finite input is rejected.** A NaN or ±∞ in any construction input →
   `Err(_)`. A NaN or ±∞ in the `update` measurement → `Err(_)`, with state and covariance
   unchanged.
@@ -113,8 +116,8 @@ symmetric input must always pass the symmetry check.
 ### Predict / update
 
 - **B7 (KEEP): Predict.** `x ← F x`, `P ← F P Fᵀ + Q` (`src/filter.rs:186-233`).
-  `predict` must not panic. It may return `Err(KalmanError::FilterDivergence(_))` if the
-  result is non-finite. That case is not tested.
+  `predict` must not panic. If the result would be non-finite, it returns an error (for
+  example `Err(KalmanError::FilterDivergence(_))`) and leaves the filter unchanged (B20).
 - **B8 (KEEP): Update equations.** `y = z − Hx`, `S = HPHᵀ + R`, `K = PHᵀS⁻¹`,
   `x ← x + Ky`. The posterior `P` is mathematically equal to `(I−KH)P(I−KH)ᵀ + KRKᵀ`.
   Results must match a textbook f64 oracle to a relative 1e-9 (f64) or 1e-4 (f32) over 50
@@ -126,7 +129,8 @@ symmetric input must always pass the symmetry check.
   `Err(DimensionMismatch { .. })`. If `S` is singular or not positive definite, it returns
   `Err(KalmanError::SingularMatrix)`. In both cases `state()` and `covariance()` are
   unchanged and the filter stays usable. Today: `src/filter.rs:250-262,299-305`. All
-  mutation happens after these checks.
+  mutation happens after these checks. "Singular" is judged relative to `S`'s own scale
+  (B10, B21, B22), never against an absolute threshold.
 - **B10 (CHANGE): Singularity detection must be scale-invariant.** A well-conditioned `S`
   must never be reported singular just because its entries are small in absolute terms.
   *Defect:* `S` is inverted by Gauss–Jordan elimination, with an absolute pivot threshold
@@ -134,7 +138,8 @@ symmetric input must always pass the symmetry check.
   reached via `src/filter.rs:299`. The same absolute threshold is in
   `KalmanFilter::invert_matrix` (`src/filter.rs:400,415`). With f64 `P = R = 4e-12` (`S = 8e-12`), or f32
   `P = R = 1e-7`, `update` returns `SingularMatrix`. In f32, ordinary models hit this
-  thousands of times per 10⁴ steps.
+  thousands of times per 10⁴ steps. The other direction (large-scale singular `S`) is
+  B21; per-component scaling is B22.
 - **B11 (CHANGE): The covariance stays symmetric PSD on ill-conditioned models.** This
   must hold over 10⁴ predict+update steps, for both `f32` and `f64`, on the two frozen
   models below. Every step must succeed, and `P` must stay finite, with relative asymmetry
@@ -174,8 +179,8 @@ symmetric input must always pass the symmetry check.
   `correct` discards update errors (`src/legacy.rs:63-65`). Control input is out of scope
   for this tournament (see Non-goals). The fix is to *not offer* it.
 - **B15 (CHANGE): No panic on bad input from the public API.** Every invalid input must
-  produce a `KalmanError`. That includes wrong lengths, zero dimensions, non-finite
-  values and singular `S`.
+  produce a `KalmanError`. That includes wrong lengths, zero dimensions, dimensions whose
+  products overflow (B19), non-finite values and singular `S`.
   *Defect:* B3 (divide by zero). The builder panics on short slices (`src/builder.rs:377`;
   `SMatrix::from_row_slice` at `src/builder.rs:268-322` under `nalgebra`). The public
   `matrix::MatrixOps` / `MatrixDecomposition` functions index caller slices unchecked
@@ -195,6 +200,59 @@ symmetric input must always pass the symmetry check.
   own. Wrappers, unified enums and per-backend constructors are not allowed.
 - **B17 (KEEP): `f32` and `f64` are both supported** (`KalmanScalar` impls,
   `src/types.rs:51-62`).
+
+### Added after audit
+
+- **B18 (CHANGE): Covariance validation is scale-invariant.** Whether `p0`, `q` or `r` is
+  accepted must not depend on the units chosen. Any finite PSD matrix passes, however
+  small its entries; any tolerance in the PSD test is relative to the matrix's own scale.
+  A model whose variances are all multiplied by s² (states by s) is equally valid and
+  gives the same result in scaled units.
+  *Defect:* `validate_measurement_noise` rejects any `r` diagonal below an absolute
+  `MIN_CONDITION_NUMBER = 1e-12` (`src/validation.rs:6,58-60`, reached from
+  `src/filter.rs:150`). f64 `R = 1e-14` (σ = 100 nm in metres), f32 `R = 1e-13`, and
+  `R = diag(1, 1e-13)` are rejected with `InvalidNoiseCovariance`; a 1-D model valid in
+  metres is rejected in kilometres.
+- **B19 (CHANGE): Dimension arithmetic is overflow-checked.** If `n·n`, `m·n` or `m·m`
+  overflows `usize`, construction returns `Err(_)` (for example `DimensionMismatch`),
+  never a panic or a wrapped length check.
+  *Defect:* `initialize` computes `m * n` and `m * m` unchecked (`src/filter.rs:127,133`).
+  `new(2, usize::MAX, ..)` and `new(2, 2⁶³, ..)` panic with "attempt to multiply with
+  overflow" in debug builds. In release builds the product wraps (to 0 for m = 2⁶³), empty
+  `h`/`r` pass the length checks, and `validate_measurement_noise` indexes `r` out of
+  bounds (`src/validation.rs:56`).
+- **B20 (CHANGE): `predict` and `update` never commit a non-finite estimate.** If either
+  returns `Ok`, `state()` and `covariance()` are finite. Otherwise it returns an error (for
+  example `FilterDivergence`) and leaves state and covariance unchanged. This extends B6
+  from non-finite *inputs* to non-finite *results* of finite inputs.
+  *Defect:* nothing checks the results before they are committed;
+  `check_numerical_stability` only logs (`src/filter.rs:186-233`, `:266-270`, `:315-317`)
+  and the adapter's `predict` always returns `Ok`. f64 `x0 = F = 1e200`: `predict` gives
+  state `[inf]` with `Ok`. f64 `P0 = F = 1e200`: `predict` gives `P = [inf]` with `Ok`,
+  then `update([0])` returns `Ok` with state and P `[NaN]`. f64 `x0 = −1e308, z = 1e308`
+  (and f32 `−3e38, 3e38`): `update` returns `Ok` with state `[inf]`.
+- **B21 (CHANGE): A numerically singular `S` is detected at every scale, and a
+  successful `update` never yields an indefinite covariance.** An `S` that is singular
+  relative to its own scale (e.g. a Cholesky/LDLᵀ pivot ≤ c·ε·S_kk) gives
+  `Err(SingularMatrix)` with the filter unchanged, at any magnitude. Every `update` that
+  returns `Ok` leaves `P` finite and symmetric PSD within the B11 tolerances, on any
+  valid model, not only on models A and B.
+  *Defect:* the absolute pivot threshold (`src/matrix/naive.rs:147`, via
+  `src/filter.rs:299`) catches a rank-1 `S` at unit scale but lets the rounding residual
+  of the zero pivot through at large scale; the simple-form update
+  (`src/filter.rs:329-347`) then commits garbage. n = 1, m = 2, `H = [1, 0.1]`,
+  `R = 1e8·hhᵀ`, `P0 = 1e8`: `update([0, 1])` returns `Ok` with `P = −5e7`.
+  `P0 = 1e30·I`, `R = I`, `H = [[1,1],[1,1+1e-15]]`: `update` returns `Ok` with
+  `P = [[0, −1e30], [−1e30, −2.7e15]]`.
+- **B22 (CHANGE): Results do not depend on the units of individual measurement
+  components.** Rescaling component i by cᵢ (`zᵢ → cᵢzᵢ`, row i of `H` by cᵢ,
+  `R → DRD`, D = diag(c)) leaves the posterior unchanged: no new `SingularMatrix`, and
+  x and P agree with the unscaled oracle to 1e-8 relative (f64) or 1e-3 (f32).
+  *Defect:* same absolute pivot test (`src/matrix/naive.rs:147`). On the 4×2 oracle model
+  with component 2 scaled by 3e-6 (f64), or by 1e-3 (f32), `update` returns
+  `SingularMatrix` at step 0 (f64) or step 1 (f32), although the largest entry of `S` is
+  O(1). B10's test only scales uniformly, so a threshold relative to max|S| passes it and
+  still fails this.
 
 ## 4. Dropped (candidates may delete)
 
@@ -219,12 +277,14 @@ symmetric input must always pass the symmetry check.
 
 ## 5. Quality requirements
 
-- **Q1 Numerical robustness:** B10 and B11. Use the Joseph form or an equally stable
-  update. Solve with `S`; never invert it.
+- **Q1 Numerical robustness:** B10, B11, B18, B20, B21 and B22. Use the Joseph form or an
+  equally stable update. Solve with `S`; never invert it. No absolute magnitude
+  thresholds: every tolerance is relative to the scale of the matrix it tests.
 - **Q2 Allocation:** B12. Zero heap allocations in steady-state predict and update.
 - **Q3 Safety:** B15. No `.unwrap()`, `.expect()`, unchecked indexing that can fail on
   user input, or `panic!` reachable from the public API. Integer division by a
-  user-supplied dimension must be guarded.
+  user-supplied dimension must be guarded, and all dimension arithmetic (products such
+  as `n·n`, `m·n`, `m·m`) must be overflow-checked (B19).
 - **Q4 Separation of concerns:** `log` and Prometheus calls are never interleaved with the
   numeric steps of predict/update. If instrumentation is kept, it wraps the math (for
   example before and after a call) or lives in a separate layer.
@@ -273,10 +333,22 @@ symmetric input must always pass the symmetry check.
 | `spec_change_covariance_stays_psd_ill_conditioned_f64` | B11 | **fail**: model A, step 1, `λ_min = −6.9e-11` |
 | `spec_change_covariance_stays_psd_ill_conditioned_f32` | B11, B10 | **fail**: model B, step 0, `λ_min = −5.1e-5` |
 | `spec_change_no_heap_allocation_in_steady_state` | B12 | **fail**: 1500 allocations per 100 cycles |
+| `spec_change_noise_covariance_validation_is_scale_invariant` | B18 | **fail**: scale 1e-7 model rejected, `InvalidNoiseCovariance` |
+| `spec_change_overflowing_dimensions_are_rejected_without_panic` | B19, B15 | **fail**: panic "attempt to multiply with overflow" at `src/filter.rs:127` |
+| `spec_change_predict_never_commits_non_finite_estimate` | B20, B7 | **fail**: `Ok` with state `[inf]` |
+| `spec_change_update_never_commits_non_finite_estimate` | B20 | **fail**: `Ok` with state `[inf]` |
+| `spec_change_large_scale_singular_innovation_is_detected` | B21, B9 | **fail**: `h=[1,0.1]`, scale 1e8: `Ok` with `P = −5e7` |
+| `spec_change_successful_update_never_yields_indefinite_covariance` | B21, B11 | **fail**: `Ok` with `P = [[0,−1e30],[−1e30,−2.7e15]]` |
+| `spec_change_measurement_unit_change_does_not_change_estimate` | B22, B10 | **fail**: f64 c = 3e-6, step 0: `SingularMatrix` |
 
-Totals: 25 tests, of which 14 are KEEP (pass) and 11 are `spec_change_*` (fail on the
+Totals: 32 tests, of which 14 are KEEP (pass) and 18 are `spec_change_*` (fail on the
 adapter for the reasons listed, never because of compile errors). No stub was needed: the
 whole interface maps onto the current code.
+
+Tests that accept either outcome (B20, B21) do so on purpose: a correct candidate may
+return the documented error with the filter unchanged, *or* `Ok` with a finite (and, for
+B21, PSD) result. Each B21 test carries an in-test reference (Cholesky with a relative
+pivot test, Joseph form) that shows the bar can be met.
 
 Behaviors B13, B14 and B16 are checked in review. They cannot be observed through the
 public interface; B13, for example, would need a compile-fail test.
@@ -301,3 +373,29 @@ public interface; B13, for example, would need a compile-fail test.
   - `src/matrix/tests.rs` and `naive.rs` test the dropped public backend traits.
   - The `src/error.rs` and `src/types.rs` tests remain valid as long as those items
     exist.
+  - Audit note, not edited (candidate-owned code): `src/filter.rs::tests::
+    test_covariance_symmetry_maintained` (`:919`) cannot fail because `update`
+    force-symmetrizes `P`, and it checks no PSD property; `test_steady_state_gain_convergence`
+    (`:1070`) claims to check the algebraic Riccati equation but only asserts `0 < P < 10`.
+    The real checks are `covariance_stays_symmetric_psd_well_conditioned`,
+    `spec_change_covariance_stays_psd_ill_conditioned_*` and
+    `scalar_random_walk_reaches_riccati_steady_state`. Candidates should delete or
+    strengthen both.
+
+### Audit round 1 (spec text corrected; no frozen test was wrong or too strict)
+
+- **B5:** said "a rank-deficient `r` is valid" and also "a zero diagonal is not specified",
+  which contradict for `diag(1, 0)`. Reworded: rank-deficient `r` with a strictly positive
+  diagonal must be accepted; an exactly zero diagonal entry stays unspecified. The KEEP
+  test `accepts_singular_positive_semidefinite_matrices` uses `[[1,1],[1,1]]` and is
+  unchanged.
+- **B7:** allowed `predict` to return `Ok` with a non-finite result ("not tested"). Now it
+  must return an error and leave the filter unchanged (B20).
+- **B9/B10:** defined "singular" from one side only (small scale must not be singular).
+  B9 now says singularity is judged relative to `S`'s scale; the other directions are
+  B21 (large scale) and B22 (per-component scale).
+- **B11:** only constrained two fixed models. B21 adds the general post-condition that
+  every successful `update` leaves `P` PSD.
+- **B15 / Q3:** named only division by a dimension; integer overflow of dimension
+  products is now listed (B19).
+- **Q1:** now forbids absolute magnitude thresholds explicitly (B18, B21, B22).
