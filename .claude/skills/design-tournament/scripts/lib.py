@@ -168,6 +168,18 @@ JUDGE_TOOLS="Read Glob Grep Bash(ls *) Bash(wc *) Bash(git diff *)"
 
 # Worktrees live outside the repo (default: ../<repo>.tourney/<run>/)
 WORKTREE_ROOT=""
+
+# --- differential test (optional) -----------------------------------------
+# A harness file kept in this run dir, written against the spec's public interface.
+# It is copied (untracked) into each worktree, run, and removed. It must print one JSON
+# object per line: {{"case": "id", "ok": true, "values": [numbers...]}} or
+# {{"case": "id", "ok": false, "error": "Kind"}}; optional "tol" overrides DIFFTEST_REL_TOL.
+DIFFTEST_HARNESS=""        # e.g. difftest/harness.rs (relative to this run dir)
+DIFFTEST_INSTALL=""        # where it goes in a worktree, e.g. tests/zz_difftest.rs
+DIFFTEST_CMD=""            # e.g. cargo test --release --quiet --test zz_difftest -- --nocapture
+DIFFTEST_REFERENCE_ENV=""  # e.g. DIFFTEST_REFERENCE=1: also run the harness's own oracle as 'reference'
+DIFFTEST_REL_TOL="1e-6"
+DIFFTEST_ABS_TOL="1e-9"
 """)
 
 
@@ -360,6 +372,118 @@ def cmd_probe_summary(a):
           "notes too: a small diff that bolts on a hack is worse than a clean, slightly larger one.")
 
 
+def _load_jsonl(path: Path) -> dict[str, dict]:
+    out = {}
+    for line in read(path).splitlines():
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(d, dict) and "case" in d:
+            out[str(d["case"])] = d
+    return out
+
+
+def _status(d: dict | None) -> str:
+    if d is None:
+        return "missing"
+    if d.get("ok", True):
+        return "ok"
+    return "error:" + str(d.get("error", "?")).split("(")[0].split("{")[0].strip()[:40]
+
+
+def cmd_difftest_summary(a):
+    """Compare per-case outputs across targets.
+
+    Consensus per case: the 'reference' target if present, else the majority status and
+    (for ok cases) the element-wise median of values over targets with that status.
+    """
+    import statistics
+    rd = Path(a.rd)
+    mapping = read_mapping(rd)
+    runs = {f.stem: _load_jsonl(f) for f in sorted((rd / "difftest").glob("*.jsonl"))}
+    if a.blind:
+        runs = {t: r for t, r in runs.items() if t in mapping or t in ("spec", "reference")}
+    if not runs:
+        print("# Differential test\n\n(no results)")
+        return
+    order = [t for t in ("reference", "spec") if t in runs] + sorted(t for t in runs if t not in ("reference", "spec"))
+    cases = sorted({c for r in runs.values() for c in r})
+    stats = {t: dict(agree=0, value=0, status=0, missing=0, maxrel=0.0) for t in order}
+    worst: list[tuple[float, str, str, list[str]]] = []
+
+    def label(t):
+        if t in ("spec", "reference"):
+            return {"spec": "spec (original code)", "reference": "reference oracle"}[t]
+        return t if a.blind or t not in mapping else f"{t} ({mapping[t]})"
+
+    for c in cases:
+        recs = {t: runs[t].get(c) for t in order}
+        if "reference" in recs and recs["reference"] is not None:
+            cons_status, cons_vals = _status(recs["reference"]), recs["reference"].get("values")
+        else:
+            sts = [_status(r) for r in recs.values() if r is not None]
+            cons_status = max(set(sts), key=sts.count)
+            vals = [r["values"] for r in recs.values()
+                    if r is not None and _status(r) == "ok" and isinstance(r.get("values"), list)]
+            cons_vals = None
+            if cons_status == "ok" and vals:
+                n = max(set(map(len, vals)), key=[len(v) for v in vals].count)
+                vals = [v for v in vals if len(v) == n]
+                cons_vals = [statistics.median(col) for col in zip(*vals)]
+        dissent = []
+        for t, r in recs.items():
+            if t == "reference":
+                continue
+            st = _status(r)
+            if st == "missing":
+                stats[t]["missing"] += 1; dissent.append(f"{t}:missing"); continue
+            if st != cons_status:
+                stats[t]["status"] += 1; dissent.append(f"{t}:{st}"); continue
+            if st == "ok" and cons_vals is not None:
+                v = r.get("values") or []
+                rel_tol = float(r.get("tol", a.rel))
+                if len(v) != len(cons_vals):
+                    stats[t]["value"] += 1; dissent.append(f"{t}:len{len(v)}"); continue
+                worst_rel = 0.0
+                bad = False
+                for x, y in zip(v, cons_vals):
+                    try:
+                        x, y = float(x), float(y)
+                    except (TypeError, ValueError):
+                        bad = True; worst_rel = float("inf"); break
+                    err = abs(x - y)
+                    if err != err:  # NaN
+                        bad = True; worst_rel = float("inf"); break
+                    rel = err / max(abs(y), 1e-300)
+                    if err > a.abs + rel_tol * abs(y):
+                        bad = True
+                        worst_rel = max(worst_rel, rel)
+                if bad:
+                    stats[t]["value"] += 1
+                    stats[t]["maxrel"] = max(stats[t]["maxrel"], worst_rel)
+                    dissent.append(f"{t}:rel{worst_rel:.1e}")
+                    continue
+            stats[t]["agree"] += 1
+        if dissent:
+            worst.append((len(dissent), c, cons_status, dissent))
+
+    print("# Differential test\n")
+    basis = "the reference oracle" if "reference" in runs else "the majority (median of values)"
+    print(f"{len(cases)} cases. Consensus = {basis}. Tolerance: abs {a.abs:g} + rel {a.rel:g}·|consensus| "
+          "(cases may set their own rel tol).\n")
+    rows = [[label(t), stats[t]["agree"], stats[t]["value"], stats[t]["status"], stats[t]["missing"],
+             f"{stats[t]['maxrel']:.1e}" if stats[t]["maxrel"] else "–"] for t in order if t != "reference"]
+    print(md_table(["target", "agree", "value≠", "status≠", "missing", "max rel err"], rows))
+    if worst:
+        worst.sort(key=lambda w: (-w[0], w[1]))
+        print("\n## Disagreements (most dissent first, up to 30)\n")
+        for _, c, cs, d in worst[:30]:
+            print(f"- `{c}` consensus `{cs}`: " + ", ".join(d))
+    print("\nA target in the minority is not automatically wrong (the majority can share a bug, "
+          "and the original code is one voter). Investigate each disagreement cluster.")
+
+
 def cmd_extract_result(a):
     d = load_json(a.log, {}) or {}
     res = d.get("result") if isinstance(d, dict) else None
@@ -434,6 +558,9 @@ def main():
 
     p = sp.add_parser("probe-summary"); p.add_argument("rd"); p.add_argument("--blind", action="store_true")
     p.set_defaults(f=cmd_probe_summary)
+    p = sp.add_parser("difftest-summary"); p.add_argument("rd"); p.add_argument("--blind", action="store_true")
+    p.add_argument("--rel", type=float, default=1e-6); p.add_argument("--abs", type=float, default=1e-9)
+    p.set_defaults(f=cmd_difftest_summary)
     p = sp.add_parser("extract-result"); p.add_argument("log"); p.set_defaults(f=cmd_extract_result)
     p = sp.add_parser("status"); p.add_argument("rd"); p.add_argument("wt"); p.set_defaults(f=cmd_status)
 

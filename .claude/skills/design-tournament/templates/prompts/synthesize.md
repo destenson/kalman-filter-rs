@@ -6,7 +6,8 @@ the **blueprint** that one fresh engineer will implement from scratch. It is not
 # Inputs (current directory, read-only)
 - `BRIEF.md`, and `SPEC.md` inside any candidate directory.
 - `_evidence/judge-*.md`: the reviewer reports. Start here.
-- `_evidence/metrics.md`, `_evidence/probes.md`, and the probe diffs and notes.
+- `_evidence/metrics.md`, `_evidence/probes.md`, `_evidence/difftest.md` (if present),
+  and the probe diffs and notes.
 - The candidates `{{LETTERS}}` and `_baseline/`. Read the code wherever the reports
   disagree or make a claim you need to check.
 

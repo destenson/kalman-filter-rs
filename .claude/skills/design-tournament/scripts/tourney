@@ -21,9 +21,12 @@ usage: tourney <command> <run> [args]
 
   init <run> [--mode greenfield|reboot]   create .tournament/<run>/ from templates
   spec <run>                              agent drafts SPEC.md + acceptance tests (branch .../spec)
+  audit <run> [LENS...]                   auditor agents hunt defects the draft spec missed, in parallel
+  fold <run>                              agent folds confirmed audit findings into SPEC.md + frozen tests
   freeze <run>                            commit spec worktree edits, hash FROZEN_PATHS
   diverge <run> [LETTER...] [--force]     one agent per stance, in parallel
   measure <run> [TARGET...]               build/test/lint/LOC/frozen-check (targets: letters, 'final')
+  difftest <run> [TARGET...]              run the shared harness on spec baseline + targets, report disagreements
   probe <run> [TARGET...]                 hidden follow-up features on each target, in parallel
   judge <run>                             blind export + judge agents, in parallel
   synthesize <run>                        judge reports -> synthesis/DESIGN.md
@@ -48,6 +51,8 @@ load_run() {
   PERMISSION_MODE="acceptEdits"; ALLOWED_TOOLS="Read Edit Write Glob Grep Bash"
   JUDGE_TOOLS="Read Glob Grep Bash(ls *) Bash(wc *) Bash(git diff *)"
   WORKTREE_ROOT=""
+  DIFFTEST_HARNESS=""; DIFFTEST_INSTALL=""; DIFFTEST_CMD=""; DIFFTEST_REFERENCE_ENV=""
+  DIFFTEST_REL_TOL="1e-6"; DIFFTEST_ABS_TOL="1e-9"
   # shellcheck disable=SC1091
   source "$RD/config.sh"
   WT="${WORKTREE_ROOT:-$(dirname "$REPO")/$(basename "$REPO").tourney/$RUN}"
@@ -116,7 +121,7 @@ cmd_init() {
   [[ "$mode" =~ ^(greenfield|reboot)$ ]] || die "--mode must be greenfield or reboot"
   RD="$TROOT/$run"; [ -e "$RD" ] && die "$RD already exists"
   mkdir -p "$RD"
-  cp -r "$TEMPLATES/prompts" "$TEMPLATES/stances" "$TEMPLATES/judges" "$TEMPLATES/probes" "$RD/"
+  cp -r "$TEMPLATES/prompts" "$TEMPLATES/stances" "$TEMPLATES/judges" "$TEMPLATES/probes" "$TEMPLATES/auditors" "$RD/"
   cp "$TEMPLATES/brief.md" "$RD/brief.md"
   py detect-config "$REPO" "$mode" > "$RD/config.sh"
   git -C "$REPO" rev-parse HEAD > "$RD/base_ref"
@@ -129,7 +134,8 @@ Next:
   1. edit $RD/config.sh      (commands, SCOPE_PATHS, FROZEN_PATHS, budget)
   2. write $RD/brief.md      (goal, constraints, known defects, non-goals)
   3. prune/add $RD/stances/*.md and write hidden $RD/probes/*.md
-  4. tourney spec $run   -> review -> tourney freeze $run
+  4. tourney spec $run -> (optional) tourney audit $run -> tourney fold $run -> review -> tourney freeze $run
+  5. (optional) write a differential-test harness; see DIFFTEST_* in config.sh
 EOF
 }
 
@@ -141,6 +147,47 @@ cmd_spec() {
   commit_wt "$dir" "tournament spec draft"
   echo "Spec drafted in $dir (branch $BR/spec)."
   echo "Review SPEC.md and the tests, edit them in place if needed, then: tourney freeze $RUN"
+}
+
+cmd_audit() {
+  load_run "$1"; shift
+  local spec="$WT/spec"; [ -d "$spec" ] || die "no spec worktree; run 'tourney spec $RUN' first"
+  [ -n "$(git -C "$spec" status --porcelain)" ] && commit_wt "$spec" "tournament spec (human edits)"
+  local head; head=$(git -C "$spec" rev-parse HEAD)
+  mkdir -p "$RD/audit"
+  local a name
+  for a in "$RD"/auditors/*.md; do
+    name=$(basename "$a" .md); case "$name" in _*) continue;; esac
+    if [ $# -gt 0 ] && [[ ! " $* " =~ " $name " ]]; then continue; fi
+    throttle "$PARALLEL"
+    ( dir="$WT/audit-$name"
+      [ -d "$dir" ] && git -C "$REPO" worktree remove --force "$dir"
+      git -C "$REPO" branch -D -q "$BR/audit/$name" 2>/dev/null || true
+      dir=$(worktree "audit-$name" "$BR/audit/$name" "$head")
+      TV_LENS="$(cat "$a")" py render "$RD/prompts/audit.md" > "$RD/state/prompt-audit-$name.md"
+      run_agent "audit-$name" "$dir" "$RD/state/prompt-audit-$name.md"
+      commit_wt "$dir" "audit $name"
+      py extract-result "$RD/logs/audit-$name.json" > "$RD/audit/$name.md"
+      rm -rf "$RD/audit/$name"; mkdir -p "$RD/audit/$name"
+      git -C "$dir" diff --name-only "$head" HEAD | while read -r f; do
+        [ -f "$dir/$f" ] && cp "$dir/$f" "$RD/audit/$name/"; done ) &
+  done
+  wait
+  log "audit reports: $(ls "$RD"/audit/*.md 2>/dev/null | xargs -n1 basename | tr '\n' ' ')"
+  echo "Next: read $RD/audit/*.md, then: tourney fold $RUN"
+}
+
+cmd_fold() {
+  load_run "$1"
+  local spec="$WT/spec"; [ -d "$spec" ] || die "no spec worktree"
+  ls "$RD"/audit/*.md >/dev/null 2>&1 || die "no audit reports; run 'tourney audit $RUN' first"
+  [ -n "$(git -C "$spec" status --porcelain)" ] && commit_wt "$spec" "tournament spec (human edits)"
+  export TV_AUDIT_DIR="$RD/audit"
+  render "$RD/prompts/fold.md" "$RD/state/prompt-fold.md"
+  run_agent fold "$spec" "$RD/state/prompt-fold.md" --add-dir "$RD/audit"
+  commit_wt "$spec" "tournament spec: fold audit findings"
+  py extract-result "$RD/logs/fold.json" > "$RD/audit/FOLD.md"
+  echo "Folded. Summary: $RD/audit/FOLD.md. Review SPEC.md, then: tourney freeze $RUN"
 }
 
 cmd_freeze() {
@@ -236,6 +283,41 @@ cmd_measure() {
   cat "$RD/metrics/summary.md"
 }
 
+# Differential test: install the run's harness (untracked) into each worktree, run it,
+# collect JSON lines, remove it. 'spec' = original code behind the contract adapter.
+difftest_one() {
+  local T=$1 dir out="$RD/difftest/$1.jsonl" envset=""
+  dir="$WT/$T"; [ "$T" = reference ] && { dir="$WT/spec"; envset="$DIFFTEST_REFERENCE_ENV"; }
+  [ -d "$dir" ] || { log "difftest: no worktree for $T"; return; }
+  [ -e "$dir/$DIFFTEST_INSTALL" ] && { log "difftest: $DIFFTEST_INSTALL exists in $T; refusing to overwrite"; return; }
+  mkdir -p "$(dirname "$dir/$DIFFTEST_INSTALL")"
+  cp "$RD/$DIFFTEST_HARNESS" "$dir/$DIFFTEST_INSTALL"
+  (cd "$dir" && env $envset bash -c "$DIFFTEST_CMD") > "$out.raw" 2> "$out.err" || true
+  rm -f "$dir/$DIFFTEST_INSTALL"
+  grep '^{' "$out.raw" > "$out" || true
+  log "difftest $T: $(wc -l < "$out") case lines"
+}
+
+cmd_difftest() {
+  load_run "$1"; shift
+  [ -n "$DIFFTEST_CMD" ] && [ -n "$DIFFTEST_HARNESS" ] && [ -n "$DIFFTEST_INSTALL" ] \
+    || die "set DIFFTEST_HARNESS, DIFFTEST_INSTALL and DIFFTEST_CMD in config.sh"
+  [ -f "$RD/$DIFFTEST_HARNESS" ] || die "harness $RD/$DIFFTEST_HARNESS not found"
+  mkdir -p "$RD/difftest"
+  local targets T
+  if [ $# -gt 0 ]; then targets="$*"; else
+    targets="spec $(targets_or_default | tr '\n' ' ')"
+    [ -n "$DIFFTEST_REFERENCE_ENV" ] && targets="reference $targets"
+  fi
+  # 'spec' and 'reference' share a worktree: run them sequentially, the rest in parallel
+  for T in $targets; do case "$T" in spec|reference) difftest_one "$T";; esac; done
+  for T in $targets; do case "$T" in spec|reference) ;; *) throttle "$MEASURE_PARALLEL"; difftest_one "$T" &;; esac; done
+  wait
+  py difftest-summary "$RD" --rel "$DIFFTEST_REL_TOL" --abs "$DIFFTEST_ABS_TOL" > "$RD/difftest/summary.md"
+  py difftest-summary "$RD" --rel "$DIFFTEST_REL_TOL" --abs "$DIFFTEST_ABS_TOL" --blind > "$RD/difftest/summary.blind.md"
+  cat "$RD/difftest/summary.md"
+}
+
 probe_files() { for f in "$RD"/probes/*.md; do [ -e "$f" ] || continue; case "$(basename "$f")" in _*) ;; *) echo "$f";; esac; done; }
 
 probe_one() {
@@ -281,6 +363,7 @@ build_blind() {
   mkdir -p "$B/_baseline"; git -C "$REPO" archive "$(cat "$RD/base_ref")" | tar -x -C "$B/_baseline"
   cp "$RD/metrics/summary.blind.md" "$B/_evidence/metrics.md" 2>/dev/null || echo "(not measured)" > "$B/_evidence/metrics.md"
   cp "$RD/probe/summary.blind.md" "$B/_evidence/probes.md" 2>/dev/null || echo "(no probes run)" > "$B/_evidence/probes.md"
+  cp "$RD/difftest/summary.blind.md" "$B/_evidence/difftest.md" 2>/dev/null || true
   for p in "$RD"/probe/*__*.diff "$RD"/probe/*__*.notes.md; do
     [ -e "$p" ] || continue
     case "$(basename "$p")" in final__*) continue;; esac
@@ -335,7 +418,9 @@ cmd_build() {
 
 cmd_all() {
   local run=$1
-  cmd_diverge "$run"; ( cmd_measure "$run" ); ( cmd_probe "$run" ); ( cmd_judge "$run" ); ( cmd_synthesize "$run" )
+  cmd_diverge "$run"; ( cmd_measure "$run" )
+  if (load_run "$run" >/dev/null; [ -n "$DIFFTEST_CMD" ]); then ( cmd_difftest "$run" ); fi
+  ( cmd_probe "$run" ); ( cmd_judge "$run" ); ( cmd_synthesize "$run" )
   echo "Stopped before build: review .tournament/$run/synthesis/DESIGN.md"
 }
 
@@ -363,6 +448,7 @@ main() {
   local cmd="${1:-}"; shift || true
   case "$cmd" in
     init) cmd_init "$@";; spec) cmd_spec "$@";; freeze) cmd_freeze "$@";;
+    audit) cmd_audit "$@";; fold) cmd_fold "$@";; difftest) cmd_difftest "$@";;
     diverge) cmd_diverge "$@";; measure) cmd_measure "$@";; probe) cmd_probe "$@";;
     judge) cmd_judge "$@";; synthesize) cmd_synthesize "$@";; build) cmd_build "$@";;
     all) cmd_all "$@";; status) cmd_status "$@";; render) cmd_render "$@";; clean) cmd_clean "$@";;

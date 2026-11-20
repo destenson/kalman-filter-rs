@@ -15,6 +15,10 @@ final message.
   `_evidence/<cand>__<probe>.notes.md`: a fresh maintainer implemented hidden
   follow-up features (`_evidence/probe-request-*.md`) in each candidate. This is the
   most direct evidence of ease of change that exists. Read the diffs, not just the sizes.
+- `_evidence/difftest.md` (if present): every candidate, the original code (`spec`)
+  and possibly a reference oracle were run on the same generated cases. Disagreements
+  point at bugs that no test anticipated. Being in the minority is a lead to
+  investigate, not proof of a bug.
 
 # Your lens
 {{LENS}}
