@@ -1,5 +1,8 @@
 # tourney run config (bash, sourced by scripts/tourney). Edit freely.
 MODE=reboot                       # greenfield | reboot
+# Local: the default ~/.cargo is read-only under the file sandbox; candidates that add
+# dependencies (nalgebra) cannot extract crates there.
+export CARGO_HOME="/home/dennis/src/kalman-filters/.tournament/cargo-home"
 
 # --- commands, run inside each candidate worktree --------------------------
 BUILD_CMD="cargo build --all-targets --quiet"
@@ -33,7 +36,7 @@ ALLOWED_TOOLS="Read Edit Write Glob Grep Bash(ls *) Bash(cat *) Bash(git diff *)
 JUDGE_TOOLS="Read Glob Grep Bash(ls *) Bash(wc *) Bash(git diff *)"
 
 # Worktrees live outside the repo (default: ../<repo>.tourney/<run>/)
-WORKTREE_ROOT=""
+WORKTREE_ROOT="/home/dennis/src/kalman-filters/.tournament/linear-core/worktrees"  # in-repo: the file sandbox only writes under the workspace
 
 
 # differential test (run-specific harness; see difftest/harness.rs)

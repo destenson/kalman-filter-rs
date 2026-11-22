@@ -1,0 +1,22 @@
+{
+ "target": "B",
+ "probe": "observer-hook",
+ "files_changed": 3,
+ "insertions": 422,
+ "deletions": 6,
+ "churn": 428,
+ "touched": [
+  "src/filter.rs",
+  "src/matrix/mod.rs",
+  "tests/observer_tests.rs"
+ ],
+ "tests_ok": true,
+ "frozen_violations": [],
+ "agent": {
+  "cost_usd": null,
+  "turns": null,
+  "duration_s": null,
+  "is_error": null,
+  "subtype": null
+ }
+}

@@ -5,12 +5,16 @@
  "tests_passed": 146,
  "tests_failed": 0,
  "test_seconds": 6,
- "lint_count": 170,
- "loc": 1247,
+ "lint_count": 182,
+ "loc": 1231,
  "files": 6,
- "frozen_violations": [],
+ "frozen_violations": [
+  "modified:SPEC.md",
+  "modified:tests/spec_linear_kf.rs"
+ ],
  "out_of_scope_changes": [
   "benches/kalman_benchmarks.rs",
+  "docs/tournaments/linear-core.md",
   "examples/logging_demo.rs",
   "examples/metrics_server.rs",
   "examples/position_2d.rs",

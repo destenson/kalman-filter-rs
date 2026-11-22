@@ -1,0 +1,23 @@
+{
+ "target": "final",
+ "probe": "ergonomic-constructors",
+ "files_changed": 4,
+ "insertions": 559,
+ "deletions": 15,
+ "churn": 574,
+ "touched": [
+  "DESIGN_NOTES.md",
+  "src/builder.rs",
+  "tests/linear_builder.rs",
+  "tests/linear_constant_velocity.rs"
+ ],
+ "tests_ok": true,
+ "frozen_violations": [],
+ "agent": {
+  "cost_usd": null,
+  "turns": null,
+  "duration_s": null,
+  "is_error": null,
+  "subtype": null
+ }
+}

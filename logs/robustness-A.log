@@ -1,0 +1,30 @@
+warning: unused manifest key: target.cfg(target_os = "macos").features
+warning: unused manifest key: target.cfg(target_os = "macos").features
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/linear_kf_robustness.rs (target/debug/deps/linear_kf_robustness-ae918b6f0b2b5907)
+
+running 2 tests
+test random_models_stay_psd_f32 ... FAILED
+test random_models_stay_psd_f64 ... FAILED
+
+failures:
+
+---- random_models_stay_psd_f32 stdout ----
+
+thread 'random_models_stay_psd_f32' (15) panicked at tests/linear_kf_robustness.rs:130:1:
+P not PSD (step 1, n=5, m=4): λ ∈ [-9.801212976705923e-3, 8.470304071501664e0]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- random_models_stay_psd_f64 stdout ----
+
+thread 'random_models_stay_psd_f64' (16) panicked at tests/linear_kf_robustness.rs:129:1:
+P not PSD (step 57, n=4, m=3): λ ∈ [-1.192451639179439e-15, 1.246683162822128e-13]
+
+
+failures:
+    random_models_stay_psd_f32
+    random_models_stay_psd_f64
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.59s
+
+error: test failed, to rerun pass `--test linear_kf_robustness`

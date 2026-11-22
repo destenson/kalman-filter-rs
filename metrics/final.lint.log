@@ -438,60 +438,6 @@ help: consider using an iterator and enumerate()
 493 +             for (j, <item>) in x_diff.iter_mut().enumerate().take(n) {
     |
 
-warning: useless use of `vec!`
-   --> tests/functional_tests.rs:532:29
-    |
-532 |         let mut numerical = vec![0.0; 4];
-    |                             ^^^^^^^^^^^^ help: you can use an array directly: `[0.0; 4]`
-    |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
-    = note: `#[warn(clippy::useless_vec)]` on by default
-
-warning: use of deprecated associated function `kalman_filters::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
-   --> examples/logging_demo.rs:156:84
-    |
-156 |     let mut ekf: ExtendedKalmanFilter<f64, PendulumSystem> = ExtendedKalmanFilter::new(
-    |                                                                                    ^^^
-    |
-    = note: `#[warn(deprecated)]` on by default
-
-warning: unused `std::result::Result` that must be used
-   --> examples/logging_demo.rs:143:9
-    |
-143 |         kf.predict();
-    |         ^^^^^^^^^^^^
-    |
-    = note: this `Result` may be an `Err` variant, which should be handled
-    = note: `#[warn(unused_must_use)]` (part of `#[warn(unused)]`) on by default
-help: use `let _ = ...` to ignore the resulting value
-    |
-143 |         let _ = kf.predict();
-    |         +++++++
-
-warning: unused `std::result::Result` that must be used
-   --> examples/logging_demo.rs:213:5
-    |
-213 |     kf.predict();
-    |     ^^^^^^^^^^^^
-    |
-    = note: this `Result` may be an `Err` variant, which should be handled
-help: use `let _ = ...` to ignore the resulting value
-    |
-213 |     let _ = kf.predict();
-    |     +++++++
-
-warning: unused `std::result::Result` that must be used
-   --> examples/logging_demo.rs:233:5
-    |
-233 |     bad_kf.predict();
-    |     ^^^^^^^^^^^^^^^^
-    |
-    = note: this `Result` may be an `Err` variant, which should be handled
-help: use `let _ = ...` to ignore the resulting value
-    |
-233 |     let _ = bad_kf.predict();
-    |     +++++++
-
 warning: unused import: `kalman_to_information`
  --> tests/property_tests.rs:8:70
   |
@@ -520,6 +466,14 @@ warning: function `pseudo_randn` is never used
 492 | fn pseudo_randn(seed: usize) -> f64 {
     |    ^^^^^^^^^^^^
 
+warning: use of deprecated associated function `kalman_filters::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+  --> tests/information_tests.rs:82:38
+   |
+82 |     let mut inf = InformationFilter::new(
+   |                                      ^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
 warning: variable `delta_Y_a` should have a snake case name
    --> tests/property_tests.rs:230:9
     |
@@ -533,6 +487,91 @@ warning: variable `delta_Y_b` should have a snake case name
     |
 233 |     let delta_Y_b = vec![1.0, 0.0, 0.0, 1.0];
     |         ^^^^^^^^^ help: convert the identifier to snake case (notice the capitalization): `delta_y_b`
+
+warning: use of deprecated associated function `kalman_filters::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> tests/information_tests.rs:106:38
+    |
+106 |     let mut inf = InformationFilter::new(
+    |                                      ^^^
+
+warning: constant `EPSILON` is never used
+  --> tests/numerical_stability_tests.rs:13:7
+   |
+13 | const EPSILON: f64 = 1e-10;
+   |       ^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: called `unwrap` on `result` after checking its variant with `is_ok`
+   --> tests/validation_tests.rs:173:18
+    |
+172 |     if result.is_ok() {
+    |     ----------------- help: try: `if let Ok(<item>) = result`
+173 |         let pf = result.unwrap();
+    |                  ^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#unnecessary_unwrap
+    = note: `#[warn(clippy::unnecessary_unwrap)]` on by default
+
+warning: use of deprecated associated function `kalman_filters::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> examples/enkf_weather_model.rs:191:42
+    |
+191 |     let mut enkf = EnsembleKalmanFilter::new(
+    |                                          ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: variable `Y_init` should have a snake case name
+   --> tests/numerical_stability_tests.rs:152:9
+    |
+152 |     let Y_init = vec![1e-8, 0.0, 0.0, 1e-8]; // Nearly zero information
+    |         ^^^^^^ help: convert the identifier to snake case (notice the capitalization): `y_init`
+    |
+    = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: variable `Y_init` should have a snake case name
+   --> tests/numerical_stability_tests.rs:183:9
+    |
+183 |     let Y_init = vec![1.0, 0.0, 0.0, 1.0];
+    |         ^^^^^^ help: convert the identifier to snake case (notice the capitalization): `y_init`
+
+warning: use of deprecated associated function `kalman_filters::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> tests/information_tests.rs:414:38
+    |
+414 |     let mut inf = InformationFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `kalman_filters::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> examples/logging_demo.rs:156:84
+    |
+156 |     let mut ekf: ExtendedKalmanFilter<f64, PendulumSystem> = ExtendedKalmanFilter::new(
+    |                                                                                    ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `kalman_filters::CubatureKalmanFilter::<T, S>::new`: Use CubatureKalmanFilterBuilder instead
+   --> examples/ckf_high_dimensional.rs:194:41
+    |
+194 |     let mut ckf = CubatureKalmanFilter::new(
+    |                                         ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: unused variable: `dt`
+   --> tests/fault_tolerance_tests.rs:391:34
+    |
+391 |     let motion = |state: &[f64], dt: f64| -> Vec<f64> {
+    |                                  ^^ help: if this is intentional, prefix it with an underscore: `_dt`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `rand_deterministic` is never used
+   --> tests/fault_tolerance_tests.rs:498:4
+    |
+498 | fn rand_deterministic() -> f64 {
+    |    ^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
 warning: use of deprecated associated function `kalman_filters::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
    --> benches/kalman_benchmarks.rs:112:41
@@ -584,11 +623,57 @@ warning: use of deprecated associated function `kalman_filters::EnsembleKalmanFi
 346 |         let mut enkf = EnsembleKalmanFilter::new(
     |                                              ^^^
 
+warning: variable `Y_init` should have a snake case name
+   --> tests/fault_tolerance_tests.rs:157:9
+    |
+157 |     let Y_init = vec![1.0, 0.0, 0.0, 1.0];
+    |         ^^^^^^ help: convert the identifier to snake case (notice the capitalization): `y_init`
+    |
+    = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: use of deprecated associated function `kalman_filters::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> examples/particle_filter_robot.rs:172:34
+    |
+172 |     let mut pf = ParticleFilter::new(
+    |                                  ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
 warning: use of deprecated associated function `kalman_filters::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
    --> benches/kalman_benchmarks.rs:510:42
     |
 510 |             let mut pf = ParticleFilter::new(
     |                                          ^^^
+
+warning: variable `H` should have a snake case name
+   --> tests/fault_tolerance_tests.rs:171:9
+    |
+171 |     let H = vec![1.0, 0.0];
+    |         ^ help: convert the identifier to snake case: `h`
+
+warning: variable `R` should have a snake case name
+   --> tests/fault_tolerance_tests.rs:172:9
+    |
+172 |     let R = vec![0.1];
+    |         ^ help: convert the identifier to snake case: `r`
+
+warning: variable `Y_init` should have a snake case name
+   --> tests/fault_tolerance_tests.rs:255:9
+    |
+255 |     let Y_init = vec![1.0, 0.0, 0.0, 1.0];
+    |         ^^^^^^ help: convert the identifier to snake case (notice the capitalization): `y_init`
+
+warning: variable `H` should have a snake case name
+   --> tests/fault_tolerance_tests.rs:275:9
+    |
+275 |     let H = vec![1.0, 0.0];
+    |         ^ help: convert the identifier to snake case: `h`
+
+warning: variable `R` should have a snake case name
+   --> tests/fault_tolerance_tests.rs:276:9
+    |
+276 |     let R = vec![0.1];
+    |         ^ help: convert the identifier to snake case: `r`
 
 warning: use of deprecated associated function `kalman_filters::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
    --> benches/kalman_benchmarks.rs:563:39
@@ -614,6 +699,78 @@ warning: use of deprecated associated function `kalman_filters::EnsembleKalmanFi
 617 |                 EnsembleKalmanFilter::new(
     |                                       ^^^
 
+warning: use of deprecated associated function `kalman_filters::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> examples/ukf_nonlinear_tracking.rs:210:42
+    |
+210 |     let mut ukf = UnscentedKalmanFilter::new(
+    |                                          ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: unused `std::result::Result` that must be used
+   --> examples/logging_demo.rs:143:9
+    |
+143 |         kf.predict();
+    |         ^^^^^^^^^^^^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+    = note: `#[warn(unused_must_use)]` (part of `#[warn(unused)]`) on by default
+help: use `let _ = ...` to ignore the resulting value
+    |
+143 |         let _ = kf.predict();
+    |         +++++++
+
+warning: unused `std::result::Result` that must be used
+   --> examples/logging_demo.rs:213:5
+    |
+213 |     kf.predict();
+    |     ^^^^^^^^^^^^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+help: use `let _ = ...` to ignore the resulting value
+    |
+213 |     let _ = kf.predict();
+    |     +++++++
+
+warning: unused `std::result::Result` that must be used
+   --> examples/logging_demo.rs:233:5
+    |
+233 |     bad_kf.predict();
+    |     ^^^^^^^^^^^^^^^^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+help: use `let _ = ...` to ignore the resulting value
+    |
+233 |     let _ = bad_kf.predict();
+    |     +++++++
+
+warning: this operation has no effect
+   --> examples/position_2d.rs:224:47
+    |
+224 |     println!("X position variance:  {:.6}", p[0 * 4 + 0]);
+    |                                               ^^^^^^^^^ help: consider reducing it to: `0`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#identity_op
+    = note: `#[warn(clippy::identity_op)]` on by default
+
+error: this operation will always return zero. This is likely not the intended outcome
+   --> examples/position_2d.rs:224:47
+    |
+224 |     println!("X position variance:  {:.6}", p[0 * 4 + 0]);
+    |                                               ^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#erasing_op
+    = note: `#[deny(clippy::erasing_op)]` on by default
+
+warning: this operation has no effect
+   --> examples/position_2d.rs:225:47
+    |
+225 |     println!("Y position variance:  {:.6}", p[1 * 4 + 1]);
+    |                                               ^^^^^ help: consider reducing it to: `4`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#identity_op
+
+error: could not compile `kalman_filters` (example "position_2d") due to 1 previous error; 2 warnings emitted
 warning: passing a unit value to a function
   --> benches/kalman_benchmarks.rs:41:17
    |
@@ -762,6 +919,32 @@ help: move the expression in front of the call and replace it with the unit lite
 277 ~                     black_box(());
     |
 
+warning: this operation has no effect
+   --> examples/sensor_fusion.rs:182:7
+    |
+182 |     q[0 * 6 + 0] = dt.powi(4) / 4.0 * q_acc; // x-x
+    |       ^^^^^^^^^ help: consider reducing it to: `0`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#identity_op
+    = note: `#[warn(clippy::identity_op)]` on by default
+
+error: this operation will always return zero. This is likely not the intended outcome
+   --> examples/sensor_fusion.rs:182:7
+    |
+182 |     q[0 * 6 + 0] = dt.powi(4) / 4.0 * q_acc; // x-x
+    |       ^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#erasing_op
+    = note: `#[deny(clippy::erasing_op)]` on by default
+
+warning: this operation has no effect
+   --> examples/sensor_fusion.rs:183:7
+    |
+183 |     q[1 * 6 + 1] = dt.powi(4) / 4.0 * q_acc; // y-y
+    |       ^^^^^ help: consider reducing it to: `6`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#identity_op
+
 warning: passing a unit value to a function
    --> benches/kalman_benchmarks.rs:313:17
     |
@@ -805,13 +988,14 @@ help: move the expression in front of the call and replace it with the unit lite
 362 ~                 black_box(());
     |
 
-warning: constant `EPSILON` is never used
-  --> tests/numerical_stability_tests.rs:13:7
+warning: redundant closure
+  --> examples/if_sensor_network.rs:99:41
    |
-13 | const EPSILON: f64 = 1e-10;
-   |       ^^^^^^^
+99 |     let seed = args.seed.unwrap_or_else(|| rand::random::<u64>());
+   |                                         ^^^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the function itself: `rand::random::<u64>`
    |
-   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#redundant_closure
+   = note: `#[warn(clippy::redundant_closure)]` on by default
 
 warning: passing a unit value to a function
    --> benches/kalman_benchmarks.rs:475:17
@@ -825,6 +1009,30 @@ help: move the expression in front of the call and replace it with the unit lite
 475 ~                 kf_update.update(black_box(&measurement)).unwrap();
 476 ~                 black_box(());
     |
+
+warning: this operation has no effect
+   --> examples/sensor_fusion.rs:334:48
+    |
+334 |     println!("X position variance:   {:.6}", p[0 * 6 + 0]);
+    |                                                ^^^^^^^^^ help: consider reducing it to: `0`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#identity_op
+
+error: this operation will always return zero. This is likely not the intended outcome
+   --> examples/sensor_fusion.rs:334:48
+    |
+334 |     println!("X position variance:   {:.6}", p[0 * 6 + 0]);
+    |                                                ^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#erasing_op
+
+warning: this operation has no effect
+   --> examples/sensor_fusion.rs:335:48
+    |
+335 |     println!("Y position variance:   {:.6}", p[1 * 6 + 1]);
+    |                                                ^^^^^ help: consider reducing it to: `6`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#identity_op
 
 warning: passing a unit value to a function
    --> benches/kalman_benchmarks.rs:502:17
@@ -907,6 +1115,28 @@ help: move the expression in front of the call and replace it with the unit lite
 676 ~             black_box(());
     |
 
+warning: this `if` statement can be collapsed
+   --> examples/if_sensor_network.rs:240:9
+    |
+240 | /         if let Some(consensus_state) = consensus.get_consensus() {
+241 | |             if let Ok(state) = consensus_state.recover_state() {
+242 | |                 let error = ((state[0] - true_x).powi(2) + (state[1] - true_y).powi(2)).sqrt();
+...   |
+258 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#collapsible_if
+    = note: `#[warn(clippy::collapsible_if)]` on by default
+help: collapse nested if block
+    |
+240 ~         if let Some(consensus_state) = consensus.get_consensus()
+241 ~             && let Ok(state) = consensus_state.recover_state() {
+242 |                 let error = ((state[0] - true_x).powi(2) + (state[1] - true_y).powi(2)).sqrt();
+...
+256 |                 }
+257 ~             }
+    |
+
 warning: passing a unit value to a function
    --> benches/kalman_benchmarks.rs:707:13
     |
@@ -933,62 +1163,51 @@ help: move the expression in front of the call and replace it with the unit lite
 717 ~             black_box(());
     |
 
-warning: variable `Y_init` should have a snake case name
-   --> tests/numerical_stability_tests.rs:152:9
+warning: manual implementation of `.is_multiple_of()`
+   --> examples/if_sensor_network.rs:342:12
     |
-152 |     let Y_init = vec![1e-8, 0.0, 0.0, 1e-8]; // Nearly zero information
-    |         ^^^^^^ help: convert the identifier to snake case (notice the capitalization): `y_init`
+342 |         if time_ms % 1000 == 0 {
+    |            ^^^^^^^^^^^^^^^^^^^ help: replace with: `time_ms.is_multiple_of(1000)`
     |
-    = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_is_multiple_of
+    = note: `#[warn(clippy::manual_is_multiple_of)]` on by default
 
-warning: variable `Y_init` should have a snake case name
-   --> tests/numerical_stability_tests.rs:183:9
+warning: manual implementation of `.is_multiple_of()`
+   --> examples/if_sensor_network.rs:356:12
     |
-183 |     let Y_init = vec![1.0, 0.0, 0.0, 1.0];
-    |         ^^^^^^ help: convert the identifier to snake case (notice the capitalization): `y_init`
+356 |         if time_ms % 10 == 0 {
+    |            ^^^^^^^^^^^^^^^^^ help: replace with: `time_ms.is_multiple_of(10)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_is_multiple_of
 
-warning: this function has too many arguments (10/7)
-   --> tests/spec_linear_kf.rs:720:9
+warning: manual implementation of `.is_multiple_of()`
+   --> examples/if_sensor_network.rs:369:12
     |
-720 |         fn $name(label: &str, n: usize, m: usize, p0: &[f64], f: &[f64], q: &[f64], h: &[f64], r: &[f64], sym_tol: f64, psd_tol: f64) {
-    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-...
-739 | psd_run!(psd_run_f64, f64, |a: &[f64]| a.to_vec(), |a: &[f64]| a.to_vec());
-    | -------------------------------------------------------------------------- in this macro invocation
+369 |         if time_ms % 100 == 0 {
+    |            ^^^^^^^^^^^^^^^^^^ help: replace with: `time_ms.is_multiple_of(100)`
     |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_arguments
-    = note: `#[warn(clippy::too_many_arguments)]` on by default
-    = note: this warning originates in the macro `psd_run` (in Nightly builds, run with -Z macro-backtrace for more info)
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_is_multiple_of
 
-warning: this function has too many arguments (10/7)
-   --> tests/spec_linear_kf.rs:720:9
-    |
-720 |         fn $name(label: &str, n: usize, m: usize, p0: &[f64], f: &[f64], q: &[f64], h: &[f64], r: &[f64], sym_tol: f64, psd_tol: f64) {
-    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-...
-740 | psd_run!(psd_run_f32, f32, |a: &[f64]| to_f32(a), |a: &[f32]| to_f64(a));
-    | ------------------------------------------------------------------------ in this macro invocation
-    |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_arguments
-    = note: this warning originates in the macro `psd_run` (in Nightly builds, run with -Z macro-backtrace for more info)
+error: approximate value of `f{32, 64}::consts::PI` found
+  --> examples/particle_filter_robot.rs:75:35
+   |
+75 |     #[arg(long, default_value_t = 3.14159265358979323846)]
+   |                                   ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: consider using the constant directly
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#approx_constant
+   = note: `#[deny(clippy::approx_constant)]` on by default
 
-warning: the use of negated comparison operators on partially ordered types produces code that is hard to read and refactor, please consider using the `partial_cmp` method instead, to make it clear that the two values could be incomparable
-   --> tests/spec_linear_kf.rs:959:12
+warning: useless use of `vec!`
+   --> tests/functional_tests.rs:532:29
     |
-959 |         if !(d > 1e3 * f64::EPSILON * s[j * m + j]) {
-    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+532 |         let mut numerical = vec![0.0; 4];
+    |                             ^^^^^^^^^^^^ help: you can use an array directly: `[0.0; 4]`
     |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#neg_cmp_op_on_partial_ord
-    = note: `#[warn(clippy::neg_cmp_op_on_partial_ord)]` on by default
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+    = note: `#[warn(clippy::useless_vec)]` on by default
 
-warning: the use of negated comparison operators on partially ordered types produces code that is hard to read and refactor, please consider using the `partial_cmp` method instead, to make it clear that the two values could be incomparable
-    --> tests/spec_linear_kf.rs:1016:8
-     |
-1016 |     if !(d > 1e-15 * s[3].abs().max(s[0].abs())) {
-     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-     |
-     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#neg_cmp_op_on_partial_ord
-
+error: could not compile `kalman_filters` (example "sensor_fusion") due to 2 previous errors; 4 warnings emitted
 warning: unused `std::result::Result` that must be used
   --> benches/kalman_benchmarks.rs:34:17
    |
@@ -1122,171 +1341,94 @@ help: use `let _ = ...` to ignore the resulting value
 715 |             let _ = kf_f64.predict();
     |             +++++++
 
-warning: unused variable: `dt`
-   --> tests/fault_tolerance_tests.rs:391:34
-    |
-391 |     let motion = |state: &[f64], dt: f64| -> Vec<f64> {
-    |                                  ^^ help: if this is intentional, prefix it with an underscore: `_dt`
-    |
-    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: function `rand_deterministic` is never used
-   --> tests/fault_tolerance_tests.rs:498:4
-    |
-498 | fn rand_deterministic() -> f64 {
-    |    ^^^^^^^^^^^^^^^^^^
-    |
-    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-
-warning: variable `Y_init` should have a snake case name
-   --> tests/fault_tolerance_tests.rs:157:9
-    |
-157 |     let Y_init = vec![1.0, 0.0, 0.0, 1.0];
-    |         ^^^^^^ help: convert the identifier to snake case (notice the capitalization): `y_init`
-    |
-    = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
-
-warning: variable `H` should have a snake case name
-   --> tests/fault_tolerance_tests.rs:171:9
-    |
-171 |     let H = vec![1.0, 0.0];
-    |         ^ help: convert the identifier to snake case: `h`
-
-warning: variable `R` should have a snake case name
-   --> tests/fault_tolerance_tests.rs:172:9
-    |
-172 |     let R = vec![0.1];
-    |         ^ help: convert the identifier to snake case: `r`
-
-warning: variable `Y_init` should have a snake case name
-   --> tests/fault_tolerance_tests.rs:255:9
-    |
-255 |     let Y_init = vec![1.0, 0.0, 0.0, 1.0];
-    |         ^^^^^^ help: convert the identifier to snake case (notice the capitalization): `y_init`
-
-warning: variable `H` should have a snake case name
-   --> tests/fault_tolerance_tests.rs:275:9
-    |
-275 |     let H = vec![1.0, 0.0];
-    |         ^ help: convert the identifier to snake case: `h`
-
-warning: variable `R` should have a snake case name
-   --> tests/fault_tolerance_tests.rs:276:9
-    |
-276 |     let R = vec![0.1];
-    |         ^ help: convert the identifier to snake case: `r`
-
-warning: use of deprecated associated function `kalman_filters::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
-  --> tests/information_tests.rs:82:38
+error: approximate value of `f{32, 64}::consts::PI` found
+  --> examples/particle_filter_robot.rs:75:35
    |
-82 |     let mut inf = InformationFilter::new(
-   |                                      ^^^
+75 |     #[arg(long, default_value_t = 3.14159265358979323846)]
+   |                                   ^^^^^^^^^^^^^^^^^^^^^^
    |
-   = note: `#[warn(deprecated)]` on by default
+   = help: consider using the constant directly
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#approx_constant
 
-warning: use of deprecated associated function `kalman_filters::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
-   --> tests/information_tests.rs:106:38
+warning: field assignment outside of initializer for an instance created with Default::default()
+   --> examples/ukf_nonlinear_tracking.rs:222:5
     |
-106 |     let mut inf = InformationFilter::new(
-    |                                      ^^^
+222 |     params.alpha = args.alpha;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: consider initializing the variable with `UKFParameters::<f64> { alpha: args.alpha, beta: args.beta, kappa: args.kappa }` and removing relevant reassignments
+   --> examples/ukf_nonlinear_tracking.rs:221:5
+    |
+221 |     let mut params = UKFParameters::default();
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+    = note: `#[warn(clippy::field_reassign_with_default)]` on by default
 
-warning: use of deprecated associated function `kalman_filters::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
-   --> tests/information_tests.rs:414:38
+warning: useless use of `vec!`
+   --> examples/particle_filter_robot.rs:187:21
     |
-414 |     let mut inf = InformationFilter::new(
-    |                                      ^^^
+187 |       let landmarks = vec![
+    |  _____________________^
+188 | |         (args.landmark1_x, args.landmark1_y),
+189 | |         (args.landmark2_x, args.landmark2_y),
+190 | |         (args.landmark3_x, args.landmark3_y),
+191 | |         (args.landmark4_x, args.landmark4_y),
+192 | |     ];
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+    = note: `#[warn(clippy::useless_vec)]` on by default
+help: you can use an array directly
+    |
+187 ~     let landmarks = [(args.landmark1_x, args.landmark1_y),
+188 +         (args.landmark2_x, args.landmark2_y),
+189 +         (args.landmark3_x, args.landmark3_y),
+190 ~         (args.landmark4_x, args.landmark4_y)];
+    |
 
-warning: redundant closure
-  --> examples/if_sensor_network.rs:99:41
-   |
-99 |     let seed = args.seed.unwrap_or_else(|| rand::random::<u64>());
-   |                                         ^^^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the function itself: `rand::random::<u64>`
-   |
-   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#redundant_closure
-   = note: `#[warn(clippy::redundant_closure)]` on by default
-
-warning: this `if` statement can be collapsed
-   --> examples/if_sensor_network.rs:240:9
+error: could not compile `kalman_filters` (example "particle_filter_robot") due to 2 previous errors; 2 warnings emitted
+warning: this function has too many arguments (10/7)
+   --> tests/spec_linear_kf.rs:720:9
     |
-240 | /         if let Some(consensus_state) = consensus.get_consensus() {
-241 | |             if let Ok(state) = consensus_state.recover_state() {
-242 | |                 let error = ((state[0] - true_x).powi(2) + (state[1] - true_y).powi(2)).sqrt();
-...   |
-258 | |         }
-    | |_________^
-    |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#collapsible_if
-    = note: `#[warn(clippy::collapsible_if)]` on by default
-help: collapse nested if block
-    |
-240 ~         if let Some(consensus_state) = consensus.get_consensus()
-241 ~             && let Ok(state) = consensus_state.recover_state() {
-242 |                 let error = ((state[0] - true_x).powi(2) + (state[1] - true_y).powi(2)).sqrt();
+720 |         fn $name(label: &str, n: usize, m: usize, p0: &[f64], f: &[f64], q: &[f64], h: &[f64], r: &[f64], sym_tol: f64, psd_tol: f64) {
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ...
-256 |                 }
-257 ~             }
+739 | psd_run!(psd_run_f64, f64, |a: &[f64]| a.to_vec(), |a: &[f64]| a.to_vec());
+    | -------------------------------------------------------------------------- in this macro invocation
     |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_arguments
+    = note: `#[warn(clippy::too_many_arguments)]` on by default
+    = note: this warning originates in the macro `psd_run` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-warning: manual implementation of `.is_multiple_of()`
-   --> examples/if_sensor_network.rs:342:12
+warning: this function has too many arguments (10/7)
+   --> tests/spec_linear_kf.rs:720:9
     |
-342 |         if time_ms % 1000 == 0 {
-    |            ^^^^^^^^^^^^^^^^^^^ help: replace with: `time_ms.is_multiple_of(1000)`
+720 |         fn $name(label: &str, n: usize, m: usize, p0: &[f64], f: &[f64], q: &[f64], h: &[f64], r: &[f64], sym_tol: f64, psd_tol: f64) {
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+740 | psd_run!(psd_run_f32, f32, |a: &[f64]| to_f32(a), |a: &[f32]| to_f64(a));
+    | ------------------------------------------------------------------------ in this macro invocation
     |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_is_multiple_of
-    = note: `#[warn(clippy::manual_is_multiple_of)]` on by default
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_arguments
+    = note: this warning originates in the macro `psd_run` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-warning: manual implementation of `.is_multiple_of()`
-   --> examples/if_sensor_network.rs:356:12
+warning: the use of negated comparison operators on partially ordered types produces code that is hard to read and refactor, please consider using the `partial_cmp` method instead, to make it clear that the two values could be incomparable
+   --> tests/spec_linear_kf.rs:959:12
     |
-356 |         if time_ms % 10 == 0 {
-    |            ^^^^^^^^^^^^^^^^^ help: replace with: `time_ms.is_multiple_of(10)`
+959 |         if !(d > 1e3 * f64::EPSILON * s[j * m + j]) {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_is_multiple_of
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#neg_cmp_op_on_partial_ord
+    = note: `#[warn(clippy::neg_cmp_op_on_partial_ord)]` on by default
 
-warning: manual implementation of `.is_multiple_of()`
-   --> examples/if_sensor_network.rs:369:12
-    |
-369 |         if time_ms % 100 == 0 {
-    |            ^^^^^^^^^^^^^^^^^^ help: replace with: `time_ms.is_multiple_of(100)`
-    |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_is_multiple_of
+warning: the use of negated comparison operators on partially ordered types produces code that is hard to read and refactor, please consider using the `partial_cmp` method instead, to make it clear that the two values could be incomparable
+    --> tests/spec_linear_kf.rs:1016:8
+     |
+1016 |     if !(d > 1e-15 * s[3].abs().max(s[0].abs())) {
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#neg_cmp_op_on_partial_ord
 
-warning: use of deprecated associated function `kalman_filters::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
-   --> examples/particle_filter_robot.rs:172:34
-    |
-172 |     let mut pf = ParticleFilter::new(
-    |                                  ^^^
-    |
-    = note: `#[warn(deprecated)]` on by default
-
-warning: this operation has no effect
-   --> examples/position_2d.rs:224:47
-    |
-224 |     println!("X position variance:  {:.6}", p[0 * 4 + 0]);
-    |                                               ^^^^^^^^^ help: consider reducing it to: `0`
-    |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#identity_op
-    = note: `#[warn(clippy::identity_op)]` on by default
-
-error: this operation will always return zero. This is likely not the intended outcome
-   --> examples/position_2d.rs:224:47
-    |
-224 |     println!("X position variance:  {:.6}", p[0 * 4 + 0]);
-    |                                               ^^^^^
-    |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#erasing_op
-    = note: `#[deny(clippy::erasing_op)]` on by default
-
-warning: this operation has no effect
-   --> examples/position_2d.rs:225:47
-    |
-225 |     println!("Y position variance:  {:.6}", p[1 * 4 + 1]);
-    |                                               ^^^^^ help: consider reducing it to: `4`
-    |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#identity_op
-
-error: could not compile `kalman_filters` (example "position_2d") due to 1 previous error; 2 warnings emitted
 warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
    --> src/ensemble/filter.rs:571:46
     |
@@ -1330,16 +1472,6 @@ warning: use of deprecated associated function `ensemble::filter::EnsembleKalman
     |
 830 |         let mut enkf = EnsembleKalmanFilter::new(
     |                                              ^^^
-
-error: approximate value of `f{32, 64}::consts::PI` found
-  --> examples/particle_filter_robot.rs:75:35
-   |
-75 |     #[arg(long, default_value_t = 3.14159265358979323846)]
-   |                                   ^^^^^^^^^^^^^^^^^^^^^^
-   |
-   = help: consider using the constant directly
-   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#approx_constant
-   = note: `#[deny(clippy::approx_constant)]` on by default
 
 warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
    --> src/extended.rs:536:45
@@ -1389,44 +1521,12 @@ warning: use of deprecated associated function `extended::ExtendedKalmanFilter::
 881 |         let mut ekf = ExtendedKalmanFilter::new(
     |                                             ^^^
 
-error: approximate value of `f{32, 64}::consts::PI` found
-  --> examples/particle_filter_robot.rs:75:35
-   |
-75 |     #[arg(long, default_value_t = 3.14159265358979323846)]
-   |                                   ^^^^^^^^^^^^^^^^^^^^^^
-   |
-   = help: consider using the constant directly
-   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#approx_constant
-
 warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
    --> src/extended.rs:907:41
     |
 907 |         let ekf = ExtendedKalmanFilter::new(
     |                                         ^^^
 
-warning: useless use of `vec!`
-   --> examples/particle_filter_robot.rs:187:21
-    |
-187 |       let landmarks = vec![
-    |  _____________________^
-188 | |         (args.landmark1_x, args.landmark1_y),
-189 | |         (args.landmark2_x, args.landmark2_y),
-190 | |         (args.landmark3_x, args.landmark3_y),
-191 | |         (args.landmark4_x, args.landmark4_y),
-192 | |     ];
-    | |_____^
-    |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
-    = note: `#[warn(clippy::useless_vec)]` on by default
-help: you can use an array directly
-    |
-187 ~     let landmarks = [(args.landmark1_x, args.landmark1_y),
-188 +         (args.landmark2_x, args.landmark2_y),
-189 +         (args.landmark3_x, args.landmark3_y),
-190 ~         (args.landmark4_x, args.landmark4_y)];
-    |
-
-error: could not compile `kalman_filters` (example "particle_filter_robot") due to 2 previous errors; 2 warnings emitted
 warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
    --> src/information/filter.rs:523:45
     |

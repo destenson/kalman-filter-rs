@@ -1,0 +1,22 @@
+{
+ "target": "C",
+ "probe": "control-input",
+ "files_changed": 3,
+ "insertions": 418,
+ "deletions": 32,
+ "churn": 450,
+ "touched": [
+  "DESIGN_NOTES.md",
+  "src/filter.rs",
+  "tests/control_input.rs"
+ ],
+ "tests_ok": true,
+ "frozen_violations": [],
+ "agent": {
+  "cost_usd": null,
+  "turns": null,
+  "duration_s": null,
+  "is_error": null,
+  "subtype": null
+ }
+}

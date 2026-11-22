@@ -1,0 +1,501 @@
+diff --git a/DESIGN_NOTES.md b/DESIGN_NOTES.md
+index 99cfc61..b28980b 100644
+--- a/DESIGN_NOTES.md
++++ b/DESIGN_NOTES.md
+@@ -54,7 +54,14 @@
+   The same holds for symmetric input to `new`: `covariance()` returns `p0` bit-for-bit.
+ - **Errors.** Added `ZeroDimension` and `NonFiniteInput`. Non-finite results return
+   `FilterDivergence`. Dimension products use `checked_mul` (B19).
+-- **No logging or metrics in the math.** Callers can wrap `predict`/`update` (Q4).
++- **No logging or metrics in the math; an observer is a per-call callback.**
++  `update_with_observer(z, &mut f)` reports `y`, `S` (row-major m×m) and `NIS = yᵀS⁻¹y` after the
++  estimate has been committed, and `update` runs the same body with a compile-time `OBSERVE = false`,
++  so the copy of `S`, the extra Cholesky solve and the callback are removed by the compiler rather
++  than branched over. The callback is a parameter, not state on the filter, so
++  `LinearKalmanFilter` stays a plain value (`Clone`, `Debug`, auto `Send`/`Sync`) and the numeric
++  steps are unchanged (Q4). Cost: one extra m×m workspace buffer, allocated by `new` and written
++  only when observing.
+ 
+ ## 3. What fought back
+ 
+@@ -92,8 +99,8 @@
+ ## 5. Next changes
+ 
+ - Easy: time-varying models (`set_transition(&[T])` etc. would reuse `symmetric_psd`); control input
+-  (one more `gemv` in predict, with `B` validated in `new`); exposing the innovation/`S` for NIS gating
+-  (both are already in the workspace); a square-root variant (nalgebra has `Cholesky::rank_one_update`).
++  (one more `gemv` in predict, with `B` validated in `new`); a square-root variant (nalgebra has
++  `Cholesky::rank_one_update`).
+ - Easy: EKF on this core. The EKF update is this update with `H` the Jacobian and `y = z − h(x)`. Extracting
+   the update body into a function taking `(h, y)` is a small refactor.
+ - Hard-ish: anything that wants `T` outside `RealField` (e.g. fixed-point). The bounds would have to change.
+@@ -140,8 +147,9 @@ tests in `information_tests`/`property_tests` were ported instead.
+ 
+ ## Summary
+ 
+-- Tests: 32/32 frozen spec tests pass; `cargo test --lib` passes (105, including 6 new filter unit tests).
+-- LOC: `src/filter.rs` 421 (337 without unit tests, docs included), `src/matrix/mod.rs` 94 (shim); ≈ 4 000 lines removed.
++- Tests: 32/32 frozen spec tests pass; `cargo test --lib` passes (105, including 6 new filter unit tests);
++  `tests/observer_hook.rs` passes (7).
++- LOC: `src/filter.rs` 510 (426 without unit tests, docs included), `src/matrix/mod.rs` 94 (shim); ≈ 4 000 lines removed.
+ - Build: `cargo build --all-targets` green with default features; clippy is clean in the owned files.
+ - Most important idea: the filter *is* nalgebra. Generic `Dim` parameters cover static and dynamic
+   sizes, a preallocated workspace and in-place BLAS calls make steps allocation-free, and pivots are
+diff --git a/src/filter.rs b/src/filter.rs
+index f651cd1..26252bd 100644
+--- a/src/filter.rs
++++ b/src/filter.rs
+@@ -13,6 +13,11 @@
+ //!   solves; `P ← (I − K H) P (I − K H)ᵀ + K R Kᵀ` (Joseph form).
+ //! - Results are committed only if finite; otherwise the filter is left unchanged.
+ //!
++//! [`update_with_observer`](LinearKalmanFilter::update_with_observer) runs the same update and
++//! then hands the innovation `y`, its covariance `S` and `NIS = yᵀS⁻¹y` to a callback. Plain
++//! [`update`](LinearKalmanFilter::update) calls the same body with the reporting compiled away,
++//! so nothing measurable is added to a filter that does not observe.
++//!
+ //! ```
+ //! use kalman_filters::linear::LinearKalmanFilter;
+ //! // 1-D random walk observed directly (row-major slices).
+@@ -65,6 +70,22 @@ fn rel_tol<T: RealField + Copy>() -> T {
+     T::default_epsilon() * nalgebra::convert::<f64, T>(100.0)
+ }
+ 
++/// One successful update, as reported to an observer.
++///
++/// `y` is the innovation of length m, `s` is its covariance `S = H P Hᵀ + R` as an m×m
++/// row-major slice, and `nis` is `yᵀ S⁻¹ y`. All three describe the update that just
++/// committed: they are computed from the estimate *before* it, and the callback runs after
++/// the estimate has been replaced, so the filter state and the report agree.
++#[derive(Clone, Copy, Debug)]
++pub struct Innovation<'a, T> {
++    /// `y = z − H x`, length m.
++    pub y: &'a [T],
++    /// `S = H P Hᵀ + R`, m×m row-major.
++    pub s: &'a [T],
++    /// Normalized innovation squared, `yᵀ S⁻¹ y`.
++    pub nis: T,
++}
++
+ /// Linear Kalman filter over scalar `T` (`f32` or `f64`), state dimension `N`, measurement
+ /// dimension `M`.
+ ///
+@@ -104,6 +125,9 @@ where
+     /// Storage for `S` and its Cholesky factor. `Cholesky` takes its matrix by value, so the
+     /// buffer is moved out and back each update; it is `None` only during that move.
+     s: Option<OMatrix<T, M, M>>,
++    /// `S` as it was before factoring, kept for the observer. Only written on an observed
++    /// update; allocated at construction so observing never allocates.
++    s_obs: OMatrix<T, M, M>,
+     work_n: OVector<T, N>,
+     work_m: OVector<T, M>,
+ }
+@@ -159,6 +183,7 @@ where
+                 y: OVector::zeros_generic(m, nalgebra::U1),
+                 s_diag: OVector::zeros_generic(m, nalgebra::U1),
+                 s: Some(OMatrix::zeros_generic(m, m)),
++                s_obs: OMatrix::zeros_generic(m, m),
+                 work_n: OVector::zeros_generic(n, nalgebra::U1),
+                 work_m: OVector::zeros_generic(m, nalgebra::U1),
+             },
+@@ -208,7 +233,53 @@ where
+     /// Errors, all leaving the filter unchanged: `DimensionMismatch` (wrong length),
+     /// `NonFiniteInput` (NaN/∞ in `z`), `SingularMatrix` (`S` not numerically positive
+     /// definite), `FilterDivergence` (non-finite result).
++    ///
++    /// Equivalent to [`update_with_observer`](Self::update_with_observer) with an observer
++    /// that ignores the report; the reporting is compiled away.
+     pub fn update(&mut self, z: &[T]) -> KalmanResult<()> {
++        let mut ignore = |_: Innovation<'_, T>| {};
++        self.update_inner::<false, _>(z, &mut ignore)
++    }
++
++    /// Measurement update with `z` (length m) that also reports the innovation `y`, its
++    /// covariance `S` and the normalized innovation squared `NIS = yᵀS⁻¹y` to `observer`.
++    ///
++    /// The callback runs once, after the update has been committed and only if it succeeded;
++    /// a failed update reports nothing. It runs after the numeric steps and takes no part in
++    /// them, so the estimate is exactly the one plain `update` would produce.
++    ///
++    /// The report borrows workspace memory that the next update reuses. A filter that does
++    /// not observe pays nothing: the copy of `S`, the extra solve and the callback are
++    /// compiled away. An observing filter does no heap allocation per update, because the
++    /// m×m buffer for `S` is allocated once by `new`.
++    ///
++    /// ```
++    /// use kalman_filters::linear::LinearKalmanFilter;
++    /// let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.01], &[1.0], &[0.1])?;
++    /// kf.predict()?;
++    /// let mut last_nis = 0.0;
++    /// kf.update_with_observer(&[0.5], &mut |obs| {
++    ///     assert_eq!(obs.y.len(), 1);
++    ///     assert_eq!(obs.s.len(), 1);
++    ///     last_nis = obs.nis;
++    /// })?;
++    /// assert!(last_nis > 0.0);
++    /// # Ok::<(), kalman_filters::KalmanError>(())
++    /// ```
++    pub fn update_with_observer<F>(&mut self, z: &[T], observer: &mut F) -> KalmanResult<()>
++    where
++        F: for<'a> FnMut(Innovation<'a, T>),
++    {
++        self.update_inner::<true, F>(z, observer)
++    }
++
++    /// The shared body of [`update`](Self::update) and
++    /// [`update_with_observer`](Self::update_with_observer). `OBSERVE` is a compile-time
++    /// switch: when it is false the copy of `S`, the NIS solve and the callback are removed.
++    fn update_inner<const OBSERVE: bool, F>(&mut self, z: &[T], observer: &mut F) -> KalmanResult<()>
++    where
++        F: for<'a> FnMut(Innovation<'a, T>),
++    {
+         let m = self.measurement_dim();
+         if z.len() != m {
+             return Err(KalmanError::DimensionMismatch { expected: (m, 1), actual: (z.len(), 1) });
+@@ -229,6 +300,10 @@ where
+         for (d, &v) in ws.s_diag.iter_mut().zip(diagonal(&s, m)) {
+             *d = v;
+         }
++        if OBSERVE {
++            // Cholesky consumes `S`; keep the pre-factorization matrix for the report.
++            ws.s_obs.copy_from(&s);
++        }
+         let chol = Cholesky::new_unchecked(s);
+         // Pivot k of the factorization is L_kk². It must be a non-negligible fraction of S_kk;
+         // this test is invariant to rescaling any measurement component (B10, B21, B22).
+@@ -241,6 +316,15 @@ where
+             return Err(KalmanError::SingularMatrix);
+         }
+ 
++        // NIS = yᵀ S⁻¹ y, by one more solve with the factor; only an observer pays for it.
++        let nis = if OBSERVE {
++            ws.work_m.copy_from(&ws.y);
++            chol.solve_mut(&mut ws.work_m);
++            ws.y.dot(&ws.work_m)
++        } else {
++            T::zero()
++        };
++
+         // Kᵀ = S⁻¹ H P  (P symmetric, so this is (P Hᵀ S⁻¹)ᵀ)
+         ws.kt.gemm(T::one(), &self.h, &self.p, T::zero());
+         chol.solve_mut(&mut ws.kt);
+@@ -255,7 +339,12 @@ where
+         ws.a.gemm_tr(-T::one(), &ws.kt, &self.h, T::one());
+         ws.p.quadform_tr_with_workspace(&mut ws.work_n, T::one(), &ws.a, &self.p, T::zero());
+         ws.p.quadform_with_workspace(&mut ws.work_m, T::one(), &self.r, &ws.kt, T::one());
+-        self.commit()
++        self.commit()?;
++        if OBSERVE {
++            let ws = &self.ws;
++            observer(Innovation { y: ws.y.as_slice(), s: ws.s_obs.as_slice(), nis });
++        }
++        Ok(())
+     }
+ 
+     /// Symmetrizes the candidate in `ws`, then swaps it in if finite.
+diff --git a/tests/observer_hook.rs b/tests/observer_hook.rs
+new file mode 100644
+index 0000000..343f8e9
+--- /dev/null
++++ b/tests/observer_hook.rs
+@@ -0,0 +1,300 @@
++//! Tests for the update observer hook: the reported innovation `y`, its covariance `S` and
++//! the normalized innovation squared `NIS = yᵀS⁻¹y`.
++//!
++//! Everything is deterministic: no OS randomness, fixed-seed SplitMix64.
++
++use kalman_filters::KalmanError;
++use kalman_filters::linear::{Innovation, LinearKalmanFilter};
++use kalman_filters::nalgebra::{DMatrix, DVector, U1, U2};
++
++// ---------------------------------------------------------------------------
++// Allocation counter (thread-local, so parallel tests do not interfere).
++// ---------------------------------------------------------------------------
++mod alloc_counter {
++    use std::alloc::{GlobalAlloc, Layout, System};
++    use std::cell::Cell;
++
++    pub struct Counting;
++
++    thread_local! {
++        static COUNT: Cell<usize> = const { Cell::new(0) };
++    }
++
++    unsafe impl GlobalAlloc for Counting {
++        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
++            let _ = COUNT.try_with(|c| c.set(c.get() + 1));
++            unsafe { System.alloc(layout) }
++        }
++        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
++            unsafe { System.dealloc(ptr, layout) }
++        }
++        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
++            let _ = COUNT.try_with(|c| c.set(c.get() + 1));
++            unsafe { System.alloc_zeroed(layout) }
++        }
++        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
++            let _ = COUNT.try_with(|c| c.set(c.get() + 1));
++            unsafe { System.realloc(ptr, layout, new_size) }
++        }
++    }
++
++    pub fn count() -> usize {
++        COUNT.with(|c| c.get())
++    }
++}
++
++#[global_allocator]
++static ALLOCATOR: alloc_counter::Counting = alloc_counter::Counting;
++
++/// SplitMix64 + Box-Muller: deterministic standard normals.
++struct Rng(u64);
++
++impl Rng {
++    fn next_u64(&mut self) -> u64 {
++        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
++        let mut z = self.0;
++        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
++        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
++        z ^ (z >> 31)
++    }
++    fn uniform(&mut self) -> f64 {
++        ((self.next_u64() >> 11) as f64 + 0.5) / (1u64 << 53) as f64
++    }
++    fn normal(&mut self) -> f64 {
++        let (u1, u2) = (self.uniform(), self.uniform());
++        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
++    }
++}
++
++/// n = 2, m = 2, H = I, correlated R.
++fn two_by_two() -> LinearKalmanFilter<f64> {
++    let f = [1.0, 1.0, 0.0, 1.0];
++    let q = [0.02, 0.01, 0.01, 0.01];
++    let h = [1.0, 0.0, 0.0, 1.0];
++    let r = [0.5, 0.2, 0.2, 0.4];
++    let p0 = [2.0, 0.5, 0.5, 1.0];
++    let x0 = [0.3, -0.2];
++    LinearKalmanFilter::<f64>::new(2, 2, &x0, &p0, &f, &q, &h, &r).expect("valid model")
++}
++
++fn close(a: f64, b: f64, tol: f64) -> bool {
++    (a - b).abs() <= tol * a.abs().max(b.abs()).max(1.0)
++}
++
++#[test]
++fn reported_innovation_matches_textbook_values() {
++    let mut kf = two_by_two();
++    kf.predict().unwrap();
++    let x_prior = kf.state().to_vec();
++    let p_prior = kf.covariance().to_vec();
++    let z = [0.9, -0.1];
++
++    let mut report: Option<(Vec<f64>, Vec<f64>, f64)> = None;
++    kf.update_with_observer(&z, &mut |obs| {
++        report = Some((obs.y.to_vec(), obs.s.to_vec(), obs.nis));
++    })
++    .unwrap();
++    let (y, s, nis) = report.expect("observer must run once for a successful update");
++
++    // y = z − H x and S = H P Hᵀ + R, computed here without touching the filter's workspace.
++    let y_expected = [z[0] - x_prior[0], z[1] - x_prior[1]];
++    let s_expected = [
++        p_prior[0] + 0.5, p_prior[1] + 0.2,
++        p_prior[2] + 0.2, p_prior[3] + 0.4,
++    ];
++    for k in 0..2 {
++        assert!(close(y[k], y_expected[k], 1e-12), "y[{k}] = {}, expected {}", y[k], y_expected[k]);
++    }
++    for k in 0..4 {
++        assert!(close(s[k], s_expected[k], 1e-12), "S[{k}] = {}, expected {}", s[k], s_expected[k]);
++    }
++
++    // NIS = yᵀ S⁻¹ y, with a plain inverse as the reference.
++    let inv = DMatrix::from_row_slice(2, 2, &s_expected).try_inverse().expect("S is invertible");
++    let yv = DVector::from_row_slice(&y_expected);
++    let nis_expected = (yv.transpose() * inv * &yv)[(0, 0)];
++    assert!(close(nis, nis_expected, 1e-10), "NIS {nis} not {nis_expected}");
++
++    // The reported y and S are enough to reproduce the reported NIS.
++    let inv_reported = DMatrix::from_row_slice(2, 2, &s).try_inverse().expect("reported S is invertible");
++    let yv_reported = DVector::from_row_slice(&y);
++    let nis_from_report = (yv_reported.transpose() * inv_reported * &yv_reported)[(0, 0)];
++    assert!(close(nis, nis_from_report, 1e-10), "NIS {nis} not reproducible from report: {nis_from_report}");
++}
++
++#[test]
++fn reported_innovation_handles_non_square_h() {
++    // n = 2, m = 1, H = [1, 0.1]: the closed form needs the off-diagonal of P.
++    let f = [1.0, 1.0, 0.0, 1.0];
++    let q = [0.02, 0.01, 0.01, 0.01];
++    let h = [1.0, 0.1];
++    let r = [0.3];
++    let p0 = [2.0, 0.5, 0.5, 1.0];
++    let x0 = [0.3, -0.2];
++    let mut kf = LinearKalmanFilter::<f64>::new(2, 1, &x0, &p0, &f, &q, &h, &r).expect("valid model");
++    kf.predict().unwrap();
++    let x_prior = kf.state().to_vec();
++    let p = kf.covariance().to_vec();
++    let z = [1.7];
++
++    let mut report: Option<(Vec<f64>, Vec<f64>, f64)> = None;
++    kf.update_with_observer(&z, &mut |obs| {
++        report = Some((obs.y.to_vec(), obs.s.to_vec(), obs.nis));
++    })
++    .unwrap();
++    let (y, s, nis) = report.expect("observer must run once");
++
++    let y_expected = z[0] - (x_prior[0] + 0.1 * x_prior[1]);
++    let s_expected = p[0] + 0.2 * p[1] + 0.01 * p[3] + 0.3;
++    assert!(close(y[0], y_expected, 1e-12), "y = {}, expected {y_expected}", y[0]);
++    assert!(close(s[0], s_expected, 1e-12), "S = {}, expected {s_expected}", s[0]);
++    assert!(close(nis, y_expected * y_expected / s_expected, 1e-12), "NIS {nis} not y²/S");
++}
++
++#[test]
++fn mean_nis_over_5000_steps_is_within_10_percent_of_measurement_dimension() {
++    // Correctly specified constant-velocity target: the simulator and the filter share F, Q,
++    // H, R and P0, so every innovation is N(0, S) and NIS has mean m = 2.
++    let dt: f64 = 1.0;
++    let qs: f64 = 0.01;
++    let f = [1.0, dt, 0.0, 1.0];
++    let q = [qs * dt * dt * dt / 3.0, qs * dt * dt / 2.0, qs * dt * dt / 2.0, qs * dt];
++    let h = [1.0, 0.0, 0.0, 1.0];
++    let r = [1.0, 0.0, 0.0, 0.5];
++    let p0 = [1.0, 0.0, 0.0, 1.0];
++
++    // Cholesky of Q for sampling process noise.
++    let l00 = q[0].sqrt();
++    let l10 = q[2] / l00;
++    let l11 = (q[3] - l10 * l10).sqrt();
++
++    let mut rng = Rng(0x5EED_000C);
++    // x0 drawn from N(0, P0) = N(0, I).
++    let mut truth = [rng.normal(), rng.normal()];
++    let mut kf = LinearKalmanFilter::<f64>::new(2, 2, &[0.0, 0.0], &p0, &f, &q, &h, &r).unwrap();
++
++    let (mut nis_sum, mut calls) = (0.0, 0usize);
++    let mut observer = |obs: Innovation<'_, f64>| {
++        nis_sum += obs.nis;
++        calls += 1;
++    };
++    for _ in 0..5_000 {
++        let (w0, w1) = (rng.normal(), rng.normal());
++        truth = [truth[0] + dt * truth[1] + l00 * w0, truth[1] + l10 * w0 + l11 * w1];
++        let z = [truth[0] + r[0].sqrt() * rng.normal(), truth[1] + r[3].sqrt() * rng.normal()];
++        kf.predict().unwrap();
++        kf.update_with_observer(&z, &mut observer).unwrap();
++    }
++
++    assert_eq!(calls, 5_000, "observer must run once per successful update");
++    let mean = nis_sum / calls as f64;
++    assert!(
++        (mean - 2.0).abs() <= 0.2,
++        "mean NIS {mean} is not within 10% of m = 2"
++    );
++}
++
++#[test]
++fn failed_updates_report_nothing_and_leave_the_filter_usable() {
++    let mut kf =
++        LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.01], &[1.0], &[0.1]).unwrap();
++    let calls = std::cell::Cell::new(0usize);
++    let mut observer = |_: Innovation<'_, f64>| calls.set(calls.get() + 1);
++
++    assert!(matches!(
++        kf.update_with_observer(&[1.0, 2.0], &mut observer),
++        Err(KalmanError::DimensionMismatch { .. })
++    ));
++    assert!(matches!(
++        kf.update_with_observer(&[f64::NAN], &mut observer),
++        Err(KalmanError::NonFiniteInput)
++    ));
++    assert_eq!(calls.get(), 0, "a rejected update must not report");
++    assert_eq!(kf.state(), &[0.0]);
++    assert_eq!(kf.covariance(), &[1.0]);
++
++    // S = 0 is singular, so this update is rejected before anything is reported.
++    let mut singular =
++        LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[0.0], &[1.0], &[0.0], &[1.0], &[0.0]).unwrap();
++    let singular_calls = std::cell::Cell::new(0usize);
++    let mut singular_observer = |_: Innovation<'_, f64>| singular_calls.set(singular_calls.get() + 1);
++    assert!(matches!(
++        singular.update_with_observer(&[1.0], &mut singular_observer),
++        Err(KalmanError::SingularMatrix)
++    ));
++    assert_eq!(singular_calls.get(), 0);
++    assert_eq!(singular.covariance(), &[0.0]);
++
++    kf.update_with_observer(&[0.5], &mut observer).unwrap();
++    assert_eq!(calls.get(), 1);
++}
++
++#[test]
++fn observing_does_not_change_the_estimate() {
++    let model = || {
++        LinearKalmanFilter::<f64>::new(2, 2, &[0.3, -0.2], &[2.0, 0.5, 0.5, 1.0], &[1.0, 1.0, 0.0, 1.0],
++            &[0.02, 0.01, 0.01, 0.01], &[1.0, 0.0, 0.0, 1.0], &[0.5, 0.2, 0.2, 0.4])
++            .unwrap()
++    };
++    let mut plain = model();
++    let mut observed = model();
++    let mut observer = |_: Innovation<'_, f64>| {};
++    for k in 0..50 {
++        let z = [0.1 * k as f64, -0.05 * k as f64];
++        plain.predict().unwrap();
++        observed.predict().unwrap();
++        plain.update(&z).unwrap();
++        observed.update_with_observer(&z, &mut observer).unwrap();
++        assert_eq!(plain.state(), observed.state(), "state diverged at step {k}");
++        assert_eq!(plain.covariance(), observed.covariance(), "covariance diverged at step {k}");
++    }
++}
++
++#[test]
++fn observing_update_does_not_allocate_in_steady_state() {
++    // 4 states (2-D constant velocity), 2 measurements.
++    let f = [1.0, 0.0, 0.1, 0.0, 0.0, 1.0, 0.0, 0.1, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
++    let q = [0.001, 0.0, 0.0, 0.0, 0.0, 0.001, 0.0, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.0, 0.01];
++    let h = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0];
++    let r = [0.1, 0.0, 0.0, 0.1];
++    let p0 = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
++    let x0 = [0.0, 0.0, 1.0, 1.0];
++    let mut kf = LinearKalmanFilter::<f64>::new(4, 2, &x0, &p0, &f, &q, &h, &r).unwrap();
++    let z = [0.1, -0.1];
++
++    let mut nis_sum = 0.0;
++    let mut observer = |obs: Innovation<'_, f64>| nis_sum += obs.nis;
++    // Warm up: the first update moves S out of the workspace and back once.
++    kf.predict().unwrap();
++    kf.update_with_observer(&z, &mut observer).unwrap();
++
++    let before = alloc_counter::count();
++    for _ in 0..100 {
++        kf.predict().unwrap();
++        kf.update_with_observer(&z, &mut observer).unwrap();
++    }
++    let allocations = alloc_counter::count() - before;
++    assert_eq!(allocations, 0, "100 observed predict+update cycles allocated {allocations} times");
++    assert!(nis_sum.is_finite());
++}
++
++#[test]
++fn observer_works_with_static_dimensions_and_f32() {
++    let mut kf = LinearKalmanFilter::<f32, U2, U1>::new(
++        2, 1, &[0.0, 1.0], &[1.0, 0.0, 0.0, 1.0], &[1.0, 0.1, 0.0, 1.0],
++        &[0.01, 0.0, 0.0, 0.01], &[1.0, 0.0], &[0.1],
++    )
++    .unwrap();
++    kf.predict().unwrap();
++    let mut report: Option<(f32, f32, f32)> = None;
++    kf.update_with_observer(&[0.25], &mut |obs| {
++        assert_eq!(obs.y.len(), 1);
++        assert_eq!(obs.s.len(), 1);
++        report = Some((obs.y[0], obs.s[0], obs.nis));
++    })
++    .unwrap();
++    let (y, s, nis) = report.expect("observer must run once");
++    assert!(y.is_finite() && s > 0.0 && nis.is_finite());
++    // NIS = y² / S; compare in f32's own precision.
++    assert!(close((nis - y * y / s) as f64, 0.0, 1e-4), "NIS {nis} not y²/S = {}", y * y / s);
++}

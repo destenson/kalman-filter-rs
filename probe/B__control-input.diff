@@ -1,0 +1,504 @@
+diff --git a/src/filter.rs b/src/filter.rs
+index de6d15f..29c06c4 100644
+--- a/src/filter.rs
++++ b/src/filter.rs
+@@ -23,15 +23,18 @@ use num_traits::Float;
+ // Core: values
+ // ---------------------------------------------------------------------------
+ 
+-/// A validated linear model: x' = F x + w, z = H x + v, w ~ N(0, Q), v ~ N(0, R).
++/// A validated linear model: x' = F x + B u + w, z = H x + v, w ~ N(0, Q), v ~ N(0, R).
+ ///
+-/// Invariants (established by [`Model::new`], immutable afterwards): n, m ≥ 1; all
+-/// matrices have the right length and finite entries; Q and R are symmetric PSD.
++/// Invariants (established by [`Model::new`] / [`Model::with_control`], immutable
++/// afterwards): n, m ≥ 1; all matrices have the right length and finite entries; Q and
++/// R are symmetric PSD. k = 0 means the model has no control input, and B is then empty.
+ #[derive(Debug, Clone, PartialEq)]
+ pub(crate) struct Model<T> {
+     n: usize,
+     m: usize,
++    k: usize,
+     f: Vec<T>,
++    b: Vec<T>,
+     q: Vec<T>,
+     h: Vec<T>,
+     r: Vec<T>,
+@@ -40,14 +43,31 @@ pub(crate) struct Model<T> {
+ impl<T: KalmanScalar> Model<T> {
+     /// Validates and copies the model matrices (row-major: f, q n×n; h m×n; r m×m).
+     pub(crate) fn new(n: usize, m: usize, f: &[T], q: &[T], h: &[T], r: &[T]) -> KalmanResult<Self> {
++        Self::with_control(n, m, 0, f, &[], q, h, r)
++    }
++
++    /// Validates and copies the model matrices with a control input (row-major: f, q
++    /// n×n; b n×k; h m×n; r m×m). `k == 0` requires an empty `b`.
++    #[allow(clippy::too_many_arguments)]
++    pub(crate) fn with_control(
++        n: usize,
++        m: usize,
++        k: usize,
++        f: &[T],
++        b: &[T],
++        q: &[T],
++        h: &[T],
++        r: &[T],
++    ) -> KalmanResult<Self> {
+         validation::dimensions(n, m)?;
+         validation::matrix("f", f, n, n)?;
++        validation::matrix("b", b, n, k)?;
+         validation::matrix("q", q, n, n)?;
+         validation::matrix("h", h, m, n)?;
+         validation::matrix("r", r, m, m)?;
+         validation::covariance(q, n, KalmanError::InvalidNoiseCovariance)?;
+         validation::covariance(r, m, KalmanError::InvalidNoiseCovariance)?;
+-        Ok(Self { n, m, f: f.to_vec(), q: q.to_vec(), h: h.to_vec(), r: r.to_vec() })
++        Ok(Self { n, m, k, f: f.to_vec(), b: b.to_vec(), q: q.to_vec(), h: h.to_vec(), r: r.to_vec() })
+     }
+ 
+     pub(crate) fn state_dim(&self) -> usize {
+@@ -56,6 +76,9 @@ impl<T: KalmanScalar> Model<T> {
+     pub(crate) fn measurement_dim(&self) -> usize {
+         self.m
+     }
++    pub(crate) fn control_dim(&self) -> usize {
++        self.k
++    }
+     pub(crate) fn f(&self) -> &[T] {
+         &self.f
+     }
+@@ -137,17 +160,31 @@ impl<T: KalmanScalar> Workspace<T> {
+ // `ws` was made for the model's (n, m). On `Ok`, `out` holds a finite posterior with a
+ // symmetric covariance. On `Err`, `out` holds garbage and must be discarded.
+ 
+-/// Time update: x' = F x, P' = F P Fᵀ + Q.
++/// Time update: x' = F x + B u, P' = F P Fᵀ + Q.
++///
++/// `control` is the k-vector u; it must be empty when the model has no control input.
+ ///
+-/// Errors: `FilterDivergence` if the result overflows to a non-finite value.
++/// Errors: `DimensionMismatch` if `control.len() != k`; `InvalidInput` if `u` is not
++/// finite; `FilterDivergence` if the result overflows to a non-finite value.
+ pub(crate) fn predict<T: KalmanScalar>(
+     model: &Model<T>,
+     prior: &Estimate<T>,
++    control: &[T],
+     ws: &mut Workspace<T>,
+     out: &mut Estimate<T>,
+ ) -> KalmanResult<()> {
+     let n = model.n;
++    if control.len() != model.k {
++        return Err(KalmanError::DimensionMismatch {
++            expected: (model.k, 1),
++            actual: (control.len(), 1),
++        });
++    }
++    validation::finite("u", control)?;
+     matrix::mul_vec(&model.f, &prior.x, &mut out.x, n, n);
++    if model.k > 0 {
++        matrix::add_mul_vec(&model.b, control, &mut out.x, n, model.k);
++    }
+     matrix::mul(&model.f, &prior.p, &mut ws.fp, n, n, n);
+     matrix::mul_bt(&ws.fp, &model.f, &mut out.p, n, n, n);
+     for (p, &q) in out.p.iter_mut().zip(&model.q) {
+@@ -297,7 +334,32 @@ pub mod linear {
+             h: &[T],
+             r: &[T],
+         ) -> KalmanResult<Self> {
+-            let model = Model::new(state_dim, measurement_dim, f, q, h, r)?;
++            Self::with_control(state_dim, measurement_dim, 0, x0, p0, f, &[], q, h, r)
++        }
++
++        /// Builds a filter whose predict also applies a control input: x ← F x + B u.
++        ///
++        /// `b` is n×k row-major and `control_dim` is k. `u` is supplied per predict call
++        /// through [`predict_with_control`](Self::predict_with_control). `control_dim ==
++        /// 0` means "no control input"; it is then exactly [`new`](Self::new), and `b`
++        /// must be empty.
++        ///
++        /// # Errors
++        /// The same as [`new`](Self::new), plus `DimensionMismatch` if `b` is not n×k.
++        #[allow(clippy::too_many_arguments)]
++        pub fn with_control(
++            state_dim: usize,
++            measurement_dim: usize,
++            control_dim: usize,
++            x0: &[T],
++            p0: &[T],
++            f: &[T],
++            b: &[T],
++            q: &[T],
++            h: &[T],
++            r: &[T],
++        ) -> KalmanResult<Self> {
++            let model = Model::with_control(state_dim, measurement_dim, control_dim, f, b, q, h, r)?;
+             let estimate = Estimate::new(state_dim, x0, p0)?;
+             Ok(Self {
+                 spare: estimate.clone(),
+@@ -317,12 +379,33 @@ pub mod linear {
+             self.model.measurement_dim()
+         }
+ 
+-        /// Time update: x ← F x, P ← F P Fᵀ + Q.
++        /// Control dimension k (0 when the filter has no control input).
++        pub fn control_dim(&self) -> usize {
++            self.model.control_dim()
++        }
++
++        /// Time update without a control input: x ← F x, P ← F P Fᵀ + Q.
++        ///
++        /// On a filter built with `control_dim > 0` the control input is required, so
++        /// this returns `DimensionMismatch`; use [`predict_with_control`](Self::predict_with_control).
+         ///
+         /// # Errors
+         /// `FilterDivergence` if the result would be non-finite; the filter is unchanged.
+         pub fn predict(&mut self) -> KalmanResult<()> {
+-            let result = super::predict(&self.model, &self.estimate, &mut self.ws, &mut self.spare);
++            self.predict_with_control(&[])
++        }
++
++        /// Time update with control input `u` (length k): x ← F x + B u, P ← F P Fᵀ + Q.
++        ///
++        /// On a filter built without control input, `u` must be empty.
++        ///
++        /// # Errors
++        /// `DimensionMismatch` if `u.len() != k`, `InvalidInput` if `u` is not finite,
++        /// `FilterDivergence` if the result would be non-finite. On any error the filter
++        /// is unchanged.
++        pub fn predict_with_control(&mut self, u: &[T]) -> KalmanResult<()> {
++            let result =
++                super::predict(&self.model, &self.estimate, u, &mut self.ws, &mut self.spare);
+             self.commit("predict", result)
+         }
+ 
+@@ -388,7 +471,7 @@ mod tests {
+         let model = Model::new(2, 1, &[1.0, 0.1, 0.0, 1.0], &[0.01, 0.0, 0.0, 0.02], &[1.0, 0.0], &[0.1]).unwrap();
+         let prior = Estimate::new(2, &[1.0, 2.0], &[2.0, 0.5, 0.5, 1.0]).unwrap();
+         let mut out = prior.clone();
+-        predict(&model, &prior, &mut Workspace::new(2, 1), &mut out).unwrap();
++        predict(&model, &prior, &[], &mut Workspace::new(2, 1), &mut out).unwrap();
+         assert!(out.x().iter().zip([1.2, 2.0]).all(|(a, b)| (a - b).abs() < 1e-12));
+         assert!(out.p().iter().zip([2.12, 0.6, 0.6, 1.02]).all(|(a, b)| (a - b).abs() < 1e-12));
+     }
+diff --git a/src/information/conversion.rs b/src/information/conversion.rs
+index 288ff5e..a28a77c 100644
+--- a/src/information/conversion.rs
++++ b/src/information/conversion.rs
+@@ -8,12 +8,21 @@ use num_traits::Zero;
+ type KalmanFilter<T> = crate::linear::LinearKalmanFilter<T>;
+ 
+ /// Convert Kalman Filter to Information Filter
++///
++/// The information form has no control input, so a filter built with `B` cannot be
++/// converted: its future predicts would silently drop `B·u`.
+ pub fn kalman_to_information<T: KalmanScalar>(
+     kf: &KalmanFilter<T>,
+ ) -> KalmanResult<InformationFilter<T>> {
+     let n = kf.state_dim();
+     let m = kf.measurement_dim();
+ 
++    if kf.control_dim() != 0 {
++        return Err(KalmanError::InvalidInput(
++            "cannot convert a filter with a control input to information form",
++        ));
++    }
++
+     debug!(
+         "Converting Kalman Filter to Information Filter: state_dim={}, measurement_dim={}",
+         n, m
+diff --git a/src/matrix/mod.rs b/src/matrix/mod.rs
+index 030da0a..bdb49b3 100644
+--- a/src/matrix/mod.rs
++++ b/src/matrix/mod.rs
+@@ -47,6 +47,13 @@ pub(crate) fn mul_vec<T: Float>(a: &[T], x: &[T], out: &mut [T], r: usize, c: us
+     }
+ }
+ 
++/// out += A·x, where A is r×c.
++pub(crate) fn add_mul_vec<T: Float>(a: &[T], x: &[T], out: &mut [T], r: usize, c: usize) {
++    for i in 0..r {
++        out[i] = out[i] + dot(&a[i * c..(i + 1) * c], &x[..c]);
++    }
++}
++
+ fn dot<T: Float>(a: &[T], b: &[T]) -> T {
+     a.iter().zip(b).fold(T::zero(), |acc, (&x, &y)| acc + x * y)
+ }
+@@ -177,6 +184,8 @@ mod tests {
+         let mut y = [0.0; 2];
+         mul_vec(&a, &[1.0, 1.0, 1.0], &mut y, 2, 3);
+         assert_eq!(y, [6.0, 15.0]);
++        add_mul_vec(&a, &[1.0, 0.0, 0.0], &mut y, 2, 3);
++        assert_eq!(y, [7.0, 19.0]);
+     }
+ 
+     #[test]
+diff --git a/tests/control_input.rs b/tests/control_input.rs
+new file mode 100644
+index 0000000..16a9608
+--- /dev/null
++++ b/tests/control_input.rs
+@@ -0,0 +1,263 @@
++//! Control input support: predict with x' = F x + B u.
++//!
++//! A filter built with `LinearKalmanFilter::new` has no control input (k = 0) and
++//! behaves exactly as before. A filter built with `with_control` requires the k-vector
++//! `u` on every predict.
++
++use kalman_filters::KalmanError;
++use kalman_filters::linear::LinearKalmanFilter;
++
++/// Sample time of the position/velocity models below.
++const DT: f64 = 1.0;
++
++/// Position/velocity model with constant-acceleration control and no process noise:
++/// F = [[1, dt], [0, 1]], B = [[dt²/2], [dt]], H = [1, 0], Q = 0.
++fn position_velocity_f64(x0: [f64; 2], p0: [f64; 4], r: f64) -> LinearKalmanFilter<f64> {
++    LinearKalmanFilter::with_control(
++        2,
++        1,
++        1,
++        &x0,
++        &p0,
++        &[1.0, DT, 0.0, 1.0],
++        &[0.5 * DT * DT, DT],
++        &[0.0; 4],
++        &[1.0, 0.0],
++        &[r],
++    )
++    .unwrap()
++}
++
++/// The same model in f32, to show the control path is precision-generic.
++fn position_velocity_f32() -> LinearKalmanFilter<f32> {
++    LinearKalmanFilter::with_control(
++        2,
++        1,
++        1,
++        &[0.0f32, 0.0],
++        &[1.0f32, 0.0, 0.0, 1.0],
++        &[1.0f32, DT as f32, 0.0, 1.0],
++        &[0.5f32 * DT as f32 * DT as f32, DT as f32],
++        &[0.0f32; 4],
++        &[1.0f32, 0.0],
++        &[1.0f32],
++    )
++    .unwrap()
++}
++
++#[test]
++fn constant_acceleration_control_matches_closed_form_after_ten_steps() {
++    let mut kf = position_velocity_f64([0.0, 0.0], [1.0, 0.0, 0.0, 1.0], 1.0);
++    let accel = 2.0;
++    for _ in 0..10 {
++        kf.predict_with_control(&[accel]).unwrap();
++    }
++    let t = 10.0 * DT;
++    let (position, velocity) = (kf.state()[0], kf.state()[1]);
++    let expected_position = 0.5 * accel * t * t;
++    let expected_velocity = accel * t;
++    assert!(
++        (position - expected_position).abs() <= 1e-12,
++        "position {position} != {expected_position}"
++    );
++    assert!(
++        (velocity - expected_velocity).abs() <= 1e-12,
++        "velocity {velocity} != {expected_velocity}"
++    );
++}
++
++#[test]
++fn constant_acceleration_control_matches_closed_form_in_f32() {
++    let mut kf = position_velocity_f32();
++    let accel = 2.0f32;
++    for _ in 0..10 {
++        kf.predict_with_control(&[accel]).unwrap();
++    }
++    let t = 10.0 * DT as f32;
++    assert!((kf.state()[0] - 0.5 * accel * t * t).abs() <= 1e-3, "position {}", kf.state()[0]);
++    assert!((kf.state()[1] - accel * t).abs() <= 1e-3, "velocity {}", kf.state()[1]);
++}
++
++#[test]
++fn a_filter_without_control_input_behaves_as_before() {
++    let (n, m) = (2, 1);
++    let x0 = [0.5, -1.25];
++    let p0 = [0.7, 0.1, 0.1, 0.4];
++    let f = [1.0, 0.5, 0.0, 1.0];
++    let q = [0.02, 0.0, 0.0, 0.03];
++    let h = [1.0, 0.0];
++    let r = [0.1];
++
++    // The old constructor and k = 0 are the same filter.
++    let mut plain = LinearKalmanFilter::<f64>::new(n, m, &x0, &p0, &f, &q, &h, &r).unwrap();
++    let mut zero_k =
++        LinearKalmanFilter::<f64>::with_control(n, m, 0, &x0, &p0, &f, &[], &q, &h, &r).unwrap();
++    assert_eq!((plain.control_dim(), zero_k.control_dim()), (0, 0));
++
++    // predict() and predict_with_control(&[]) are the same step, bit for bit.
++    plain.predict().unwrap();
++    zero_k.predict_with_control(&[]).unwrap();
++    assert_eq!(plain.state(), &[-0.125, -1.25][..]);
++    assert!(
++        plain.covariance().iter().zip([0.92, 0.3, 0.3, 0.43]).all(|(a, b)| (a - b).abs() <= 1e-15),
++        "covariance {:?}",
++        plain.covariance()
++    );
++    assert_eq!(plain.state(), zero_k.state());
++    assert_eq!(plain.covariance(), zero_k.covariance());
++
++    // Still equal after measurement updates.
++    for k in 0..5 {
++        let z = [1.0 + 0.1 * k as f64];
++        plain.update(&z).unwrap();
++        zero_k.update(&z).unwrap();
++        assert_eq!(plain.state(), zero_k.state(), "state at step {k}");
++        assert_eq!(plain.covariance(), zero_k.covariance(), "covariance at step {k}");
++    }
++}
++
++#[test]
++fn a_controlled_filter_requires_its_control_input() {
++    let mut kf = position_velocity_f64([1.0, 2.0], [1.0, 0.0, 0.0, 1.0], 1.0);
++    assert_eq!(kf.control_dim(), 1);
++    let before = (kf.state().to_vec(), kf.covariance().to_vec());
++    assert!(matches!(kf.predict(), Err(KalmanError::DimensionMismatch { .. })));
++    assert_eq!(kf.state(), &before.0[..]);
++    assert_eq!(kf.covariance(), &before.1[..]);
++    // The filter is still usable after the rejected call.
++    kf.predict_with_control(&[0.0]).unwrap();
++    assert_eq!(kf.state(), &[3.0, 2.0][..]);
++}
++
++#[test]
++fn control_input_is_validated_and_rejected_atomically() {
++    let mut kf = position_velocity_f64([0.0, 0.0], [1.0, 0.0, 0.0, 1.0], 1.0);
++    let before = (kf.state().to_vec(), kf.covariance().to_vec());
++
++    assert!(matches!(kf.predict_with_control(&[]), Err(KalmanError::DimensionMismatch { .. })));
++    assert!(matches!(
++        kf.predict_with_control(&[1.0, 2.0]),
++        Err(KalmanError::DimensionMismatch { .. })
++    ));
++    assert!(matches!(kf.predict_with_control(&[f64::NAN]), Err(KalmanError::InvalidInput(_))));
++    assert!(matches!(kf.predict_with_control(&[f64::INFINITY]), Err(KalmanError::InvalidInput(_))));
++    assert_eq!(kf.state(), &before.0[..]);
++    assert_eq!(kf.covariance(), &before.1[..]);
++
++    kf.predict_with_control(&[1.0]).unwrap();
++    assert_eq!(kf.state(), &[0.5, 1.0][..]);
++
++    // A filter without a control input rejects any non-empty u rather than dropping it.
++    let mut plain =
++        LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[1.0]).unwrap();
++    assert!(matches!(
++        plain.predict_with_control(&[1.0]),
++        Err(KalmanError::DimensionMismatch { .. })
++    ));
++    assert_eq!(plain.state(), &[0.0][..]);
++}
++
++#[test]
++fn construction_validates_the_control_matrix() {
++    let ctor = |k: usize, b: &[f64]| {
++        LinearKalmanFilter::<f64>::with_control(
++            2,
++            1,
++            k,
++            &[0.0, 0.0],
++            &[1.0, 0.0, 0.0, 1.0],
++            &[1.0, 1.0, 0.0, 1.0],
++            b,
++            &[0.0; 4],
++            &[1.0, 0.0],
++            &[1.0],
++        )
++    };
++
++    // b must be n×k.
++    assert!(matches!(ctor(1, &[]), Err(KalmanError::DimensionMismatch { .. })));
++    assert!(matches!(ctor(1, &[1.0]), Err(KalmanError::DimensionMismatch { .. })));
++    assert!(matches!(ctor(1, &[1.0; 3]), Err(KalmanError::DimensionMismatch { .. })));
++    assert!(matches!(ctor(2, &[1.0, 2.0]), Err(KalmanError::DimensionMismatch { .. })));
++    // k = 0 means no control input: b must be empty.
++    assert!(matches!(ctor(0, &[1.0, 2.0]), Err(KalmanError::DimensionMismatch { .. })));
++    // A non-finite b is rejected like every other matrix entry.
++    assert!(matches!(ctor(1, &[f64::NAN, 1.0]), Err(KalmanError::InvalidInput(_))));
++
++    let ok = ctor(2, &[1.0, 0.0, 0.0, 1.0]).unwrap();
++    assert_eq!((ok.state_dim(), ok.measurement_dim(), ok.control_dim()), (2, 1, 2));
++}
++
++#[test]
++fn control_moves_the_state_and_leaves_the_covariance_alone() {
++    let dt = 0.5;
++    let p0 = [0.7, 0.1, 0.1, 0.4];
++    let f = [1.0, dt, 0.0, 1.0];
++    let q = [0.02, 0.0, 0.0, 0.03];
++    let h = [1.0, 0.0];
++    let r = [1.0];
++
++    let mut controlled = LinearKalmanFilter::<f64>::with_control(
++        2,
++        1,
++        1,
++        &[20.0, 1.0],
++        &p0,
++        &f,
++        &[0.5 * dt * dt, dt],
++        &q,
++        &h,
++        &r,
++    )
++    .unwrap();
++    let mut plain =
++        LinearKalmanFilter::<f64>::new(2, 1, &[0.0, 0.0], &p0, &f, &q, &h, &r).unwrap();
++
++    controlled.predict_with_control(&[10.0]).unwrap();
++    plain.predict().unwrap();
++
++    // x' = F x + B u, P' = F P Fᵀ + Q: the control enters the state only.
++    let expected = [20.0 + dt * 1.0 + 0.5 * dt * dt * 10.0, 1.0 + dt * 10.0];
++    assert!(
++        controlled.state().iter().zip(expected).all(|(a, b)| (a - b).abs() <= 1e-12),
++        "state {:?} != {expected:?}",
++        controlled.state()
++    );
++    assert_eq!(controlled.covariance(), plain.covariance());
++}
++
++#[test]
++fn two_control_columns_reach_their_own_states() {
++    // F = I, Q = 0, B = I: one step is exactly x + u.
++    let mut kf = LinearKalmanFilter::<f64>::with_control(
++        2,
++        1,
++        2,
++        &[1.0, -2.0],
++        &[1.0, 0.0, 0.0, 1.0],
++        &[1.0, 0.0, 0.0, 1.0],
++        &[1.0, 0.0, 0.0, 1.0],
++        &[0.0; 4],
++        &[1.0, 0.0],
++        &[1.0],
++    )
++    .unwrap();
++    kf.predict_with_control(&[3.0, -4.0]).unwrap();
++    assert_eq!(kf.state(), &[4.0, -6.0][..]);
++}
++
++#[test]
++fn a_controlled_prediction_can_be_updated_normally() {
++    // One step of the constant-acceleration model with a = 2 gives p = 1, v = 2 and
++    // P = [[2, 1], [1, 1]]. A measurement of the predicted position (z = 1) has a zero
++    // innovation, so the estimate must not move.
++    let mut kf = position_velocity_f64([0.0, 0.0], [1.0, 0.0, 0.0, 1.0], 1.0);
++    kf.predict_with_control(&[2.0]).unwrap();
++    kf.update(&[1.0]).unwrap();
++    assert!(
++        kf.state().iter().zip([1.0, 2.0]).all(|(a, b)| (a - b).abs() <= 1e-12),
++        "state {:?}",
++        kf.state()
++    );
++    assert!(kf.covariance().iter().all(|p| p.is_finite()));
++}

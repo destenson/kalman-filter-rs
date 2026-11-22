@@ -1,0 +1,22 @@
+{
+ "target": "C",
+ "probe": "observer-hook",
+ "files_changed": 3,
+ "insertions": 403,
+ "deletions": 6,
+ "churn": 409,
+ "touched": [
+  "DESIGN_NOTES.md",
+  "src/filter.rs",
+  "tests/observer_hook.rs"
+ ],
+ "tests_ok": true,
+ "frozen_violations": [],
+ "agent": {
+  "cost_usd": null,
+  "turns": null,
+  "duration_s": null,
+  "is_error": null,
+  "subtype": null
+ }
+}

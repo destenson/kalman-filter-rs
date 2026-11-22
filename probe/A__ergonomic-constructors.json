@@ -1,0 +1,25 @@
+{
+ "target": "A",
+ "probe": "ergonomic-constructors",
+ "files_changed": 6,
+ "insertions": 1000,
+ "deletions": 10,
+ "churn": 1010,
+ "touched": [
+  "src/builders/linear.rs",
+  "src/builders/mod.rs",
+  "src/filter.rs",
+  "src/lib.rs",
+  "tests/linear_builder_tests.rs",
+  "tests/linear_constant_velocity_tests.rs"
+ ],
+ "tests_ok": true,
+ "frozen_violations": [],
+ "agent": {
+  "cost_usd": null,
+  "turns": null,
+  "duration_s": null,
+  "is_error": null,
+  "subtype": null
+ }
+}

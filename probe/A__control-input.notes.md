@@ -1,0 +1,10 @@
+# Maintainer notes: A / control-input
+
+Control input is implemented in `src/filter.rs` (the only file holding predict and the validated constructor) plus a new `tests/linear_kf_control.rs`. `LinearKalmanFilter` gains an optional B (n×k) and k, `new_with_control(n, m, k, x0, p0, f, q, h, r, b)` delegating to `new`, `control_dim()` / `control_matrix()` accessors, and `predict_with_control(u)`; `predict()` is unchanged and means u = 0. Nothing under SPEC.md or tests/spec_linear_kf.rs was touched.
+
+It was easy because predict already computes into fixed workspace buffers and commits by pointer swap, so adding `B·u` to the candidate x before the existing finite/PSD checks needed no new allocation and no new failure path. The no-control path runs the identical arithmetic; the tests prove it bit-for-bit over 30 predict steps.
+
+It was awkward because the frozen `predict()` signature cannot take u, so control is a separate additive method and a second delegating constructor instead of a parameter on `new`; also plain `predict()` on a controlled filter silently means u = 0 (documented). B's row stride is k, which I first wrote as n — the new tests caught it.
+
+Verified: 11 new control tests pass (constant-acceleration 10-step analytic p=50/v=10 in f64 and f32, general 3×2 reference, exact no-B compatibility, atomic bad-length/non-finite/overflow failures, zero heap allocations); frozen 32 and lib 108 pass; `cargo build --all-targets` is green. There is no DESIGN_NOTES.md in this worktree (only stale docs/DESIGN.md); the new API is documented in rustdoc.
+

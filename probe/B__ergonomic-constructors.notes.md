@@ -1,0 +1,9 @@
+# Maintainer notes: B / ergonomic-constructors
+
+No DESIGN_NOTES.md in this copy, so the work started from SPEC.md and the code. Core `src/filter.rs` untouched.
+NEW `src/builders/linear.rs`: `Covariance<T>` (Full(Vec<T>) / Diagonal(Vec<T>) / Scalar(T), with `From<Vec<T>>` for the full form), `LinearKalmanFilterBuilder<T>` with `.new(n, m)`, `.initial_state`, `.initial_covariance`, `.state_transition_matrix`, `.process_noise`, `.observation_matrix`, `.measurement_noise`, `.build()`, and `LinearKalmanFilter::constant_velocity(dims, dt, q, r)`. EDIT `src/builders/mod.rs` and `src/lib.rs` only (module + re-exports). NEW `tests/linear_builder_tests.rs` (9) and `tests/linear_constant_velocity_tests.rs` (7); equivalence asserted exactly (not by tolerance) over 20 steps for f32 and f64.
+Easy: the filter's construction was already a single validated free-standing path, so the builder only expands the covariance forms and delegates; no field on the filter had to change, and the existing `BuilderIncomplete` convention already existed in this repo for the other filters.
+Hard: the builder allocates expanded matrices before delegating, so the dimension-overflow check has to be duplicated early (same usize rule as `new`) to fail without aborting; a wrong-length diagonal reaches `new` as a differently shaped matrix, so the error variant is right but its message text is not tailored.
+Unsure: the preset's P0 = I is an arbitrary default (its requested signature has no P0 parameter), and q is documented as acceleration-noise intensity; a per-step discrete q would change Q's parameterization.
+Verified: frozen 32, lib 112, new 9 + 7, doctests 11. `cargo build --all-targets` still fails on `tests/functional_tests.rs` (pre-existing at HEAD, unrelated).
+

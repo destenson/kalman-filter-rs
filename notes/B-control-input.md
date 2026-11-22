@@ -1,0 +1,7 @@
+`src/filter.rs` — `Model` gains `k` and `b`, `LinearKalmanFilter` gains `with_control`, `predict_with_control` and `control_dim`; `predict()` delegates with an empty `u`, so k = 0 runs the old arithmetic unchanged.
+`src/matrix/mod.rs` — one new kernel `add_mul_vec` (`out += A·x`) in the existing destination-passing style; `src/information/conversion.rs` — `kalman_to_information` now refuses a controlled filter instead of silently dropping B·u.
+Tests — new `tests/control_input.rs`, 9 tests: constant-acceleration closed form after 10 steps (Q = 0, p = ½at², v = at, f64 and f32), bit-identical parity between `new` and `with_control(k = 0)`, and validation/atomicity of `u`, `b` and `k`.
+Easy — each step already took a validated model and prior estimate and wrote into a separate output, so B was two fields plus one kernel; nothing else moved.
+Hard — `new`'s signature is frozen by the acceptance test, so control arrives as a second constructor and a per-call `u`; `predict()` on a k > 0 filter now returns `DimensionMismatch` rather than applying a zero control.
+`DESIGN_NOTES.md` does not exist in this copy, so I worked from the code and `SPEC.md`; note that SPEC §6 calls control input a non-goal and B14 says "do not offer it", so this request conflicts with the frozen contract and I left SPEC.md untouched.
+Verified — `spec_linear_kf` 32/32, `lib` 112/112, `control_input` 9/9; `tests/functional_tests.rs` does not compile and `quickcheck_invariants::prop_covariance_positive_semidefinite` is flaky, both already true at HEAD per a stash check.

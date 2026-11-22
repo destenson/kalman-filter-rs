@@ -1,0 +1,671 @@
+diff --git a/src/filter.rs b/src/filter.rs
+index 8bc52eb..6201396 100644
+--- a/src/filter.rs
++++ b/src/filter.rs
+@@ -26,6 +26,7 @@ use crate::validation::is_psd;
+ /// The public module named by the specification: `kalman_filters::linear`.
+ pub mod linear {
+     pub use super::LinearKalmanFilter;
++    pub use crate::smoother::SmoothedPath;
+ }
+ 
+ /// Linear Kalman filter for `x_{k+1} = F x_k + w`, `z_k = H x_k + v`,
+@@ -68,7 +69,7 @@ impl<T: KalmanScalar> Workspace<T> {
+ 
+ /// Pivot tolerance for factoring S, relative to each diagonal entry:
+ /// `64 · m · ε`, a small multiple of the Cholesky rounding error.
+-fn singular_tol<T: KalmanScalar>(m: usize) -> T {
++pub(crate) fn singular_tol<T: KalmanScalar>(m: usize) -> T {
+     <T as num_traits::Float>::epsilon() * T::from_usize(64 * m)
+ }
+ 
+@@ -76,14 +77,14 @@ fn singular_tol<T: KalmanScalar>(m: usize) -> T {
+ /// is ≥ 0 and every correlation satisfies |p_ij| ≤ √(p_ii p_jj) up to rounding.
+ /// Catches the gross failures of finite precision (negative variances,
+ /// impossible correlations) without an O(n³) factorisation per step.
+-fn variances_consistent<T: KalmanScalar>(p: &[T], n: usize) -> bool {
++pub(crate) fn variances_consistent<T: KalmanScalar>(p: &[T], n: usize) -> bool {
+     let slack = T::one() + <T as num_traits::Float>::epsilon() * T::from_usize(64 * n);
+     let sd = |i: usize| p[i * n + i].sqrt();
+     (0..n).all(|i| p[i * n + i] >= T::zero())
+         && (0..n).all(|i| (0..i).all(|j| p[i * n + j].abs() <= sd(i) * sd(j) * slack))
+ }
+ 
+-fn diverged(what: &str) -> KalmanError {
++pub(crate) fn diverged(what: &str) -> KalmanError {
+     KalmanError::FilterDivergence(format!("{what} is not finite"))
+ }
+ 
+diff --git a/src/lib.rs b/src/lib.rs
+index f2a3389..06eaaf3 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -45,6 +45,8 @@ pub mod metrics;
+ 
+ pub mod particle;
+ pub mod scented;
++/// Fixed-interval Rauch–Tung–Striebel smoother for the linear filter.
++pub mod smoother;
+ pub mod types;
+ pub mod unscented;
+ pub(crate) mod validation;
+@@ -65,6 +67,7 @@ pub use filter::LinearKalmanFilter;
+ pub use information::filter::InformationFilter;
+ pub use particle::{Particle, ParticleFilter, ResamplingStrategy};
+ pub use scented::CubatureKalmanFilter;
++pub use smoother::SmoothedPath;
+ pub use types::{JacobianStrategy, KalmanResult, KalmanScalar, NonlinearSystem};
+ pub use unscented::{UKFParameters, UnscentedKalmanFilter};
+ 
+diff --git a/src/smoother.rs b/src/smoother.rs
+new file mode 100644
+index 0000000..077426b
+--- /dev/null
++++ b/src/smoother.rs
+@@ -0,0 +1,217 @@
++//! Fixed-interval Rauch–Tung–Striebel smoother.
++//!
++//! [`LinearKalmanFilter`] keeps only the current estimate: `predict` and
++//! `update` overwrite it, and the filter stores no history. A fixed-interval
++//! smoother needs the whole forward pass, so this module runs that pass with a
++//! clone of the filter, records every estimate, and then walks backwards.
++//!
++//! With `x_{k|k}, P_{k|k}` the filtered estimate at step `k` and
++//! `x_{k+1|k}, P_{k+1|k}` the prediction that follows it:
++//!
++//! ```text
++//! C_k            = P_{k|k} Fᵀ (P_{k+1|k})⁻¹
++//! x_{k|N}        = x_{k|k} + C_k (x_{k+1|N} − x_{k+1|k})
++//! P_{k|N}        = P_{k|k} + C_k (P_{k+1|N} − P_{k+1|k}) C_kᵀ
++//! ```
++//!
++//! The last estimate is the filtered one (`x_{N-1|N} = x_{N-1|N-1}` and
++//! `P_{N-1|N} = P_{N-1|N-1}`), and by induction every earlier smoothed
++//! covariance is the filtered one plus a negative semi-definite term, so the
++//! trace of the smoothed covariance never exceeds the filtered one.
++//!
++//! **Time indexing.** The forward pass starts from the filter's current
++//! estimate, which is the estimate at step 0 *before* step 0's measurement; no
++//! prediction is made at step 0. That is the textbook initialisation
++//! `x_{0|0} = x0, P_{0|0} = P0`: the first measurement is folded into the
++//! initial estimate, and every later step is `predict` followed by `update`.
++//! The smoother runs on a clone of the filter, so the filter's own estimate is
++//! left as it was.
++//!
++//! **Cost.** The forward pass records `N` states and covariances and one
++//! prediction per step; the backward pass does a Cholesky factorisation and an
++//! `n × n` solve per step. That is O(N n³) time and O(N n²) memory, which a
++//! batch smoother accepts but a per-step filter does not.
++//!
++//! **Numerics.** The backward pass needs to apply the inverse of the predicted
++//! covariance. As in `update`, it is never inverted: the covariance is
++//! Cholesky-factored with the same pivot test relative to its own diagonal, then
++//! solved row by row. The smoothed covariance is symmetrised and checked with
++//! the same necessary PSD conditions `predict` and `update` use, so a backward
++//! pass that loses positive semi-definiteness to rounding is reported instead of
++//! returned. A predicted covariance that is singular relative to its own scale
++//! (for example `Q = 0` with a rank-deficient `P0`, or a model whose uncertainty
++//! has collapsed onto one direction) gives `SingularMatrix`: the gain is not
++//! defined there, and this library has no pseudo-inverse.
++
++use crate::error::{KalmanError, KalmanResult};
++use crate::filter::{diverged, singular_tol, variances_consistent, LinearKalmanFilter};
++use crate::matrix::{
++    add_transpose_matmul_upper, all_finite, axpy, cholesky_in_place, cholesky_solve_rows, matmul,
++    mirror_upper, CholeskyError,
++};
++use crate::types::KalmanScalar;
++
++/// The smoothed states and covariances of one fixed interval, one contiguous
++/// row-major block per step: step `k`'s state is `k·n .. (k+1)·n` and its
++/// covariance `k·n² .. (k+1)·n²` of [`SmoothedPath::states`] and
++/// [`SmoothedPath::covariances`].
++#[derive(Debug, Clone)]
++pub struct SmoothedPath<T> {
++    n: usize,
++    steps: usize,
++    state: Box<[T]>,      // steps × n
++    covariance: Box<[T]>, // steps × n×n
++}
++
++impl<T> SmoothedPath<T> {
++    /// Number of steps in the interval.
++    pub fn steps(&self) -> usize {
++        self.steps
++    }
++
++    /// State dimension n.
++    pub fn state_dim(&self) -> usize {
++        self.n
++    }
++
++    /// Smoothed state at step `k` (length n), or `None` past the end.
++    pub fn state(&self, k: usize) -> Option<&[T]> {
++        let start = k.checked_mul(self.n)?;
++        self.state.get(start..start.checked_add(self.n)?)
++    }
++
++    /// Smoothed covariance at step `k` (n×n, row-major), or `None` past the end.
++    pub fn covariance(&self, k: usize) -> Option<&[T]> {
++        let nn = self.n.checked_mul(self.n)?;
++        let start = k.checked_mul(nn)?;
++        self.covariance.get(start..start.checked_add(nn)?)
++    }
++
++    /// Every smoothed state, `steps × n` row-major.
++    pub fn states(&self) -> &[T] {
++        &self.state
++    }
++
++    /// Every smoothed covariance, `steps × n×n` row-major.
++    pub fn covariances(&self) -> &[T] {
++        &self.covariance
++    }
++}
++
++impl<T: KalmanScalar> LinearKalmanFilter<T> {
++    /// Run the filter forward over `measurements` (row-major, `m` values per
++    /// step) and walk the RTS recursion backwards. `self` is only read: the
++    /// forward pass runs on a clone, so the filter keeps its current estimate.
++    ///
++    /// Errors, in addition to every error of `predict` and `update`: a length
++    /// that is not a whole number of measurements (`DimensionMismatch`), and a
++    /// predicted covariance that is singular relative to its own scale, or a
++    /// smoothed covariance that is not positive semi-definite within rounding
++    /// (`SingularMatrix`). No partial result is returned.
++    pub fn smooth(&self, measurements: &[T]) -> KalmanResult<SmoothedPath<T>> {
++        let (n, m) = (self.state_dim(), self.measurement_dim());
++        let steps = measurements.len() / m;
++        if !measurements.len().is_multiple_of(m) {
++            return Err(KalmanError::DimensionMismatch {
++                expected: (steps, m),
++                actual: (measurements.len(), 1),
++            });
++        }
++        let Some(nn) = n.checked_mul(n) else {
++            return Err(KalmanError::InvalidDimension { state_dim: n, measurement_dim: m });
++        };
++        let (Some(sn), Some(snn)) = (steps.checked_mul(n), steps.checked_mul(nn)) else {
++            return Err(KalmanError::InvalidDimension { state_dim: n, measurement_dim: m });
++        };
++        if steps == 0 {
++            return Ok(SmoothedPath {
++                n,
++                steps,
++                state: Box::<[T]>::default(),
++                covariance: Box::<[T]>::default(),
++            });
++        }
++
++        // The smoothed path starts as the filtered one; the backward pass
++        // overwrites it from the second-to-last step down.
++        let mut state = vec![T::zero(); sn].into_boxed_slice();
++        let mut covariance = vec![T::zero(); snn].into_boxed_slice();
++        // One-step predictions x_{k+1|k}, P_{k+1|k}, needed by step k. Entry 0
++        // is unused: there is no prediction before the first measurement.
++        let mut x_predicted = vec![T::zero(); sn].into_boxed_slice();
++        let mut p_predicted = vec![T::zero(); snn].into_boxed_slice();
++
++        // Forward pass, recording each filtered estimate and, for every later
++        // step, the prediction it followed.
++        let mut filter = self.clone();
++        for k in 0..steps {
++            if k > 0 {
++                filter.predict()?;
++                x_predicted[k * n..(k + 1) * n].copy_from_slice(filter.state());
++                p_predicted[k * nn..(k + 1) * nn].copy_from_slice(filter.covariance());
++            }
++            filter.update(&measurements[k * m..(k + 1) * m])?;
++            state[k * n..(k + 1) * n].copy_from_slice(filter.state());
++            covariance[k * nn..(k + 1) * nn].copy_from_slice(filter.covariance());
++        }
++
++        // Backward pass. Scratch is allocated once, outside the loop.
++        let mut factor = vec![T::zero(); nn]; // Cholesky factor of P_{k+1|k}
++        let mut ct = vec![T::zero(); nn]; // C_kᵀ = P_{k+1|k}⁻¹ (F P_{k|k})
++        let mut d = vec![T::zero(); nn]; // P_{k+1|N} − P_{k+1|k}
++        let mut dc = vec![T::zero(); nn]; // D C_kᵀ
++        let mut x_cur = vec![T::zero(); n]; // smoothed state at step k
++        let mut x_diff = vec![T::zero(); n]; // x_{k+1|N} − x_{k+1|k}
++
++        for k in (0..steps - 1).rev() {
++            let (p, p_next) = (k * nn, (k + 1) * nn);
++
++            // The predicted covariance is factored, never inverted. The record
++            // is not needed again, so the factor can overwrite a copy in place.
++            factor.copy_from_slice(&p_predicted[p_next..p_next + nn]);
++            cholesky_in_place(&mut factor, n, singular_tol::<T>(n)).map_err(|e| match e {
++                CholeskyError::Singular => KalmanError::SingularMatrix,
++                CholeskyError::NonFinite => diverged("predicted covariance"),
++            })?;
++            // C_kᵀ = P_{k+1|k}⁻¹ (F P_{k|k}); the solve treats each row as a
++            // right-hand side, so store the transpose and read it as columns of
++            // C_k when applying it to a vector.
++            matmul(self.transition(), &covariance[p..p + nn], &mut ct, n, n, n);
++            cholesky_solve_rows(&factor, &mut ct, n, n);
++
++            // x_{k|N} = x_{k|k} + C_k (x_{k+1|N} − x_{k+1|k})
++            for (i, diff) in x_diff.iter_mut().enumerate() {
++                *diff = state[(k + 1) * n + i] - x_predicted[(k + 1) * n + i];
++            }
++            x_cur.copy_from_slice(&state[k * n..(k + 1) * n]);
++            for (i, &diff) in x_diff.iter().enumerate() {
++                axpy(diff, &ct[i * n..(i + 1) * n], &mut x_cur);
++            }
++            state[k * n..(k + 1) * n].copy_from_slice(&x_cur);
++
++            // P_{k|N} = P_{k|k} + C_k D C_kᵀ with D = P_{k+1|N} − P_{k+1|k},
++            // written as C_kᵀᵀ D C_kᵀ so the upper-triangle kernel applies.
++            for i in 0..nn {
++                d[i] = covariance[p_next + i] - p_predicted[p_next + i];
++            }
++            matmul(&d, &ct, &mut dc, n, n, n);
++            add_transpose_matmul_upper(&ct, &dc, &mut covariance[p..p + nn], n, n);
++            mirror_upper(&mut covariance[p..p + nn], n);
++
++            if !all_finite(&state[k * n..(k + 1) * n]) {
++                return Err(diverged("smoothed state"));
++            }
++            if !all_finite(&covariance[p..p + nn]) {
++                return Err(diverged("smoothed covariance"));
++            }
++            // Rounding in the backward sum grows with the conditioning of the
++            // predicted covariance; report it rather than return an invalid
++            // covariance, as `update` does.
++            if !variances_consistent(&covariance[p..p + nn], n) {
++                return Err(KalmanError::SingularMatrix);
++            }
++        }
++
++        Ok(SmoothedPath { n, steps, state, covariance })
++    }
++}
+diff --git a/tests/rts_smoother.rs b/tests/rts_smoother.rs
+new file mode 100644
+index 0000000..a012e38
+--- /dev/null
++++ b/tests/rts_smoother.rs
+@@ -0,0 +1,383 @@
++//! Tests for the fixed-interval Rauch–Tung–Striebel smoother (`src/smoother.rs`).
++//!
++//! The acceptance criteria are checked directly:
++//! - on a 1-D random walk the smoothed path matches a literal textbook RTS
++//!   recursion to 1e-9;
++//! - the trace of the smoothed covariance never exceeds the filtered trace, on
++//!   a 2-D constant-velocity model, a 4-state/2-measurement model, and in both
++//!   f32 and f64;
++//! - the last step of the smoothed path is the filtered estimate;
++//! - the filter itself is not modified, and bad input is reported.
++
++use kalman_filters::linear::LinearKalmanFilter;
++use kalman_filters::{KalmanError, SmoothedPath};
++
++// ---------------------------------------------------------------------------
++// Helpers
++// ---------------------------------------------------------------------------
++
++fn trace<T: Copy + std::iter::Sum>(p: &[T], n: usize) -> T {
++    (0..n).map(|i| p[i * n + i]).sum()
++}
++
++/// Deterministic uniform noise in [-0.5, 0.5).
++fn uniform_noise(len: usize, mut seed: u64) -> Vec<f64> {
++    let mut out = Vec::with_capacity(len);
++    for _ in 0..len {
++        seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
++        let u = ((seed >> 11) as f64 + 0.5) / (1u64 << 53) as f64;
++        out.push(u - 0.5);
++    }
++    out
++}
++
++/// A 1-D random walk: F = H = 1, Q = q, R = r.
++fn scalar_random_walk() -> LinearKalmanFilter<f64> {
++    LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.05], &[1.0], &[0.5])
++        .expect("valid scalar model")
++}
++
++fn scalar_measurements(steps: usize) -> Vec<f64> {
++    // A drifting truth plus deterministic measurement noise.
++    let noise = uniform_noise(steps, 0x2545_f491_4f6c_dd1d);
++    let mut truth = 0.0;
++    let mut z = Vec::with_capacity(steps);
++    for (k, w) in noise.iter().enumerate() {
++        truth += 0.3 * ((k as f64 * 0.37).sin() + 0.1);
++        z.push(truth + 1.4 * w);
++    }
++    z
++}
++
++/// A 2-D constant-velocity model, m = 1 (position).
++fn constant_velocity() -> LinearKalmanFilter<f64> {
++    LinearKalmanFilter::<f64>::new(
++        2,
++        1,
++        &[0.0, 1.0],
++        &[1.0, 0.0, 0.0, 1.0],
++        &[1.0, 0.1, 0.0, 1.0],
++        &[0.01, 0.0, 0.0, 0.01],
++        &[1.0, 0.0],
++        &[0.1],
++    )
++    .expect("valid constant-velocity model")
++}
++
++fn constant_velocity_measurements(steps: usize) -> Vec<f64> {
++    let noise = uniform_noise(steps, 0x9e37_79b9_7f4a_7c15);
++    (0..steps).map(|k| 0.1 * k as f64 + 2.0 * noise[k]).collect()
++}
++
++/// A 4-state/2-measurement model with correlated R, used by the frozen
++/// acceptance tests of the filter itself.
++fn rich_model() -> LinearKalmanFilter<f64> {
++    let dt = 0.5;
++    LinearKalmanFilter::<f64>::new(
++        4,
++        2,
++        &[1.0, -2.0, 0.5, 0.25],
++        &[
++            4.0, 0.5, 0.2, 0.0, //
++            0.5, 3.0, 0.0, 0.1, //
++            0.2, 0.0, 2.0, 0.3, //
++            0.0, 0.1, 0.3, 1.0,
++        ],
++        &[
++            1.0, 0.0, dt, 0.0, //
++            0.0, 1.0, 0.0, dt, //
++            0.0, 0.0, 1.0, 0.0, //
++            0.0, 0.0, 0.0, 1.0,
++        ],
++        &[
++            0.02, 0.0, 0.01, 0.0, //
++            0.0, 0.02, 0.0, 0.01, //
++            0.01, 0.0, 0.04, 0.0, //
++            0.0, 0.01, 0.0, 0.04,
++        ],
++        &[
++            1.0, 0.0, 0.0, 0.0, //
++            0.5, 1.0, 0.0, 0.2,
++        ],
++        &[0.3, 0.05, 0.05, 0.2],
++    )
++    .expect("valid rich model")
++}
++
++fn rich_measurements(steps: usize) -> Vec<f64> {
++    let mut z = Vec::with_capacity(steps * 2);
++    for k in 0..steps {
++        z.push(1.0 + 0.3 * k as f64 + 0.1 * (k as f64).sin());
++        z.push(-2.0 + 0.05 * k as f64);
++    }
++    z
++}
++
++/// The filtered path of the same forward pass the smoother runs, with the
++/// textbook step order: `update` at step 0, then `predict` + `update`.
++fn filtered_path<T: kalman_filters::KalmanScalar + Copy>(
++    filter: &LinearKalmanFilter<T>,
++    measurements: &[T],
++) -> (Vec<T>, Vec<T>) {
++    let (n, m) = (filter.state_dim(), filter.measurement_dim());
++    let steps = measurements.len() / m;
++    let mut kf = filter.clone();
++    let mut states = Vec::with_capacity(steps * n);
++    let mut covariances = Vec::with_capacity(steps * n * n);
++    for k in 0..steps {
++        if k > 0 {
++            kf.predict().expect("filter predicts");
++        }
++        kf.update(&measurements[k * m..(k + 1) * m]).expect("filter updates");
++        states.extend_from_slice(kf.state());
++        covariances.extend_from_slice(kf.covariance());
++    }
++    (states, covariances)
++}
++
++fn assert_slice_close(actual: &[f64], expected: &[f64], tol: f64, what: &str) {
++    assert_eq!(actual.len(), expected.len(), "{what}: length");
++    for (i, (a, e)) in actual.iter().zip(expected).enumerate() {
++        let d = (a - e).abs();
++        assert!(
++            d <= tol * e.abs().max(1.0),
++            "{what}[{i}]: got {a:e}, expected {e:e} (|diff| {d:e} > {tol:e})"
++        );
++    }
++}
++
++fn assert_exactly_symmetric<T: Copy + PartialEq + std::fmt::Debug>(p: &[T], n: usize) {
++    for i in 0..n {
++        for j in 0..n {
++            assert_eq!(p[i * n + j], p[j * n + i], "asymmetric entry ({i},{j})");
++        }
++    }
++}
++
++// ---------------------------------------------------------------------------
++// Reference: a literal textbook RTS recursion for the 1-D random walk
++// ---------------------------------------------------------------------------
++
++struct ScalarReference {
++    filtered_state: Vec<f64>,
++    filtered_covariance: Vec<f64>,
++    predicted_state: Vec<f64>,
++    predicted_covariance: Vec<f64>,
++    smoothed_state: Vec<f64>,
++    smoothed_covariance: Vec<f64>,
++}
++
++fn scalar_reference(z: &[f64], x0: f64, p0: f64, q: f64, r: f64) -> ScalarReference {
++    let steps = z.len();
++    let mut x = x0;
++    let mut p = p0;
++    let mut reference = ScalarReference {
++        filtered_state: Vec::with_capacity(steps),
++        filtered_covariance: Vec::with_capacity(steps),
++        predicted_state: Vec::with_capacity(steps),
++        predicted_covariance: Vec::with_capacity(steps),
++        smoothed_state: Vec::with_capacity(steps),
++        smoothed_covariance: Vec::with_capacity(steps),
++    };
++    for &zk in z {
++        // x_{k|k-1}, P_{k|k-1}: for k = 0 the initial estimate itself.
++        let (x_prior, p_prior) = (x, p);
++        let gain = p_prior / (p_prior + r);
++        x = x_prior + gain * (zk - x_prior);
++        p = (1.0 - gain) * p_prior;
++        reference.predicted_state.push(x_prior);
++        reference.predicted_covariance.push(p_prior);
++        reference.filtered_state.push(x);
++        reference.filtered_covariance.push(p);
++        p += q; // next prediction, F = 1
++    }
++
++    reference.smoothed_state = reference.filtered_state.clone();
++    reference.smoothed_covariance = reference.filtered_covariance.clone();
++    for k in (0..steps - 1).rev() {
++        let c = reference.filtered_covariance[k] / reference.predicted_covariance[k + 1];
++        reference.smoothed_state[k] = reference.filtered_state[k]
++            + c * (reference.smoothed_state[k + 1] - reference.predicted_state[k + 1]);
++        reference.smoothed_covariance[k] = reference.filtered_covariance[k]
++            + c * c * (reference.smoothed_covariance[k + 1] - reference.predicted_covariance[k + 1]);
++    }
++    reference
++}
++
++// ---------------------------------------------------------------------------
++// The acceptance criteria
++// ---------------------------------------------------------------------------
++
++#[test]
++fn scalar_random_walk_matches_direct_textbook_rts() {
++    let (x0, p0, q, r) = (0.0, 1.0, 0.05, 0.5);
++    let z = scalar_measurements(50);
++    let path = scalar_random_walk().smooth(&z).expect("smoothing succeeds");
++    let reference = scalar_reference(&z, x0, p0, q, r);
++
++    let states: Vec<f64> = z.iter().enumerate().map(|(k, _)| path.state(k).unwrap()[0]).collect();
++    let covariances: Vec<f64> =
++        z.iter().enumerate().map(|(k, _)| path.covariance(k).unwrap()[0]).collect();
++    assert_slice_close(&states, &reference.smoothed_state, 1e-9, "smoothed state");
++    assert_slice_close(&covariances, &reference.smoothed_covariance, 1e-9, "smoothed covariance");
++    assert_eq!(path.steps(), z.len());
++}
++
++#[test]
++fn smoothed_trace_never_exceeds_filtered_trace() {
++    const STEPS: usize = 40;
++
++    // Constant velocity, f64.
++    let z = constant_velocity_measurements(STEPS);
++    let path = constant_velocity().smooth(&z).expect("smoothing succeeds");
++    let (_, filtered) = filtered_path(&constant_velocity(), &z);
++    for k in 0..STEPS {
++        let ps = path.covariance(k).expect("covariance in range");
++        assert_exactly_symmetric(ps, 2);
++        assert!(trace(ps, 2) <= trace(&filtered[k * 4..(k + 1) * 4], 2), "trace grew at step {k}");
++    }
++
++    // The same model in f32.
++    let to32 = |a: &[f64]| a.iter().map(|&x| x as f32).collect::<Vec<f32>>();
++    let z32 = to32(&z);
++    let kf32 = LinearKalmanFilter::<f32>::new(
++        2,
++        1,
++        &to32(&[0.0, 1.0]),
++        &to32(&[1.0, 0.0, 0.0, 1.0]),
++        &to32(&[1.0, 0.1, 0.0, 1.0]),
++        &to32(&[0.01, 0.0, 0.0, 0.01]),
++        &to32(&[1.0, 0.0]),
++        &to32(&[0.1]),
++    )
++    .expect("valid f32 model");
++    let path32 = kf32.smooth(&z32).expect("smoothing succeeds in f32");
++    let (_, filtered32) = filtered_path(&kf32, &z32);
++    for k in 0..STEPS {
++        let ps = path32.covariance(k).expect("covariance in range");
++        assert_exactly_symmetric(ps, 2);
++        assert!(ps.iter().all(|v| v.is_finite()), "non-finite covariance at step {k}");
++        assert!(trace(ps, 2) <= trace(&filtered32[k * 4..(k + 1) * 4], 2), "trace grew at step {k}");
++    }
++
++    // 4 states, 2 correlated measurements.
++    let z_rich = rich_measurements(30);
++    let path_rich = rich_model().smooth(&z_rich).expect("smoothing succeeds");
++    let (_, filtered_rich) = filtered_path(&rich_model(), &z_rich);
++    assert_eq!(path_rich.steps(), 30);
++    for k in 0..30 {
++        let ps = path_rich.covariance(k).expect("covariance in range");
++        assert_exactly_symmetric(ps, 4);
++        assert!(ps.iter().all(|v| v.is_finite()), "non-finite covariance at step {k}");
++        assert!(trace(ps, 4) <= trace(&filtered_rich[k * 16..(k + 1) * 16], 4), "trace grew at step {k}");
++    }
++}
++
++#[test]
++fn last_step_is_the_filtered_estimate_and_earlier_steps_are_not() {
++    let z = constant_velocity_measurements(25);
++    let path = constant_velocity().smooth(&z).expect("smoothing succeeds");
++    let (filtered_states, filtered_covariances) = filtered_path(&constant_velocity(), &z);
++
++    let last = path.steps() - 1;
++    assert_eq!(path.state(last).unwrap(), &filtered_states[last * 2..]);
++    assert_eq!(path.covariance(last).unwrap(), &filtered_covariances[last * 4..]);
++    // Some earlier step must differ, or the backward pass would be a no-op.
++    assert!(path.state(0).unwrap() != &filtered_states[..2]);
++}
++
++#[test]
++fn one_measurement_returns_the_filtered_estimate_unchanged() {
++    let z = [1.25];
++    let path = scalar_random_walk().smooth(&z).expect("smoothing succeeds");
++    let mut kf = scalar_random_walk();
++    kf.update(&z).expect("filter updates");
++    assert_eq!(path.steps(), 1);
++    assert_eq!(path.state(0).unwrap(), kf.state());
++    assert_eq!(path.covariance(0).unwrap(), kf.covariance());
++}
++
++#[test]
++fn smooth_leaves_the_filter_unchanged_and_reports_its_shape() {
++    let mut kf = constant_velocity();
++    kf.predict().unwrap();
++    kf.update(&[0.2]).unwrap();
++    let before = (kf.state().to_vec(), kf.covariance().to_vec());
++
++    let z = constant_velocity_measurements(10);
++    let path: SmoothedPath<f64> = kf.smooth(&z).expect("smoothing succeeds");
++    assert_eq!((kf.state().to_vec(), kf.covariance().to_vec()), before);
++
++    assert_eq!(path.state_dim(), 2);
++    assert_eq!(path.steps(), 10);
++    assert_eq!(path.states().len(), 10 * 2);
++    assert_eq!(path.covariances().len(), 10 * 4);
++    assert_eq!(path.state(10), None);
++    assert_eq!(path.covariance(10), None);
++}
++
++#[test]
++fn empty_interval_is_an_empty_path() {
++    let path = scalar_random_walk().smooth(&[]).expect("empty interval is not an error");
++    assert_eq!(path.steps(), 0);
++    assert_eq!(path.state_dim(), 1);
++    assert!(path.states().is_empty());
++    assert!(path.covariances().is_empty());
++    assert_eq!(path.state(0), None);
++    assert_eq!(path.covariance(0), None);
++}
++
++#[test]
++fn rejected_inputs_are_reported() {
++    // Length not a whole number of measurements: n = 2, m = 2 with H = I.
++    let model = LinearKalmanFilter::<f64>::new(
++        2,
++        2,
++        &[0.0, 0.0],
++        &[1.0, 0.0, 0.0, 1.0],
++        &[1.0, 0.0, 0.0, 1.0],
++        &[0.01, 0.0, 0.0, 0.01],
++        &[1.0, 0.0, 0.0, 1.0],
++        &[1.0, 0.0, 0.0, 1.0],
++    )
++    .expect("valid model");
++    assert!(matches!(model.smooth(&[1.0]), Err(KalmanError::DimensionMismatch { .. })));
++
++    // A non-finite measurement is rejected by the forward pass.
++    assert!(matches!(scalar_random_walk().smooth(&[f64::NAN]), Err(KalmanError::NonFiniteInput)));
++
++    // Q = 0 and P0 = 0 make every predicted covariance singular: the backward
++    // pass cannot form a gain, and reports it instead of returning a value.
++    let degenerate = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[0.0], &[1.0], &[0.0], &[1.0], &[1.0])
++        .expect("singular P0 and zero Q are valid models");
++    assert!(matches!(degenerate.smooth(&[0.0, 1.0]), Err(KalmanError::SingularMatrix)));
++}
++
++#[test]
++fn smoothed_path_is_consistent_with_the_reference_in_f32() {
++    // f32 support: the smoothed path must reproduce the f64 textbook result to
++    // single-precision accuracy, with every step finite.
++    let (x0, p0, q, r) = (0.0, 1.0, 0.05, 0.5);
++    let z64 = scalar_measurements(40);
++    let z32: Vec<f32> = z64.iter().map(|&v| v as f32).collect();
++    let kf32 = LinearKalmanFilter::<f32>::new(
++        1,
++        1,
++        &[x0 as f32],
++        &[p0 as f32],
++        &[1.0],
++        &[q as f32],
++        &[1.0],
++        &[r as f32],
++    )
++    .expect("valid f32 model");
++    let path32 = kf32.smooth(&z32).expect("smoothing succeeds in f32");
++    let reference = scalar_reference(&z64, x0, p0, q, r);
++
++    for k in 0..z64.len() {
++        let state = path32.state(k).unwrap()[0] as f64;
++        let covariance = path32.covariance(k).unwrap()[0] as f64;
++        assert!((state - reference.smoothed_state[k]).abs() <= 1e-3, "state at {k}");
++        assert!((covariance - reference.smoothed_covariance[k]).abs() <= 1e-5, "covariance at {k}");
++    }
++}

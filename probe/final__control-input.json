@@ -1,0 +1,25 @@
+{
+ "target": "final",
+ "probe": "control-input",
+ "files_changed": 6,
+ "insertions": 400,
+ "deletions": 23,
+ "churn": 423,
+ "touched": [
+  "DESIGN_NOTES.md",
+  "src/builder.rs",
+  "src/filter.rs",
+  "src/lib.rs",
+  "tests/linear_kf_control.rs",
+  "tests/linear_kf_control_alloc.rs"
+ ],
+ "tests_ok": true,
+ "frozen_violations": [],
+ "agent": {
+  "cost_usd": null,
+  "turns": null,
+  "duration_s": null,
+  "is_error": null,
+  "subtype": null
+ }
+}

@@ -1,0 +1,21 @@
+{
+ "target": "A",
+ "probe": "observer-hook",
+ "files_changed": 2,
+ "insertions": 622,
+ "deletions": 3,
+ "churn": 625,
+ "touched": [
+  "src/filter.rs",
+  "tests/innovation_observer.rs"
+ ],
+ "tests_ok": true,
+ "frozen_violations": [],
+ "agent": {
+  "cost_usd": null,
+  "turns": null,
+  "duration_s": null,
+  "is_error": null,
+  "subtype": null
+ }
+}

@@ -1,0 +1,283 @@
+
+running 32 tests
+................................
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.36s
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:571:46
+    |
+571 |         let mut enkf = EnsembleKalmanFilter::new(
+    |                                              ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:608:42
+    |
+608 |         let enkf = EnsembleKalmanFilter::new(
+    |                                          ^^^
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:684:52
+    |
+684 |         let mut enkf_small = EnsembleKalmanFilter::new(
+    |                                                    ^^^
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:697:52
+    |
+697 |         let mut enkf_large = EnsembleKalmanFilter::new(
+    |                                                    ^^^
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:734:46
+    |
+734 |         let mut enkf = EnsembleKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:790:46
+    |
+790 |         let mut enkf = EnsembleKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:830:46
+    |
+830 |         let mut enkf = EnsembleKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:536:45
+    |
+536 |         let mut ekf = ExtendedKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:563:45
+    |
+563 |         let mut ekf = ExtendedKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:608:44
+    |
+608 |         let result = ExtendedKalmanFilter::new(
+    |                                            ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:647:45
+    |
+647 |         let mut ekf = ExtendedKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:675:45
+    |
+675 |         let mut ekf = ExtendedKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:790:51
+    |
+790 |         let mut ekf_small = ExtendedKalmanFilter::new(
+    |                                                   ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:801:51
+    |
+801 |         let mut ekf_large = ExtendedKalmanFilter::new(
+    |                                                   ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:881:45
+    |
+881 |         let mut ekf = ExtendedKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:907:41
+    |
+907 |         let ekf = ExtendedKalmanFilter::new(
+    |                                         ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:523:45
+    |
+523 |         let mut filter = InformationFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:574:45
+    |
+574 |         let mut filter = InformationFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:608:45
+    |
+608 |         let mut filter = InformationFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:635:52
+    |
+635 |         let mut filter = InformationFilter::<f64>::new(
+    |                                                    ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:666:45
+    |
+666 |         let mut filter = InformationFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:758:32
+    |
+758 |             InformationFilter::new(
+    |                                ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:582:38
+    |
+582 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:633:42
+    |
+633 |             let mut pf = ParticleFilter::new(
+    |                                          ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:672:38
+    |
+672 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:729:38
+    |
+729 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:779:38
+    |
+779 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:818:38
+    |
+818 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:866:38
+    |
+866 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:916:38
+    |
+916 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `scented::CubatureKalmanFilter::<T, S>::new`: Use CubatureKalmanFilterBuilder instead
+   --> src/scented.rs:530:45
+    |
+530 |         let mut ckf = CubatureKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `scented::CubatureKalmanFilter::<T, S>::new`: Use CubatureKalmanFilterBuilder instead
+   --> src/scented.rs:562:41
+    |
+562 |         let ckf = CubatureKalmanFilter::new(
+    |                                         ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:669:46
+    |
+669 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:738:46
+    |
+738 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:757:46
+    |
+757 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:776:42
+    |
+776 |         let ukf = UnscentedKalmanFilter::new(
+    |                                          ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:800:46
+    |
+800 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:826:46
+    |
+826 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:878:46
+    |
+878 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:901:46
+    |
+901 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:958:46
+    |
+958 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+    --> src/unscented.rs:1010:59
+     |
+1010 |         let mut ukf_conservative = UnscentedKalmanFilter::new(
+     |                                                           ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+    --> src/unscented.rs:1029:57
+     |
+1029 |         let mut ukf_aggressive = UnscentedKalmanFilter::new(
+     |                                                         ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+    --> src/unscented.rs:1065:42
+     |
+1065 |         let ukf = UnscentedKalmanFilter::new(
+     |                                          ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+    --> src/unscented.rs:1107:45
+     |
+1107 |         let result = UnscentedKalmanFilter::new(
+     |                                             ^^^
+
+
+running 114 tests
+....................................................................................... 87/114
+...........................
+test result: ok. 114 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

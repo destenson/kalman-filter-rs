@@ -1,0 +1,1082 @@
+diff --git a/src/builders/linear.rs b/src/builders/linear.rs
+new file mode 100644
+index 0000000..83ff79b
+--- /dev/null
++++ b/src/builders/linear.rs
+@@ -0,0 +1,296 @@
++//! Builder for the linear Kalman filter.
++//!
++//! [`LinearKalmanFilter::new`] takes eight positional slices. This builder
++//! names every piece, defaults the initial state to zero and accepts `P0`, `Q`
++//! and `R` either as full matrices, as diagonals or as a single variance.
++//!
++//! It is not a second source of truth. `build` expands the three covariance
++//! forms and hands the matrices to [`LinearKalmanFilter::new`], which remains
++//! the only place that decides whether a model is valid (dimensions,
++//! finiteness, positive semi-definiteness). The one rule the builder applies
++//! itself is the dimension check, via `crate::filter::checked_model_dims`,
++//! because it has to know the sizes before it can allocate the default initial
++//! state.
++
++use crate::error::{KalmanError, KalmanResult};
++use crate::filter::{LinearKalmanFilter, checked_model_dims};
++use crate::types::KalmanScalar;
++use log::{error, trace};
++
++/// A covariance matrix (P0, Q or R) as the caller chooses to give it.
++///
++/// ```no_run
++/// # use kalman_filters::CovarianceInput;
++/// // All three describe the same 2×2 matrix [[4.0, 0.0], [0.0, 4.0]].
++/// let full = CovarianceInput::full(vec![4.0, 0.0, 0.0, 4.0]);
++/// let diagonal = CovarianceInput::diagonal(vec![4.0, 4.0]);
++/// let scalar = CovarianceInput::scalar(4.0);
++/// ```
++#[derive(Debug, Clone, PartialEq)]
++pub enum CovarianceInput<T> {
++    /// The full matrix, row-major, `n × n` for P0 and Q, `m × m` for R.
++    /// [`LinearKalmanFilter::new`] checks the length.
++    Full(Vec<T>),
++    /// The diagonal; every off-diagonal entry is zero. One entry per state
++    /// (P0, Q) or per measurement (R).
++    Diagonal(Vec<T>),
++    /// A single variance `v`, giving the matrix `v · I`.
++    ///
++    /// A negative value is rejected as not positive semi-definite, exactly as a
++    /// negative diagonal entry would be in either of the other forms.
++    Scalar(T),
++}
++
++impl<T> CovarianceInput<T> {
++    /// The full row-major matrix.
++    pub fn full(entries: Vec<T>) -> Self {
++        Self::Full(entries)
++    }
++
++    /// The variances on the diagonal, everything else zero.
++    pub fn diagonal(variances: Vec<T>) -> Self {
++        Self::Diagonal(variances)
++    }
++
++    /// The single variance `v` of `v · I`.
++    pub fn scalar(variance: T) -> Self {
++        Self::Scalar(variance)
++    }
++}
++
++/// A `Vec` means the full matrix, matching the other builders.
++impl<T> From<Vec<T>> for CovarianceInput<T> {
++    fn from(entries: Vec<T>) -> Self {
++        Self::Full(entries)
++    }
++}
++
++/// A bare number means a variance, i.e. that number times the identity.
++impl<T: KalmanScalar> From<T> for CovarianceInput<T> {
++    fn from(variance: T) -> Self {
++        Self::Scalar(variance)
++    }
++}
++
++/// Builder for [`LinearKalmanFilter`].
++///
++/// The caller supplies the model matrices F and H, one covariance for the
++/// process noise and one for the measurements, and the covariance P0 of the
++/// initial estimate. The initial state defaults to zero. No covariance has a
++/// default: guessing `Q` or `R` gives a filter that runs and is quietly wrong,
++/// so leaving one out is a [`KalmanError::BuilderIncomplete`] error instead.
++///
++/// # Example
++/// ```
++/// use kalman_filters::{CovarianceInput, LinearKalmanFilterBuilder};
++///
++/// // Constant velocity in one spatial dimension: state [position, velocity],
++/// // position measured directly. The initial state defaults to zero.
++/// let mut kf = LinearKalmanFilterBuilder::<f64>::new(2, 1)
++///     .transition(vec![1.0, 0.1, 0.0, 1.0])
++///     .observation(vec![1.0, 0.0])
++///     .initial_covariance(10.0) // 10·I
++///     .process_noise(CovarianceInput::diagonal(vec![0.01, 0.01]))
++///     .measurement_noise(vec![0.5])
++///     .build()
++///     .unwrap();
++///
++/// assert_eq!(kf.state(), &[0.0, 0.0][..]);
++/// kf.predict().unwrap();
++/// kf.update(&[1.0]).unwrap();
++/// assert!(kf.state()[0] > 0.0);
++/// ```
++pub struct LinearKalmanFilterBuilder<T: KalmanScalar> {
++    state_dim: usize,
++    measurement_dim: usize,
++    initial_state: Option<Vec<T>>,
++    initial_covariance: Option<CovarianceInput<T>>,
++    transition: Option<Vec<T>>,
++    process_noise: Option<CovarianceInput<T>>,
++    observation: Option<Vec<T>>,
++    measurement_noise: Option<CovarianceInput<T>>,
++}
++
++impl<T: KalmanScalar> LinearKalmanFilterBuilder<T> {
++    /// A builder for a model with `state_dim` states and `measurement_dim`
++    /// measurements.
++    pub fn new(state_dim: usize, measurement_dim: usize) -> Self {
++        trace!(
++            "Creating LinearKalmanFilterBuilder: state_dim={state_dim}, measurement_dim={measurement_dim}"
++        );
++        Self {
++            state_dim,
++            measurement_dim,
++            initial_state: None,
++            initial_covariance: None,
++            transition: None,
++            process_noise: None,
++            observation: None,
++            measurement_noise: None,
++        }
++    }
++
++    /// Set the initial state x0 (length n). Defaults to zero.
++    pub fn initial_state(mut self, state: Vec<T>) -> Self {
++        self.initial_state = Some(state);
++        self
++    }
++
++    /// Set the covariance P0 of the initial estimate (n×n).
++    pub fn initial_covariance(mut self, covariance: impl Into<CovarianceInput<T>>) -> Self {
++        self.initial_covariance = Some(covariance.into());
++        self
++    }
++
++    /// Set the state transition matrix F (n×n, row-major).
++    pub fn transition(mut self, matrix: Vec<T>) -> Self {
++        self.transition = Some(matrix);
++        self
++    }
++
++    /// Set the process noise covariance Q (n×n).
++    pub fn process_noise(mut self, noise: impl Into<CovarianceInput<T>>) -> Self {
++        self.process_noise = Some(noise.into());
++        self
++    }
++
++    /// Set the observation matrix H (m×n, row-major).
++    pub fn observation(mut self, matrix: Vec<T>) -> Self {
++        self.observation = Some(matrix);
++        self
++    }
++
++    /// Set the measurement noise covariance R (m×m).
++    pub fn measurement_noise(mut self, noise: impl Into<CovarianceInput<T>>) -> Self {
++        self.measurement_noise = Some(noise.into());
++        self
++    }
++
++    /// A builder pre-filled with the constant-velocity model in `dims` spatial
++    /// dimensions, for time step `dt`, process-noise intensity `q` and
++    /// measurement variance `r`.
++    ///
++    /// The state is the `dims` positions followed by the `dims` velocities;
++    /// positions are measured directly. The model, with `I` the
++    /// `dims × dims` identity, is
++    /// ```text
++    /// F = [I  dt·I]   H = [I 0]   Q = q·[dt³/3  dt²/2] ⊗ I   R = r·I
++    ///     [0   I  ]                [dt²/2   dt  ]
++    /// ```
++    /// and the initial state is zero with P0 the identity.
++    ///
++    /// Errors: `InvalidDimension` for `dims = 0` or `2·dims` overflowing.
++    /// Everything else is checked by [`Self::build`], and
++    /// [`LinearKalmanFilter::constant_velocity`] is this preset in one call.
++    pub fn constant_velocity(dims: usize, dt: T, q: T, r: T) -> KalmanResult<Self> {
++        let m = dims;
++        let n = dims.checked_mul(2).ok_or(KalmanError::InvalidDimension {
++            state_dim: dims,
++            measurement_dim: dims,
++        })?;
++        let (nn, mn, mm) = checked_model_dims(n, m)?;
++
++        let zeros = |len: usize| vec![T::zero(); len];
++        let (mut f, mut h, mut q_noise, mut r_noise) = (zeros(nn), zeros(mn), zeros(nn), zeros(mm));
++        for i in 0..dims {
++            // Position i moves with velocity i; velocity i is unchanged.
++            f[i * n + i] = T::one();
++            f[i * n + dims + i] = dt;
++            f[(dims + i) * n + dims + i] = T::one();
++            // Position i is measured directly.
++            h[i * n + i] = T::one();
++            r_noise[i * m + i] = r;
++        }
++        // Discrete white-noise acceleration: one 2×2 block per spatial axis,
++        // `q·[[dt³/3, dt²/2], [dt²/2, dt]]`, with the axes independent.
++        let dt2 = dt * dt;
++        let dt3 = dt2 * dt;
++        let (pos_var, pos_cov, vel_var) = (
++            q * dt3 / T::from_f64(3.0),
++            q * dt2 / T::from_f64(2.0),
++            q * dt,
++        );
++        for i in 0..dims {
++            q_noise[i * n + i] = pos_var;
++            q_noise[i * n + dims + i] = pos_cov;
++            q_noise[(dims + i) * n + i] = pos_cov;
++            q_noise[(dims + i) * n + dims + i] = vel_var;
++        }
++
++        Ok(Self {
++            state_dim: n,
++            measurement_dim: m,
++            initial_state: None,
++            initial_covariance: Some(CovarianceInput::scalar(T::one())),
++            transition: Some(f),
++            process_noise: Some(CovarianceInput::Full(q_noise)),
++            observation: Some(h),
++            measurement_noise: Some(CovarianceInput::scalar(r)),
++        })
++    }
++
++    /// Build the filter.
++    ///
++    /// Errors: `InvalidDimension` first (nothing is allocated for a zero or
++    /// overflowing size), then [`KalmanError::BuilderIncomplete`] naming the
++    /// first missing piece in the order transition, observation,
++    /// initial_covariance, process_noise, measurement_noise, then whatever
++    /// [`LinearKalmanFilter::new`] reports for the gathered matrices.
++    pub fn build(self) -> KalmanResult<LinearKalmanFilter<T>> {
++        let (n, m) = (self.state_dim, self.measurement_dim);
++        trace!("Building Linear Kalman Filter: state_dim={n}, measurement_dim={m}");
++
++        // Sizes are needed before the default initial state can be allocated.
++        let (nn, _, mm) = checked_model_dims(n, m)?;
++
++        let transition = self.transition.ok_or_else(|| missing("transition"))?;
++        let observation = self.observation.ok_or_else(|| missing("observation"))?;
++        let initial_covariance = self
++            .initial_covariance
++            .ok_or_else(|| missing("initial_covariance"))?;
++        let process_noise = self.process_noise.ok_or_else(|| missing("process_noise"))?;
++        let measurement_noise = self
++            .measurement_noise
++            .ok_or_else(|| missing("measurement_noise"))?;
++
++        let initial_state = self.initial_state.unwrap_or_else(|| vec![T::zero(); n]);
++        let p0 = expand(initial_covariance, n, nn)?;
++        let q = expand(process_noise, n, nn)?;
++        let r = expand(measurement_noise, m, mm)?;
++
++        LinearKalmanFilter::new(n, m, &initial_state, &p0, &transition, &q, &observation, &r)
++    }
++}
++
++fn missing(field: &str) -> KalmanError {
++    error!("LinearKalmanFilterBuilder: missing {field}");
++    KalmanError::BuilderIncomplete(field.to_string())
++}
++
++/// A full matrix, a diagonal or a scalar as a dense row-major matrix of `dim`
++/// rows. `square` is `dim · dim`, already known not to overflow.
++fn expand<T: KalmanScalar>(
++    form: CovarianceInput<T>,
++    dim: usize,
++    square: usize,
++) -> KalmanResult<Vec<T>> {
++    let (mut matrix, diagonal) = match form {
++        // The length of a full matrix is checked by `new`, like every other
++        // caller-supplied slice.
++        CovarianceInput::Full(entries) => return Ok(entries),
++        CovarianceInput::Scalar(variance) => (vec![T::zero(); square], vec![variance; dim]),
++        CovarianceInput::Diagonal(variances) => {
++            if variances.len() != dim {
++                return Err(KalmanError::DimensionMismatch {
++                    expected: (dim, dim),
++                    actual: (variances.len(), variances.len()),
++                });
++            }
++            (vec![T::zero(); square], variances)
++        }
++    };
++    for (i, variance) in diagonal.into_iter().enumerate() {
++        matrix[i * dim + i] = variance;
++    }
++    Ok(matrix)
++}
+diff --git a/src/builders/mod.rs b/src/builders/mod.rs
+index 9fb1cb0..b3fe1d5 100644
+--- a/src/builders/mod.rs
++++ b/src/builders/mod.rs
+@@ -6,6 +6,7 @@
+ mod ensemble;
+ mod extended;
+ mod information;
++mod linear;
+ mod particle;
+ mod scented;
+ mod unscented;
+@@ -13,6 +14,7 @@ mod unscented;
+ pub use ensemble::EnsembleKalmanFilterBuilder;
+ pub use extended::ExtendedKalmanFilterBuilder;
+ pub use information::InformationFilterBuilder;
++pub use linear::{CovarianceInput, LinearKalmanFilterBuilder};
+ pub use particle::ParticleFilterBuilder;
+ pub use scented::CubatureKalmanFilterBuilder;
+ pub use unscented::UnscentedKalmanFilterBuilder;
+diff --git a/src/filter.rs b/src/filter.rs
+index 8bc52eb..1958b07 100644
+--- a/src/filter.rs
++++ b/src/filter.rs
+@@ -87,6 +87,23 @@ fn diverged(what: &str) -> KalmanError {
+     KalmanError::FilterDivergence(format!("{what} is not finite"))
+ }
+ 
++/// The one dimension rule for a model: neither dimension may be zero, and
++/// `n·n`, `m·n` and `m·m` must not overflow. Returns those three products.
++///
++/// `new` and the front ends in [`crate::builders`] call this, so a zero or
++/// overflowing size is rejected by one rule rather than one rule per
++/// constructor.
++pub(crate) fn checked_model_dims(n: usize, m: usize) -> KalmanResult<(usize, usize, usize)> {
++    let bad = KalmanError::InvalidDimension { state_dim: n, measurement_dim: m };
++    if n == 0 || m == 0 {
++        return Err(bad);
++    }
++    match (n.checked_mul(n), m.checked_mul(n), m.checked_mul(m)) {
++        (Some(nn), Some(mn), Some(mm)) => Ok((nn, mn, mm)),
++        _ => Err(bad),
++    }
++}
++
+ /// `Ok(len)` if `slice` holds exactly `rows × cols` elements.
+ fn check_len<T>(slice: &[T], rows: usize, cols: usize, len: usize) -> KalmanResult<()> {
+     if slice.len() == len {
+@@ -118,14 +135,7 @@ impl<T: KalmanScalar> LinearKalmanFilter<T> {
+         r: &[T],
+     ) -> KalmanResult<Self> {
+         let (n, m) = (state_dim, measurement_dim);
+-        let bad_dims = KalmanError::InvalidDimension { state_dim: n, measurement_dim: m };
+-        if n == 0 || m == 0 {
+-            return Err(bad_dims);
+-        }
+-        let (Some(nn), Some(mn), Some(mm)) = (n.checked_mul(n), m.checked_mul(n), m.checked_mul(m))
+-        else {
+-            return Err(bad_dims);
+-        };
++        let (nn, mn, mm) = checked_model_dims(n, m)?;
+         check_len(x0, n, 1, n)?;
+         check_len(p0, n, n, nn)?;
+         check_len(f, n, n, nn)?;
+@@ -190,6 +200,26 @@ impl<T: KalmanScalar> LinearKalmanFilter<T> {
+         &self.r
+     }
+ 
++    /// Filter for the constant-velocity model in `dims` spatial dimensions.
++    ///
++    /// The state is the `dims` positions followed by the `dims` velocities, so
++    /// `state_dim() = 2·dims` and `measurement_dim() = dims`; positions are
++    /// measured directly. The model, with `I` the `dims × dims` identity, is
++    /// ```text
++    /// F = [I  dt·I]   H = [I 0]   Q = q·[dt³/3  dt²/2] ⊗ I   R = r·I
++    ///     [0   I  ]                [dt²/2   dt  ]
++    /// ```
++    /// where `q` is the process-noise intensity (the spectral density of a
++    /// white acceleration) and `r` the variance of each position measurement.
++    /// The initial state is zero and P0 is the identity.
++    ///
++    /// Errors: `InvalidDimension` for `dims = 0` or `2·dims` overflowing, and
++    /// whatever [`LinearKalmanFilter::new`] reports for the resulting model,
++    /// which is where every matrix is validated.
++    pub fn constant_velocity(dims: usize, dt: T, q: T, r: T) -> KalmanResult<Self> {
++        crate::builders::LinearKalmanFilterBuilder::constant_velocity(dims, dt, q, r)?.build()
++    }
++
+     /// `x ← F x`, `P ← F P Fᵀ + Q`. On a non-finite result returns
+     /// `FilterDivergence` and leaves the filter unchanged.
+     pub fn predict(&mut self) -> KalmanResult<()> {
+diff --git a/src/lib.rs b/src/lib.rs
+index f2a3389..d71395c 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -51,8 +51,9 @@ pub(crate) mod validation;
+ 
+ // Re-export main types for convenience
+ pub use builders::{
+-    CubatureKalmanFilterBuilder, EnsembleKalmanFilterBuilder, ExtendedKalmanFilterBuilder,
+-    InformationFilterBuilder, ParticleFilterBuilder, UnscentedKalmanFilterBuilder,
++    CovarianceInput, CubatureKalmanFilterBuilder, EnsembleKalmanFilterBuilder,
++    ExtendedKalmanFilterBuilder, InformationFilterBuilder, LinearKalmanFilterBuilder,
++    ParticleFilterBuilder, UnscentedKalmanFilterBuilder,
+ };
+ pub use ensemble::{EnsembleKalmanFilter, EnsembleStatistics};
+ pub use error::KalmanError;
+diff --git a/tests/linear_builder_tests.rs b/tests/linear_builder_tests.rs
+new file mode 100644
+index 0000000..57e36e9
+--- /dev/null
++++ b/tests/linear_builder_tests.rs
+@@ -0,0 +1,395 @@
++//! The ergonomic constructors in `builders::linear` must produce exactly the
++//! filter `LinearKalmanFilter::new` produces: same validation, same numbers.
++
++use kalman_filters::{
++    CovarianceInput, KalmanError, KalmanScalar, LinearKalmanFilter, LinearKalmanFilterBuilder,
++};
++
++// The reference model: constant velocity in one dimension, position measured
++// directly. Written once in f64 and converted per precision under test.
++const X0: [f64; 2] = [0.0, 1.0];
++const P0: [f64; 4] = [1.0, 0.0, 0.0, 1.0];
++const F: [f64; 4] = [1.0, 0.1, 0.0, 1.0];
++const Q: [f64; 4] = [0.01, 0.0, 0.0, 0.01];
++const H: [f64; 2] = [1.0, 0.0];
++const R: [f64; 1] = [0.1];
++
++fn cv<T: KalmanScalar>(values: &[f64]) -> Vec<T> {
++    values.iter().map(|&v| T::from_f64(v)).collect()
++}
++
++fn direct<T: KalmanScalar>(
++    x0: &[T],
++    p0: &[T],
++    f: &[T],
++    q: &[T],
++    h: &[T],
++    r: &[T],
++) -> LinearKalmanFilter<T> {
++    LinearKalmanFilter::new(2, 1, x0, p0, f, q, h, r).expect("reference model is valid")
++}
++
++/// Twenty predict/update steps fed the same measurements, compared bit for
++/// bit. The builder hands `new` the same values, so the two filters are one
++/// filter; any difference would have to come from a second set of rules.
++fn assert_same_trajectory<T: KalmanScalar>(
++    built: &mut LinearKalmanFilter<T>,
++    direct: &mut LinearKalmanFilter<T>,
++) {
++    for step in 0..20 {
++        let z = [T::from_usize(step) * T::from_f64(0.5)];
++        built.predict().expect("predict stays finite");
++        direct.predict().expect("predict stays finite");
++        built.update(&z).expect("update stays defined");
++        direct.update(&z).expect("update stays defined");
++        assert_eq!(
++            built.state(),
++            direct.state(),
++            "state differs at step {step}"
++        );
++        assert_eq!(
++            built.covariance(),
++            direct.covariance(),
++            "covariance differs at step {step}"
++        );
++    }
++}
++
++#[test]
++fn full_matrices_give_the_same_filter_as_new_f64() {
++    let mut built = LinearKalmanFilterBuilder::<f64>::new(2, 1)
++        .initial_state(X0.to_vec())
++        .initial_covariance(P0.to_vec())
++        .transition(F.to_vec())
++        .process_noise(Q.to_vec())
++        .observation(H.to_vec())
++        .measurement_noise(R.to_vec())
++        .build()
++        .unwrap();
++    let mut direct = LinearKalmanFilter::<f64>::new(2, 1, &X0, &P0, &F, &Q, &H, &R).unwrap();
++    assert_same_trajectory(&mut built, &mut direct);
++}
++
++#[test]
++fn full_matrices_give_the_same_filter_as_new_f32() {
++    let (x0, p0, f, q) = (cv::<f32>(&X0), cv::<f32>(&P0), cv::<f32>(&F), cv::<f32>(&Q));
++    let (h, r) = (cv::<f32>(&H), cv::<f32>(&R));
++    let mut built = LinearKalmanFilterBuilder::<f32>::new(2, 1)
++        .initial_state(x0.clone())
++        .initial_covariance(p0.clone())
++        .transition(f.clone())
++        .process_noise(q.clone())
++        .observation(h.clone())
++        .measurement_noise(r.clone())
++        .build()
++        .unwrap();
++    let mut direct = direct(&x0, &p0, &f, &q, &h, &r);
++    assert_same_trajectory(&mut built, &mut direct);
++}
++
++#[test]
++fn diagonal_form_equals_the_full_matrix_spelling() {
++    fn check<T: KalmanScalar>() {
++        // P0 = diag(2, 3), Q = diag(0.02, 0.04), R = 0.5.
++        let f: Vec<T> = cv(&F);
++        let h: Vec<T> = cv(&H);
++        let mut built = LinearKalmanFilterBuilder::<T>::new(2, 1)
++            .initial_covariance(CovarianceInput::diagonal(cv(&[2.0, 3.0])))
++            .transition(f.clone())
++            .process_noise(CovarianceInput::diagonal(cv(&[0.02, 0.04])))
++            .observation(h.clone())
++            .measurement_noise(CovarianceInput::diagonal(cv(&[0.5])))
++            .build()
++            .unwrap();
++        let p0: Vec<T> = cv(&[2.0, 0.0, 0.0, 3.0]);
++        let q: Vec<T> = cv(&[0.02, 0.0, 0.0, 0.04]);
++        let r: Vec<T> = cv(&[0.5]);
++        let x0 = vec![T::zero(); 2];
++        let mut reference = direct(&x0, &p0, &f, &q, &h, &r);
++        assert_eq!(
++            built.covariance(),
++            reference.covariance(),
++            "P0 written as a diagonal"
++        );
++        assert_same_trajectory(&mut built, &mut reference);
++    }
++    check::<f64>();
++    check::<f32>();
++}
++
++#[test]
++fn scalar_form_means_variance_times_identity() {
++    fn check<T: KalmanScalar>() {
++        let f: Vec<T> = cv(&F);
++        let h: Vec<T> = cv(&H);
++        // The scalar is the variance: 4 means 4·I, not 2·I.
++        let mut built = LinearKalmanFilterBuilder::<T>::new(2, 1)
++            .initial_covariance(T::from_f64(4.0))
++            .transition(f.clone())
++            .process_noise(T::from_f64(0.25))
++            .observation(h.clone())
++            .measurement_noise(CovarianceInput::scalar(T::from_f64(0.5)))
++            .build()
++            .unwrap();
++        let p0 = cv(&[4.0, 0.0, 0.0, 4.0]);
++        let q = cv(&[0.25, 0.0, 0.0, 0.25]);
++        let r = cv(&[0.5]);
++        let x0 = vec![T::zero(); 2];
++        let mut reference = direct(&x0, &p0, &f, &q, &h, &r);
++        assert_eq!(built.covariance(), reference.covariance(), "P0 = 4·I");
++        assert_same_trajectory(&mut built, &mut reference);
++    }
++    check::<f64>();
++    check::<f32>();
++}
++
++#[test]
++fn initial_state_defaults_to_zero() {
++    fn check<T: KalmanScalar>() {
++        let f: Vec<T> = cv(&F);
++        let h: Vec<T> = cv(&H);
++        let p0: Vec<T> = cv(&P0);
++        let q: Vec<T> = cv(&Q);
++        let r: Vec<T> = cv(&R);
++        // No `.initial_state(..)` anywhere: the default is the zero vector.
++        let mut built = LinearKalmanFilterBuilder::<T>::new(2, 1)
++            .initial_covariance(p0.clone())
++            .transition(f.clone())
++            .process_noise(q.clone())
++            .observation(h.clone())
++            .measurement_noise(r.clone())
++            .build()
++            .unwrap();
++        assert_eq!(built.state(), vec![T::zero(); 2].as_slice());
++        let x0 = vec![T::zero(); 2];
++        let mut reference = direct(&x0, &p0, &f, &q, &h, &r);
++        assert_same_trajectory(&mut built, &mut reference);
++    }
++    check::<f64>();
++    check::<f32>();
++}
++
++/// Every piece except `field` is supplied, so the error names that one.
++fn without(field: &str) -> KalmanError {
++    let mut builder = LinearKalmanFilterBuilder::<f64>::new(2, 1);
++    if field != "transition" {
++        builder = builder.transition(F.to_vec());
++    }
++    if field != "observation" {
++        builder = builder.observation(H.to_vec());
++    }
++    if field != "initial_covariance" {
++        builder = builder.initial_covariance(P0.to_vec());
++    }
++    if field != "process_noise" {
++        builder = builder.process_noise(Q.to_vec());
++    }
++    if field != "measurement_noise" {
++        builder = builder.measurement_noise(R.to_vec());
++    }
++    builder.build().expect_err("a required piece is missing")
++}
++
++#[test]
++fn a_missing_piece_is_a_named_error() {
++    for field in [
++        "transition",
++        "observation",
++        "initial_covariance",
++        "process_noise",
++        "measurement_noise",
++    ] {
++        let err = without(field);
++        assert!(
++            matches!(&err, KalmanError::BuilderIncomplete(name) if name == field),
++            "expected BuilderIncomplete({field}), got {err:?}"
++        );
++    }
++}
++
++#[test]
++fn zero_and_overflowing_dimensions_are_errors_not_panics() {
++    for (n, m) in [(0, 1), (1, 0), (0, 0), (usize::MAX, 1), (2, usize::MAX)] {
++        let err = LinearKalmanFilterBuilder::<f64>::new(n, m).build();
++        assert!(
++            matches!(err, Err(KalmanError::InvalidDimension { .. })),
++            "builder accepted state_dim={n}, measurement_dim={m}"
++        );
++        let err = LinearKalmanFilter::<f64>::new(n, m, &[], &[], &[], &[], &[], &[]);
++        assert!(matches!(err, Err(KalmanError::InvalidDimension { .. })));
++    }
++}
++
++/// One model with a flaw: `(what, P0, F, Q, H, R)`.
++type BadModel = (
++    &'static str,
++    Vec<f64>,
++    Vec<f64>,
++    Vec<f64>,
++    Vec<f64>,
++    Vec<f64>,
++);
++
++#[test]
++fn the_builder_rejects_exactly_what_new_rejects() {
++    // A valid 2×1 model, then one piece replaced by something `new` rejects.
++    // The displayed error must be identical: the builder has no opinion of its
++    // own beyond gathering the matrices.
++    let cases: Vec<BadModel> = vec![
++        (
++            "asymmetric P0",
++            vec![1.0, 0.5, 0.0, 1.0],
++            F.to_vec(),
++            Q.to_vec(),
++            H.to_vec(),
++            R.to_vec(),
++        ),
++        (
++            "indefinite P0",
++            vec![1.0, 2.0, 2.0, 1.0],
++            F.to_vec(),
++            Q.to_vec(),
++            H.to_vec(),
++            R.to_vec(),
++        ),
++        (
++            "negative variance in P0",
++            vec![-1.0, 0.0, 0.0, 1.0],
++            F.to_vec(),
++            Q.to_vec(),
++            H.to_vec(),
++            R.to_vec(),
++        ),
++        (
++            "short P0",
++            vec![1.0, 0.0, 0.0],
++            F.to_vec(),
++            Q.to_vec(),
++            H.to_vec(),
++            R.to_vec(),
++        ),
++        (
++            "NaN in Q",
++            P0.to_vec(),
++            F.to_vec(),
++            vec![f64::NAN, 0.0, 0.0, 1.0],
++            H.to_vec(),
++            R.to_vec(),
++        ),
++        (
++            "negative variance in R",
++            P0.to_vec(),
++            F.to_vec(),
++            Q.to_vec(),
++            H.to_vec(),
++            vec![-0.5],
++        ),
++        (
++            "short F",
++            P0.to_vec(),
++            vec![1.0, 0.0, 0.0],
++            Q.to_vec(),
++            H.to_vec(),
++            R.to_vec(),
++        ),
++        (
++            "long H",
++            P0.to_vec(),
++            F.to_vec(),
++            Q.to_vec(),
++            vec![1.0, 0.0, 0.0],
++            R.to_vec(),
++        ),
++    ];
++    for (what, p0, f, q, h, r) in cases {
++        let from_builder = LinearKalmanFilterBuilder::<f64>::new(2, 1)
++            .initial_covariance(p0.clone())
++            .transition(f.clone())
++            .process_noise(q.clone())
++            .observation(h.clone())
++            .measurement_noise(r.clone())
++            .build()
++            .expect_err(what);
++        let from_new =
++            LinearKalmanFilter::<f64>::new(2, 1, &[0.0; 2], &p0, &f, &q, &h, &r).expect_err(what);
++        assert_eq!(format!("{from_builder}"), format!("{from_new}"), "{what}");
++    }
++}
++
++#[test]
++fn a_diagonal_of_the_wrong_length_is_a_dimension_error() {
++    let err = LinearKalmanFilterBuilder::<f64>::new(2, 1)
++        .initial_covariance(CovarianceInput::diagonal(vec![1.0, 1.0, 1.0]))
++        .transition(F.to_vec())
++        .process_noise(Q.to_vec())
++        .observation(H.to_vec())
++        .measurement_noise(R.to_vec())
++        .build()
++        .unwrap_err();
++    assert!(
++        matches!(
++            err,
++            KalmanError::DimensionMismatch {
++                expected: (2, 2),
++                actual: (3, 3)
++            }
++        ),
++        "got {err:?}"
++    );
++}
++
++#[test]
++fn a_negative_or_non_finite_variance_is_an_error() {
++    for (what, covariance) in [
++        ("negative", CovarianceInput::Scalar(-1.0)),
++        ("NaN", CovarianceInput::Scalar(f64::NAN)),
++    ] {
++        let err = LinearKalmanFilterBuilder::<f64>::new(2, 1)
++            .initial_covariance(covariance.clone())
++            .transition(F.to_vec())
++            .process_noise(Q.to_vec())
++            .observation(H.to_vec())
++            .measurement_noise(R.to_vec())
++            .build()
++            .unwrap_err();
++        assert!(
++            matches!(
++                err,
++                KalmanError::InvalidCovariance | KalmanError::NonFiniteInput
++            ),
++            "P0 {what}: got {err:?}"
++        );
++
++        let err = LinearKalmanFilterBuilder::<f64>::new(2, 1)
++            .initial_covariance(P0.to_vec())
++            .transition(F.to_vec())
++            .process_noise(covariance.clone())
++            .observation(H.to_vec())
++            .measurement_noise(R.to_vec())
++            .build()
++            .unwrap_err();
++        assert!(
++            matches!(
++                err,
++                KalmanError::InvalidNoiseCovariance | KalmanError::NonFiniteInput
++            ),
++            "Q {what}: got {err:?}"
++        );
++
++        let err = LinearKalmanFilterBuilder::<f64>::new(2, 1)
++            .initial_covariance(P0.to_vec())
++            .transition(F.to_vec())
++            .process_noise(Q.to_vec())
++            .observation(H.to_vec())
++            .measurement_noise(covariance)
++            .build()
++            .unwrap_err();
++        assert!(
++            matches!(
++                err,
++                KalmanError::InvalidNoiseCovariance | KalmanError::NonFiniteInput
++            ),
++            "R {what}: got {err:?}"
++        );
++    }
++}
+diff --git a/tests/linear_constant_velocity_tests.rs b/tests/linear_constant_velocity_tests.rs
+new file mode 100644
+index 0000000..71c07f9
+--- /dev/null
++++ b/tests/linear_constant_velocity_tests.rs
+@@ -0,0 +1,266 @@
++//! The constant-velocity preset must be the textbook model, and the filter it
++//! returns must be the one `LinearKalmanFilter::new` returns for that model.
++
++use kalman_filters::{KalmanError, KalmanScalar, LinearKalmanFilter, LinearKalmanFilterBuilder};
++
++/// The hand-written constant-velocity model for two spatial dimensions,
++/// `dt = 0.25`, `q = 0.75`, `r = 0.5`. State order is `[x, y, ẋ, ẏ]`; every entry
++/// is a short binary fraction, so the preset's floating-point arithmetic is
++/// exact and the comparison below can be bit for bit.
++///
++/// F = [[1, 0, dt, 0], [0, 1, 0, dt], [0, 0, 1, 0], [0, 0, 0, 1]]
++/// H = [[1, 0, 0, 0], [0, 1, 0, 0]]
++/// Q = q·[[dt³/3, 0, dt²/2, 0], [0, dt³/3, 0, dt²/2],
++///        [dt²/2, 0, dt, 0], [0, dt²/2, 0, dt]]
++///     = [[0.00390625, 0, 0.0234375, 0], [0, 0.00390625, 0, 0.0234375],
++///        [0.0234375, 0, 0.1875, 0], [0, 0.0234375, 0, 0.1875]]
++/// R = 0.5·I₂, x0 = 0, P0 = I₄
++const F2: [f64; 16] = [
++    1.0, 0.0, 0.25, 0.0, //
++    0.0, 1.0, 0.0, 0.25, //
++    0.0, 0.0, 1.0, 0.0, //
++    0.0, 0.0, 0.0, 1.0,
++];
++const H2: [f64; 8] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0];
++const Q2: [f64; 16] = [
++    0.00390625, 0.0, 0.0234375, 0.0, //
++    0.0, 0.00390625, 0.0, 0.0234375, //
++    0.0234375, 0.0, 0.1875, 0.0, //
++    0.0, 0.0234375, 0.0, 0.1875,
++];
++const R2: [f64; 4] = [0.5, 0.0, 0.0, 0.5];
++/// P0 = I₄ and x0 = 0 with n = 2·dims = 4 states.
++const I4: [f64; 16] = [
++    1.0, 0.0, 0.0, 0.0, //
++    0.0, 1.0, 0.0, 0.0, //
++    0.0, 0.0, 1.0, 0.0, //
++    0.0, 0.0, 0.0, 1.0,
++];
++const Z4: [f64; 4] = [0.0; 4];
++
++const DT: f64 = 0.25;
++const Q_INTENSITY: f64 = 0.75;
++const R_VARIANCE: f64 = 0.5;
++
++fn cv<T: KalmanScalar>(values: &[f64]) -> Vec<T> {
++    values.iter().map(|&v| T::from_f64(v)).collect()
++}
++
++/// The same model for `dims` spatial dimensions, written out here by hand with
++/// an explicit index layout: positions first, then velocities, each spatial
++/// axis independent.
++fn hand_written<T: KalmanScalar>(dims: usize, dt: T, q: T, r: T) -> LinearKalmanFilter<T> {
++    let (n, m) = (2 * dims, dims);
++    let (nn, mn, mm) = (n * n, m * n, m * m);
++    let zero = |len: usize| vec![T::zero(); len];
++    let (mut f, mut h, mut q_noise, mut r_noise) = (zero(nn), zero(mn), zero(nn), zero(mm));
++    let (dt2, dt3) = (dt * dt, dt * dt * dt);
++    for i in 0..dims {
++        f[i * n + i] = T::one();
++        f[i * n + dims + i] = dt;
++        f[(dims + i) * n + dims + i] = T::one();
++        h[i * n + i] = T::one();
++        r_noise[i * m + i] = r;
++        q_noise[i * n + i] = q * dt3 / T::from_f64(3.0);
++        q_noise[i * n + dims + i] = q * dt2 / T::from_f64(2.0);
++        q_noise[(dims + i) * n + i] = q * dt2 / T::from_f64(2.0);
++        q_noise[(dims + i) * n + dims + i] = q * dt;
++    }
++    let mut p0 = zero(nn);
++    for i in 0..n {
++        p0[i * n + i] = T::one();
++    }
++    LinearKalmanFilter::new(n, m, &zero(n), &p0, &f, &q_noise, &h, &r_noise)
++        .expect("the hand-written constant-velocity model is valid")
++}
++
++fn assert_close<T: KalmanScalar>(a: &[T], b: &[T], tol: f64, what: &str) {
++    assert_eq!(
++        a.len(),
++        b.len(),
++        "{what}: length {} vs {}",
++        a.len(),
++        b.len()
++    );
++    for (i, (x, y)) in a.iter().zip(b).enumerate() {
++        let (x, y) = (
++            <T as KalmanScalar>::to_f64(x),
++            <T as KalmanScalar>::to_f64(y),
++        );
++        assert!(
++            (x - y).abs() <= tol * (1.0 + x.abs().max(y.abs())),
++            "{what}[{i}]: {x} vs {y}"
++        );
++    }
++}
++
++fn assert_same_trajectory<T: KalmanScalar>(
++    preset: &mut LinearKalmanFilter<T>,
++    direct: &mut LinearKalmanFilter<T>,
++) {
++    let m = preset.measurement_dim();
++    for step in 0..20 {
++        let z: Vec<T> = (0..m)
++            .map(|j| T::from_usize(step) * T::from_f64(0.5) + T::from_usize(j))
++            .collect();
++        preset.predict().expect("predict stays finite");
++        direct.predict().expect("predict stays finite");
++        preset.update(&z).expect("update stays defined");
++        direct.update(&z).expect("update stays defined");
++        assert_eq!(
++            preset.state(),
++            direct.state(),
++            "state differs at step {step}"
++        );
++        assert_eq!(
++            preset.covariance(),
++            direct.covariance(),
++            "covariance differs at step {step}"
++        );
++    }
++}
++
++#[test]
++fn constant_velocity_is_the_textbook_model_f64() {
++    let kf = LinearKalmanFilter::<f64>::constant_velocity(2, DT, Q_INTENSITY, R_VARIANCE).unwrap();
++    assert_eq!(kf.state_dim(), 4);
++    assert_eq!(kf.measurement_dim(), 2);
++    assert_eq!(kf.state(), &Z4[..], "initial state defaults to zero");
++    assert_eq!(kf.covariance(), &I4[..], "P0 defaults to the identity");
++    assert_eq!(kf.transition(), &F2[..]);
++    assert_eq!(kf.observation(), &H2[..]);
++    assert_eq!(kf.process_noise(), &Q2[..]);
++    assert_eq!(kf.measurement_noise(), &R2[..]);
++}
++
++#[test]
++fn constant_velocity_is_the_textbook_model_f32() {
++    let kf = LinearKalmanFilter::<f32>::constant_velocity(
++        2,
++        DT as f32,
++        Q_INTENSITY as f32,
++        R_VARIANCE as f32,
++    )
++    .unwrap();
++    assert_eq!(kf.state_dim(), 4);
++    assert_eq!(kf.measurement_dim(), 2);
++    assert_eq!(kf.transition(), cv::<f32>(&F2).as_slice());
++    assert_eq!(kf.observation(), cv::<f32>(&H2).as_slice());
++    assert_eq!(kf.process_noise(), cv::<f32>(&Q2).as_slice());
++    assert_eq!(kf.measurement_noise(), cv::<f32>(&R2).as_slice());
++}
++
++#[test]
++fn constant_velocity_matches_new_over_twenty_steps_f64() {
++    let mut preset =
++        LinearKalmanFilter::<f64>::constant_velocity(2, DT, Q_INTENSITY, R_VARIANCE).unwrap();
++    let mut direct = LinearKalmanFilter::<f64>::new(4, 2, &Z4, &I4, &F2, &Q2, &H2, &R2).unwrap();
++    assert_same_trajectory(&mut preset, &mut direct);
++}
++
++#[test]
++fn constant_velocity_matches_new_over_twenty_steps_f32() {
++    let (f, h) = (cv::<f32>(&F2), cv::<f32>(&H2));
++    let (q, r) = (cv::<f32>(&Q2), cv::<f32>(&R2));
++    let (z4, i4) = (cv::<f32>(&Z4), cv::<f32>(&I4));
++    let mut preset = LinearKalmanFilter::<f32>::constant_velocity(
++        2,
++        DT as f32,
++        Q_INTENSITY as f32,
++        R_VARIANCE as f32,
++    )
++    .unwrap();
++    let mut direct = LinearKalmanFilter::<f32>::new(4, 2, &z4, &i4, &f, &q, &h, &r).unwrap();
++    assert_same_trajectory(&mut preset, &mut direct);
++}
++
++#[test]
++fn constant_velocity_matches_new_with_three_dimensions_and_a_decimal_dt() {
++    // dt = 0.1 is not a binary fraction, so the preset and the hand-written
++    // model can differ in the last bit of Q; the trajectories agree to rounding.
++    fn check<T: KalmanScalar>(tol: f64) {
++        let (dims, dt) = (3, T::from_f64(0.1));
++        let (q, r) = (T::from_f64(1e-3), T::from_f64(1e-2));
++        let mut preset = LinearKalmanFilterBuilder::<T>::constant_velocity(dims, dt, q, r)
++            .unwrap()
++            .build()
++            .unwrap();
++        let mut direct = hand_written(dims, dt, q, r);
++        assert_eq!(preset.state_dim(), 6);
++        assert_eq!(preset.measurement_dim(), 3);
++        for step in 0..20 {
++            let z: Vec<T> = (0..dims)
++                .map(|j| T::from_usize(step) * T::from_f64(0.07) + T::from_usize(j))
++                .collect();
++            preset.predict().unwrap();
++            direct.predict().unwrap();
++            preset.update(&z).unwrap();
++            direct.update(&z).unwrap();
++            assert_close(
++                preset.state(),
++                direct.state(),
++                tol,
++                &format!("state step {step}"),
++            );
++            assert_close(
++                preset.covariance(),
++                direct.covariance(),
++                tol,
++                &format!("P step {step}"),
++            );
++        }
++    }
++    check::<f64>(1e-12);
++    check::<f32>(1e-4);
++}
++
++#[test]
++fn constant_velocity_rejects_bad_dimensions() {
++    for dims in [0, usize::MAX, usize::MAX / 2 + 1] {
++        let err = LinearKalmanFilterBuilder::<f64>::constant_velocity(dims, 0.1, 0.01, 0.1);
++        assert!(
++            matches!(err, Err(KalmanError::InvalidDimension { .. })),
++            "dims = {dims}"
++        );
++        let err = LinearKalmanFilter::<f64>::constant_velocity(dims, 0.1, 0.01, 0.1);
++        assert!(
++            matches!(err, Err(KalmanError::InvalidDimension { .. })),
++            "dims = {dims}"
++        );
++    }
++}
++
++#[test]
++fn constant_velocity_rejects_noise_that_is_not_a_variance() {
++    let err = LinearKalmanFilter::<f64>::constant_velocity(2, 0.1, -1.0, 0.1);
++    assert!(
++        matches!(err, Err(KalmanError::InvalidNoiseCovariance)),
++        "negative q"
++    );
++    let err = LinearKalmanFilter::<f64>::constant_velocity(2, 0.1, 0.01, -1.0);
++    assert!(
++        matches!(err, Err(KalmanError::InvalidNoiseCovariance)),
++        "negative r"
++    );
++    let err = LinearKalmanFilter::<f64>::constant_velocity(2, 0.1, f64::NAN, 0.1);
++    assert!(err.is_err(), "NaN q");
++    let err = LinearKalmanFilter::<f64>::constant_velocity(2, 0.1, 0.01, f64::INFINITY);
++    assert!(err.is_err(), "infinite r");
++}
++
++#[test]
++fn constant_velocity_is_usable() {
++    // A target moving at 2 m/s, sampled every 0.1 s, is tracked from a zero
++    // state and unit prior; after 20 measurements the position is close.
++    let mut kf = LinearKalmanFilter::<f64>::constant_velocity(1, 0.1, 1e-4, 0.01).unwrap();
++    for step in 0..20 {
++        let z = [0.2 * step as f64];
++        kf.predict().unwrap();
++        kf.update(&z).unwrap();
++    }
++    assert!(
++        kf.state()[0] > 0.0,
++        "position moved towards the measurements"
++    );
++    assert!(kf.state()[1] > 0.0, "velocity estimate is positive");
++}

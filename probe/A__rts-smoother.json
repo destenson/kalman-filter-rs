@@ -1,0 +1,23 @@
+{
+ "target": "A",
+ "probe": "rts-smoother",
+ "files_changed": 4,
+ "insertions": 607,
+ "deletions": 3,
+ "churn": 610,
+ "touched": [
+  "src/filter.rs",
+  "src/lib.rs",
+  "src/smoother.rs",
+  "tests/rts_smoother.rs"
+ ],
+ "tests_ok": true,
+ "frozen_violations": [],
+ "agent": {
+  "cost_usd": null,
+  "turns": null,
+  "duration_s": null,
+  "is_error": null,
+  "subtype": null
+ }
+}

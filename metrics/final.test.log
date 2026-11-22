@@ -1,7 +1,7 @@
 
 running 32 tests
 ................................
-test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.09s
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.31s
 
 warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
    --> src/ensemble/filter.rs:571:46
@@ -279,5 +279,5 @@ warning: use of deprecated associated function `unscented::UnscentedKalmanFilter
 running 114 tests
 ....................................................................................... 87/114
 ...........................
-test result: ok. 114 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 114 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 

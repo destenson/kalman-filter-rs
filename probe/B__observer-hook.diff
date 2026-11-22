@@ -1,0 +1,503 @@
+diff --git a/src/filter.rs b/src/filter.rs
+index de6d15f..fd2fbfd 100644
+--- a/src/filter.rs
++++ b/src/filter.rs
+@@ -9,9 +9,10 @@
+ //!   touches the prior, logs nothing and allocates nothing; the scratch it needs is
+ //!   passed in as a [`Workspace`] whose contents mean nothing between calls.
+ //! * **Shell** ([`linear::LinearKalmanFilter`]): owns one model, the current estimate,
+-//!   a spare estimate and a workspace. It runs a step into the spare and swaps it in
+-//!   only if the step succeeded, so a failed step leaves the filter unchanged by
+-//!   construction. Logging lives here, around the math.
++//!   a spare estimate, a workspace and an optional update observer. It runs a step
++//!   into the spare and swaps it in only if the step succeeded, so a failed step
++//!   leaves the filter unchanged by construction. Logging and observer callbacks live
++//!   here, around the math.
+ 
+ use crate::error::{KalmanError, KalmanResult};
+ use crate::matrix;
+@@ -258,7 +259,49 @@ fn divergence(what: &str) -> KalmanError {
+ pub mod linear {
+     use super::{Estimate, Model, Workspace};
+     use crate::error::KalmanResult;
++    use crate::matrix;
+     use crate::types::KalmanScalar;
++    use std::fmt;
++
++    /// Diagnostics from one successful measurement update.
++    ///
++    /// Borrowed from the filter's workspace: valid only for the duration of the
++    /// [`InnovationObserver::on_update`] call that receives it.
++    #[derive(Debug, Clone, Copy)]
++    pub struct InnovationReport<'a, T> {
++        /// Innovation y = z − H·x (length m), the measurement residual before the
++        /// update was applied.
++        pub innovation: &'a [T],
++        /// Innovation covariance S = H·P·Hᵀ + R (m×m, row-major), the covariance of
++        /// `innovation` for a correctly specified model.
++        pub innovation_covariance: &'a [T],
++        /// Normalized innovation squared, NIS = yᵀ·S⁻¹·y. For a correctly specified
++        /// model this is drawn from a chi-squared distribution with m degrees of
++        /// freedom, so its mean over many steps is ≈ m.
++        pub nis: T,
++    }
++
++    /// Receives the innovation diagnostics after every successful update.
++    ///
++    /// Register one with [`LinearKalmanFilter::set_observer`]. Any `FnMut` taking an
++    /// [`InnovationReport`] is an observer, so a closure is enough for most uses.
++    pub trait InnovationObserver<T: KalmanScalar> {
++        /// Called once per successful update, after the estimate has been committed.
++        fn on_update(&mut self, report: InnovationReport<'_, T>);
++    }
++
++    impl<T: KalmanScalar, F: FnMut(InnovationReport<'_, T>)> InnovationObserver<T> for F {
++        fn on_update(&mut self, report: InnovationReport<'_, T>) {
++            self(report);
++        }
++    }
++
++    /// A registered observer plus the scratch its NIS solve needs, allocated once at
++    /// registration so that updates never allocate.
++    struct ObserverSlot<T: KalmanScalar> {
++        observer: Box<dyn InnovationObserver<T> + Send + Sync>,
++        work: Vec<T>, // m
++    }
+ 
+     /// A linear Kalman filter with dimensions fixed at construction.
+     ///
+@@ -266,12 +309,26 @@ pub mod linear {
+     /// the estimate changes only through [`predict`](Self::predict) and
+     /// [`update`](Self::update), each of which either succeeds or leaves the filter
+     /// exactly as it was. After construction neither step allocates.
+-    #[derive(Debug, Clone)]
++    ///
++    /// An optional [`InnovationObserver`] can be registered to monitor filter health;
++    /// with no observer registered an update pays only for reading that option.
+     pub struct LinearKalmanFilter<T: KalmanScalar> {
+         model: Model<T>,
+         estimate: Estimate<T>,
+         spare: Estimate<T>,
+         ws: Workspace<T>,
++        observer: Option<ObserverSlot<T>>,
++    }
++
++    impl<T: KalmanScalar> fmt::Debug for LinearKalmanFilter<T> {
++        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++            f.debug_struct("LinearKalmanFilter")
++                .field("model", &self.model)
++                .field("estimate", &self.estimate)
++                .field("spare", &self.spare)
++                .field("observer", &self.observer.is_some())
++                .finish()
++        }
+     }
+ 
+     impl<T: KalmanScalar> LinearKalmanFilter<T> {
+@@ -304,6 +361,7 @@ pub mod linear {
+                 ws: Workspace::new(state_dim, measurement_dim),
+                 model,
+                 estimate,
++                observer: None,
+             })
+         }
+ 
+@@ -328,13 +386,39 @@ pub mod linear {
+ 
+         /// Measurement update with measurement `z` (length m), Joseph form.
+         ///
++        /// On success, a registered [`InnovationObserver`] is called once with the
++        /// innovation, its covariance and the NIS. A failed update observes nothing.
++        ///
+         /// # Errors
+         /// `DimensionMismatch` (wrong length), `InvalidInput` (non-finite `z`),
+         /// `SingularMatrix` (innovation covariance numerically singular),
+         /// `FilterDivergence` (non-finite result). On any error the filter is unchanged.
+         pub fn update(&mut self, z: &[T]) -> KalmanResult<()> {
+             let result = super::update(&self.model, &self.estimate, z, &mut self.ws, &mut self.spare);
+-            self.commit("update", result)
++            self.commit("update", result)?;
++            if self.observer.is_some() {
++                self.report_innovation();
++            }
++            Ok(())
++        }
++
++        /// Registers `observer` to receive diagnostics after every successful update,
++        /// replacing any previously registered observer.
++        ///
++        /// The observer runs after the estimate has been committed, so
++        /// [`state`](Self::state) and [`covariance`](Self::covariance) already hold the
++        /// posterior. Registration allocates the observer and one m-element scratch
++        /// buffer; `predict` and `update` allocate nothing with or without an observer.
++        ///
++        /// The observer must be `Send + Sync` so that the filter stays `Send + Sync`.
++        pub fn set_observer(&mut self, observer: impl InnovationObserver<T> + Send + Sync + 'static) {
++            let work = vec![T::zero(); self.model.measurement_dim()];
++            self.observer = Some(ObserverSlot { observer: Box::new(observer), work });
++        }
++
++        /// Removes the observer, if any. Later updates pay nothing for observation.
++        pub fn clear_observer(&mut self) {
++            self.observer = None;
+         }
+ 
+         /// State estimate x (length n).
+@@ -352,6 +436,26 @@ pub mod linear {
+             &self.model
+         }
+ 
++        /// Hands the last update's diagnostics to the observer, if one is registered.
++        ///
++        /// Runs around the numeric step, never inside it: the workspace already holds
++        /// y, S and the Cholesky factor of S, so the only work left is the triangular
++        /// solve for the NIS. No observer means no solve at all.
++        fn report_innovation(&mut self) {
++            let Some(slot) = self.observer.as_mut() else {
++                return;
++            };
++            let m = self.model.measurement_dim();
++            slot.work.copy_from_slice(&self.ws.y);
++            matrix::cholesky_solve(&self.ws.l, m, &mut slot.work);
++            let nis = matrix::dot(&self.ws.y, &slot.work);
++            slot.observer.on_update(InnovationReport {
++                innovation: &self.ws.y,
++                innovation_covariance: &self.ws.s,
++                nis,
++            });
++        }
++
+         /// Adopts a successful step's result; reports (and logs) a failed one.
+         fn commit(&mut self, step: &str, result: KalmanResult<()>) -> KalmanResult<()> {
+             match result {
+diff --git a/src/matrix/mod.rs b/src/matrix/mod.rs
+index 030da0a..bafe209 100644
+--- a/src/matrix/mod.rs
++++ b/src/matrix/mod.rs
+@@ -47,7 +47,7 @@ pub(crate) fn mul_vec<T: Float>(a: &[T], x: &[T], out: &mut [T], r: usize, c: us
+     }
+ }
+ 
+-fn dot<T: Float>(a: &[T], b: &[T]) -> T {
++pub(crate) fn dot<T: Float>(a: &[T], b: &[T]) -> T {
+     a.iter().zip(b).fold(T::zero(), |acc, (&x, &y)| acc + x * y)
+ }
+ 
+diff --git a/tests/observer_tests.rs b/tests/observer_tests.rs
+new file mode 100644
+index 0000000..d191076
+--- /dev/null
++++ b/tests/observer_tests.rs
+@@ -0,0 +1,312 @@
++//! The optional innovation observer: what it reports, when it is called, and what it
++//! costs. Everything is deterministic (fixed-seed SplitMix64, no OS randomness).
++
++use kalman_filters::KalmanError;
++use kalman_filters::linear::{InnovationObserver, InnovationReport, LinearKalmanFilter};
++use std::sync::atomic::{AtomicUsize, Ordering};
++use std::sync::mpsc;
++use std::sync::{Arc, Mutex};
++
++// ---------------------------------------------------------------------------
++// Allocation counter (thread-local, so parallel tests do not interfere).
++// Used only by the no-allocation test; it is a transparent wrapper otherwise.
++// ---------------------------------------------------------------------------
++mod alloc_counter {
++    use std::alloc::{GlobalAlloc, Layout, System};
++    use std::cell::Cell;
++
++    pub struct Counting;
++
++    thread_local! {
++        static COUNT: Cell<usize> = const { Cell::new(0) };
++    }
++
++    unsafe impl GlobalAlloc for Counting {
++        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
++            let _ = COUNT.try_with(|c| c.set(c.get() + 1));
++            unsafe { System.alloc(layout) }
++        }
++        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
++            unsafe { System.dealloc(ptr, layout) }
++        }
++        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
++            let _ = COUNT.try_with(|c| c.set(c.get() + 1));
++            unsafe { System.alloc_zeroed(layout) }
++        }
++        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
++            let _ = COUNT.try_with(|c| c.set(c.get() + 1));
++            unsafe { System.realloc(ptr, layout, new_size) }
++        }
++    }
++
++    pub fn count() -> usize {
++        COUNT.with(|c| c.get())
++    }
++}
++
++#[global_allocator]
++static GLOBAL: alloc_counter::Counting = alloc_counter::Counting;
++
++// ---------------------------------------------------------------------------
++// Helpers
++// ---------------------------------------------------------------------------
++
++/// Copies each report into a channel, so a test can inspect exactly what arrived.
++struct Capture(mpsc::Sender<Captured>);
++
++struct Captured {
++    innovation: Vec<f64>,
++    innovation_covariance: Vec<f64>,
++    nis: f64,
++}
++
++impl InnovationObserver<f64> for Capture {
++    fn on_update(&mut self, report: InnovationReport<'_, f64>) {
++        self.0
++            .send(Captured {
++                innovation: report.innovation.to_vec(),
++                innovation_covariance: report.innovation_covariance.to_vec(),
++                nis: report.nis,
++            })
++            .expect("test receiver is alive");
++    }
++}
++
++fn assert_close(actual: &[f64], expected: &[f64], tol: f64) {
++    assert_eq!(actual.len(), expected.len(), "length: {actual:?} vs {expected:?}");
++    for (i, (a, e)) in actual.iter().zip(expected).enumerate() {
++        assert!((a - e).abs() <= tol, "[{i}]: got {a}, expected {e}");
++    }
++}
++
++fn eye(n: usize) -> Vec<f64> {
++    let mut m = vec![0.0; n * n];
++    for i in 0..n {
++        m[i * n + i] = 1.0;
++    }
++    m
++}
++
++/// SplitMix64 + Box-Muller: deterministic standard normals.
++struct Rng(u64);
++
++impl Rng {
++    fn next_u64(&mut self) -> u64 {
++        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
++        let mut z = self.0;
++        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
++        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
++        z ^ (z >> 31)
++    }
++
++    fn uniform(&mut self) -> f64 {
++        ((self.next_u64() >> 11) as f64 + 0.5) / (1u64 << 53) as f64
++    }
++
++    fn normal(&mut self) -> f64 {
++        let (u1, u2) = (self.uniform(), self.uniform());
++        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
++    }
++}
++
++// ---------------------------------------------------------------------------
++// What the observer reports
++// ---------------------------------------------------------------------------
++
++#[test]
++fn observer_reports_scalar_innovation_covariance_and_nis() {
++    // P = 1, R = 0.25, x = 0, z = 3: y = 3, S = 1.25, NIS = 9/1.25 = 7.2.
++    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[0.25]).unwrap();
++    let (tx, rx) = mpsc::channel();
++    kf.set_observer(Capture(tx));
++    kf.update(&[3.0]).unwrap();
++    let report = rx.try_recv().expect("one report per successful update");
++    assert_close(&report.innovation, &[3.0], 1e-12);
++    assert_close(&report.innovation_covariance, &[1.25], 1e-12);
++    assert!((report.nis - 7.2).abs() < 1e-12, "NIS = {}", report.nis);
++    assert!(rx.try_recv().is_err(), "exactly one report per update");
++}
++
++#[test]
++fn observer_reports_correlated_covariance_and_nis_uses_the_full_matrix() {
++    // H = I, P = I, R = [[1, 0.5], [0.5, 1]]: S = [[2, 0.5], [0.5, 2]], y = [1, 2].
++    // NIS = yᵀ S⁻¹ y = 8 / 3.75, not yᵀy / trace and not yᵀy / 2.
++    let mut kf = LinearKalmanFilter::<f64>::new(
++        2,
++        2,
++        &[0.0, 0.0],
++        &eye(2),
++        &eye(2),
++        &[0.0; 4],
++        &eye(2),
++        &[1.0, 0.5, 0.5, 1.0],
++    )
++    .unwrap();
++    let (tx, rx) = mpsc::channel();
++    kf.set_observer(Capture(tx));
++    kf.update(&[1.0, 2.0]).unwrap();
++    let report = rx.try_recv().expect("one report");
++    assert_close(&report.innovation, &[1.0, 2.0], 1e-12);
++    assert_close(&report.innovation_covariance, &[2.0, 0.5, 0.5, 2.0], 1e-12);
++    assert!((report.nis - 8.0 / 3.75).abs() < 1e-12, "NIS = {}", report.nis);
++}
++
++#[test]
++fn observer_works_for_f32() {
++    let mut kf = LinearKalmanFilter::<f32>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[0.25]).unwrap();
++    let (tx, rx) = mpsc::channel::<(f32, f32, f32)>();
++    kf.set_observer(move |report: InnovationReport<'_, f32>| {
++        tx.send((report.innovation[0], report.innovation_covariance[0], report.nis)).unwrap();
++    });
++    kf.update(&[3.0]).unwrap();
++    let (y, s, nis) = rx.try_recv().expect("one report");
++    assert_eq!((y, s), (3.0, 1.25));
++    assert!((nis - 7.2).abs() < 1e-4, "NIS = {nis}");
++}
++
++// ---------------------------------------------------------------------------
++// When the observer is called
++// ---------------------------------------------------------------------------
++
++#[test]
++fn observer_is_not_called_for_a_rejected_update() {
++    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[1.0]).unwrap();
++    let calls = Arc::new(AtomicUsize::new(0));
++    let counter = calls.clone();
++    kf.set_observer(move |_: InnovationReport<'_, f64>| {
++        counter.fetch_add(1, Ordering::SeqCst);
++    });
++    assert!(kf.update(&[1.0, 2.0]).is_err(), "wrong length");
++    assert!(kf.update(&[f64::NAN]).is_err(), "non-finite measurement");
++    assert_eq!(calls.load(Ordering::SeqCst), 0, "rejected updates must not report");
++    kf.update(&[5.0]).unwrap();
++    assert_eq!(calls.load(Ordering::SeqCst), 1, "successful update must report");
++}
++
++#[test]
++fn observer_is_not_called_when_the_innovation_covariance_is_singular() {
++    // P = 0 and a rank-1 R make S = H P Hᵀ + R singular.
++    let mut kf =
++        LinearKalmanFilter::<f64>::new(2, 2, &[0.0, 0.0], &[0.0; 4], &eye(2), &[0.0; 4], &eye(2), &[1.0; 4])
++            .unwrap();
++    let calls = Arc::new(AtomicUsize::new(0));
++    let counter = calls.clone();
++    kf.set_observer(move |_: InnovationReport<'_, f64>| {
++        counter.fetch_add(1, Ordering::SeqCst);
++    });
++    assert!(matches!(kf.update(&[1.0, 2.0]), Err(KalmanError::SingularMatrix)));
++    assert_eq!(calls.load(Ordering::SeqCst), 0);
++}
++
++#[test]
++fn clearing_the_observer_stops_reports() {
++    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.001], &[1.0], &[0.1]).unwrap();
++    let calls = Arc::new(AtomicUsize::new(0));
++    let counter = calls.clone();
++    kf.set_observer(move |_: InnovationReport<'_, f64>| {
++        counter.fetch_add(1, Ordering::SeqCst);
++    });
++    kf.update(&[1.0]).unwrap();
++    kf.update(&[2.0]).unwrap();
++    assert_eq!(calls.load(Ordering::SeqCst), 2);
++    kf.clear_observer();
++    kf.update(&[3.0]).unwrap();
++    kf.update(&[4.0]).unwrap();
++    assert_eq!(calls.load(Ordering::SeqCst), 2, "no report after clear_observer");
++}
++
++// ---------------------------------------------------------------------------
++// The statistics: mean NIS over 5,000 steps of a correctly specified model is m
++// ---------------------------------------------------------------------------
++
++#[derive(Default)]
++struct NisSummary {
++    sum: f64,
++    count: usize,
++}
++
++/// A hand-written observer (not a closure) that accumulates what it is told.
++struct NisMonitor(Arc<Mutex<NisSummary>>);
++
++impl InnovationObserver<f64> for NisMonitor {
++    fn on_update(&mut self, report: InnovationReport<'_, f64>) {
++        let mut summary = self.0.lock().unwrap();
++        summary.sum += report.nis;
++        summary.count += 1;
++    }
++}
++
++#[test]
++fn mean_nis_over_5000_steps_is_within_10_percent_of_measurement_dim() {
++    // Two independent random walks, both observed (m = 2), with correlated
++    // measurement noise. The truth is drawn from the filter's own prior, and the
++    // process and measurement noise are drawn from the filter's Q and R, so the
++    // filter is correctly specified: each NIS is chi-squared with m = 2 degrees of
++    // freedom and the mean must be ~2.
++    let q: [f64; 4] = [0.02, 0.0, 0.0, 0.05];
++    let r: [f64; 4] = [0.5, 0.1, 0.1, 0.8];
++    let l00 = r[0].sqrt();
++    let l10 = r[2] / l00;
++    let l11 = (r[3] - l10 * l10).sqrt();
++
++    let mut kf = LinearKalmanFilter::<f64>::new(2, 2, &[0.0, 0.0], &eye(2), &eye(2), &q, &eye(2), &r).unwrap();
++    let summary = Arc::new(Mutex::new(NisSummary::default()));
++    kf.set_observer(NisMonitor(summary.clone()));
++
++    let mut rng = Rng(0x5EED_0002);
++    // The initial truth is drawn from N(x0, P0) = N(0, I).
++    let mut truth = [rng.normal(), rng.normal()];
++    const STEPS: usize = 5_000;
++    for _ in 0..STEPS {
++        truth[0] += q[0].sqrt() * rng.normal();
++        truth[1] += q[3].sqrt() * rng.normal();
++        let (n0, n1) = (rng.normal(), rng.normal());
++        let z = [truth[0] + l00 * n0, truth[1] + l10 * n0 + l11 * n1];
++        kf.predict().unwrap();
++        kf.update(&z).unwrap();
++    }
++
++    let summary = summary.lock().unwrap();
++    assert_eq!(summary.count, STEPS, "one report per successful update");
++    let mean = summary.sum / STEPS as f64;
++    let m = 2.0;
++    assert!(
++        (mean - m).abs() <= 0.1 * m,
++        "mean NIS over {STEPS} steps = {mean}, expected m = {m} within 10%"
++    );
++}
++
++// ---------------------------------------------------------------------------
++// What it costs
++// ---------------------------------------------------------------------------
++
++#[test]
++fn observer_costs_no_allocation_in_steady_state() {
++    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.001], &[1.0], &[0.1]).unwrap();
++
++    // With no observer registered, steady-state steps still allocate nothing.
++    for _ in 0..2 {
++        kf.predict().unwrap();
++        kf.update(&[1.0]).unwrap();
++    }
++    let before = alloc_counter::count();
++    for _ in 0..100 {
++        kf.predict().unwrap();
++        kf.update(&[1.0]).unwrap();
++    }
++    assert_eq!(alloc_counter::count() - before, 0, "no observer: steps must not allocate");
++
++    // With an observer registered, registration allocated its scratch once, so the
++    // NIS solve still does not allocate per update.
++    kf.set_observer(|_: InnovationReport<'_, f64>| {});
++    for _ in 0..2 {
++        kf.predict().unwrap();
++        kf.update(&[1.0]).unwrap();
++    }
++    let before = alloc_counter::count();
++    for _ in 0..100 {
++        kf.predict().unwrap();
++        kf.update(&[1.0]).unwrap();
++    }
++    assert_eq!(alloc_counter::count() - before, 0, "registered observer: steps must not allocate");
++}

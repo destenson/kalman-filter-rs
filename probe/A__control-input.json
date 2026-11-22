@@ -1,0 +1,21 @@
+{
+ "target": "A",
+ "probe": "control-input",
+ "files_changed": 2,
+ "insertions": 601,
+ "deletions": 6,
+ "churn": 607,
+ "touched": [
+  "src/filter.rs",
+  "tests/linear_kf_control.rs"
+ ],
+ "tests_ok": true,
+ "frozen_violations": [],
+ "agent": {
+  "cost_usd": null,
+  "turns": null,
+  "duration_s": null,
+  "is_error": null,
+  "subtype": null
+ }
+}

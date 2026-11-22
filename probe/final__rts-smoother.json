@@ -1,0 +1,26 @@
+{
+ "target": "final",
+ "probe": "rts-smoother",
+ "files_changed": 7,
+ "insertions": 799,
+ "deletions": 2,
+ "churn": 801,
+ "touched": [
+  "DESIGN_NOTES.md",
+  "src/builder.rs",
+  "src/filter.rs",
+  "src/lib.rs",
+  "src/smoother.rs",
+  "tests/rts_smoother.rs",
+  "tests/rts_smoother_oracle.rs"
+ ],
+ "tests_ok": true,
+ "frozen_violations": [],
+ "agent": {
+  "cost_usd": null,
+  "turns": null,
+  "duration_s": null,
+  "is_error": null,
+  "subtype": null
+ }
+}

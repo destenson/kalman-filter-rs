@@ -1,0 +1,23 @@
+{
+ "target": "B",
+ "probe": "control-input",
+ "files_changed": 4,
+ "insertions": 374,
+ "deletions": 10,
+ "churn": 384,
+ "touched": [
+  "src/filter.rs",
+  "src/information/conversion.rs",
+  "src/matrix/mod.rs",
+  "tests/control_input.rs"
+ ],
+ "tests_ok": true,
+ "frozen_violations": [],
+ "agent": {
+  "cost_usd": null,
+  "turns": null,
+  "duration_s": null,
+  "is_error": null,
+  "subtype": null
+ }
+}
