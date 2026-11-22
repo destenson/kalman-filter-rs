@@ -27,6 +27,18 @@ tests still call `new(..) -> KalmanResult<Self>`, keep `new` as a one-line forwa
 `try_new` with a doc comment saying it is temporary. It is removed in a mechanical
 cleanup after the final build has been verified. Do not add `new` anywhere else.
 
+# Starting point: candidate {{BASE}}
+This worktree already contains candidate {{BASE}}'s code, which passes all 32 frozen tests.
+**Graft, don't rewrite.** `TOURNAMENT_DESIGN.md` is a graft plan: apply exactly its grafts
+(§2), fixes (§3), removals (§4), amendment design (§6) and out-of-scope fixes (§7), in its
+build order (§8), running the checks it lists after each step. Keep the base's structure
+and style. Anything the plan does not mention stays as it is. If a planned change turns
+out wrong when you run the code, don't apply it; record why under "Deviations".
+**No bloat**: never keep two ways of doing the same thing.
+
+The plan's step 7 (deleting the temporary `new` forward) is NOT yours: the frozen tests
+must keep compiling. Stop after step 6.
+
 # Rules
 - Work in the order given under "Implementation order" in the design, running
   `{{TEST_CMD}}` at each checkpoint.

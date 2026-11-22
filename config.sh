@@ -24,7 +24,7 @@ EXTRA_METRICS=(
 # --- agents ---------------------------------------------------------------
 MODEL=""            # e.g. opus, sonnet; empty = CLI default
 EFFORT=""           # low|medium|high|xhigh|max; empty = default
-BUDGET_USD="20"     # per agent run (--max-budget-usd); empty = unlimited
+BUDGET_USD="12"
 PARALLEL=3
 MEASURE_PARALLEL=1  # concurrent build/test runs (builds are heavy)
 PERMISSION_MODE="acceptEdits"

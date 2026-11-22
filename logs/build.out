@@ -1,0 +1,4 @@
+[tourney 05:14:39] build starts from candidate A's code (graft mode)
+[tourney 05:14:39] agent build: start (cwd /home/user/kalman-filter-rs.tourney/linear-core/final)
+[tourney 05:29:00] agent build: done rc=0 in 861s cost=$5.63 turns=176
+Built tourney/linear-core/final. Verify: tourney measure linear-core final && tourney probe linear-core final

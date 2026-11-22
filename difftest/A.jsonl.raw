@@ -271,5 +271,5 @@ running 1 test
 {"case":"edge_nan_measurement","ok":false,"error":"NonFiniteInput"}
 {"case":"edge_updates_only","ok":true,"tol":1e-7,"abs":1e-9,"values":[-1.7203019375208186e0,2.4720741112065573e-3]}
 .
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
 
