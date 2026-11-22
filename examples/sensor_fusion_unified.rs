@@ -29,7 +29,7 @@
 //! ```
 
 use clap::Parser;
-use kalman_filters::{KalmanFilterBuilder, KalmanFilterTrait};
+use kalman_filters::linear::LinearKalmanFilter;
 use rand::SeedableRng;
 use rand_distr::{Distribution, Normal};
 
@@ -207,15 +207,9 @@ fn main() {
 
     // Build Kalman filter - works identically regardless of backend!
     // Start with GPS configuration (2 measurements)
-    let mut kf = KalmanFilterBuilder::new(6, 2)
-        .initial_state(x0)
-        .initial_covariance(p0)
-        .transition_matrix(f)
-        .process_noise(q)
-        .observation_matrix(h_gps.clone())
-        .measurement_noise(r_gps.clone())
-        .build()
-        .unwrap();
+    // The observation model is fixed per filter, so switching sensors below rebuilds the
+    // filter from the current estimate (state + covariance) with that sensor's H/R.
+    let mut kf = LinearKalmanFilter::<f64>::new(6, 2, &x0, &p0, &f, &q, &h_gps, &r_gps).unwrap();
 
     // Simulation parameters
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
@@ -246,7 +240,7 @@ fn main() {
         let true_ay = -radius * omega * omega * t.sin() * 0.1;
 
         // Predict step - same API regardless of backend!
-        kf.predict();
+        kf.predict().unwrap();
 
         // Sensor measurements (alternating between sensors)
         // We switch observation matrices using the unified API
@@ -257,8 +251,7 @@ fn main() {
                 let gps_y = true_y + gps_noise_dist.sample(&mut rng);
 
                 // Update observation model for GPS using unified API
-                kf.set_observation_matrix(&h_gps).unwrap();
-                kf.set_measurement_noise(&r_gps).unwrap();
+                kf = LinearKalmanFilter::new(6, 2, kf.state(), kf.covariance(), &f, &q, &h_gps, &r_gps).unwrap();
 
                 kf.update(&[gps_x, gps_y]).unwrap();
 
@@ -277,8 +270,7 @@ fn main() {
                 let radar_vy = true_vy + radar_noise_dist.sample(&mut rng) * 1.5;
 
                 // Update observation model for Radar using unified API
-                kf.set_observation_matrix(&h_radar).unwrap();
-                kf.set_measurement_noise(&r_radar).unwrap();
+                kf = LinearKalmanFilter::new(6, 4, kf.state(), kf.covariance(), &f, &q, &h_radar, &r_radar).unwrap();
 
                 kf.update(&[radar_x, radar_y, radar_vx, radar_vy]).unwrap();
 
@@ -292,8 +284,7 @@ fn main() {
                 let imu_ay = true_ay + imu_noise_dist.sample(&mut rng);
 
                 // Update observation model for IMU using unified API
-                kf.set_observation_matrix(&h_imu).unwrap();
-                kf.set_measurement_noise(&r_imu).unwrap();
+                kf = LinearKalmanFilter::new(6, 2, kf.state(), kf.covariance(), &f, &q, &h_imu, &r_imu).unwrap();
 
                 kf.update(&[imu_ax, imu_ay]).unwrap();
             }

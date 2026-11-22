@@ -1,17 +1,23 @@
 //! Conversion utilities between Kalman Filter and Information Filter forms
 
-use crate::filter::KalmanFilter;
 use crate::information::{InformationFilter, InformationForm, InformationState};
+use crate::linear::LinearKalmanFilter as KalmanFilter;
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
 use log::{debug, info, trace, warn};
+use nalgebra::RealField;
 use num_traits::Zero;
 
+/// Row-major copy of an nalgebra matrix.
+fn row_major<T: KalmanScalar + RealField>(m: &nalgebra::DMatrix<T>) -> Vec<T> {
+    m.transpose().as_slice().to_vec()
+}
+
 /// Convert Kalman Filter to Information Filter
-pub fn kalman_to_information<T: KalmanScalar>(
+pub fn kalman_to_information<T: KalmanScalar + RealField>(
     kf: &KalmanFilter<T>,
 ) -> KalmanResult<InformationFilter<T>> {
-    let n = kf.state_dim;
-    let m = kf.measurement_dim;
+    let n = kf.state_dim();
+    let m = kf.measurement_dim();
 
     debug!(
         "Converting Kalman Filter to Information Filter: state_dim={}, measurement_dim={}",
@@ -19,23 +25,24 @@ pub fn kalman_to_information<T: KalmanScalar>(
     );
 
     // Convert state and covariance to information form
-    let info_state = InformationState::from_state_covariance(&kf.x, &kf.P)?;
+    let info_state = InformationState::from_state_covariance(kf.state(), kf.covariance())?;
     trace!("KF->IF conversion: information state created");
 
+    let (f, q, h, r) = kf.model();
     InformationFilter::initialize(
         n,
         m,
         info_state.Y,
         info_state.y,
-        kf.F.clone(),
-        kf.Q.clone(),
-        kf.H.clone(),
-        kf.R.clone(),
+        row_major(f),
+        row_major(q),
+        row_major(h),
+        row_major(r),
     )
 }
 
 /// Convert Information Filter to Kalman Filter
-pub fn information_to_kalman<T: KalmanScalar>(
+pub fn information_to_kalman<T: KalmanScalar + RealField>(
     inf: &InformationFilter<T>,
 ) -> KalmanResult<KalmanFilter<T>> {
     let n = inf.state_dim;
@@ -51,20 +58,11 @@ pub fn information_to_kalman<T: KalmanScalar>(
     let covariance = inf.state.recover_covariance()?;
     trace!("IF->KF conversion: state and covariance recovered");
 
-    KalmanFilter::initialize(
-        n,
-        m,
-        state,
-        covariance,
-        inf.F.clone(),
-        inf.Q.clone(),
-        inf.H.clone(),
-        inf.R.clone(),
-    )
+    KalmanFilter::new(n, m, &state, &covariance, &inf.F, &inf.Q, &inf.H, &inf.R)
 }
 
 /// Hybrid filter that can switch between forms based on sparsity
-pub struct HybridFilter<T: KalmanScalar> {
+pub struct HybridFilter<T: KalmanScalar + RealField> {
     kf: Option<KalmanFilter<T>>,
     inf: Option<InformationFilter<T>>,
     sparsity_threshold: f64,
@@ -80,7 +78,7 @@ pub enum FilterForm {
     Information,
 }
 
-impl<T: KalmanScalar> HybridFilter<T> {
+impl<T: KalmanScalar + RealField> HybridFilter<T> {
     /// Create new hybrid filter
     pub fn new(
         state_dim: usize,
@@ -97,15 +95,15 @@ impl<T: KalmanScalar> HybridFilter<T> {
             "Creating HybridFilter: state_dim={}, measurement_dim={}, sparsity_threshold={:.2}",
             state_dim, measurement_dim, sparsity_threshold
         );
-        let kf = KalmanFilter::initialize(
+        let kf = KalmanFilter::new(
             state_dim,
             measurement_dim,
-            initial_state,
-            initial_covariance,
-            F,
-            Q,
-            H,
-            R,
+            &initial_state,
+            &initial_covariance,
+            &F,
+            &Q,
+            &H,
+            &R,
         )?;
 
         Ok(Self {
@@ -179,7 +177,7 @@ impl<T: KalmanScalar> HybridFilter<T> {
         let total = matrix.len() as f64;
         let zeros = matrix
             .iter()
-            .filter(|&&x| x.abs() < <T as KalmanScalar>::epsilon())
+            .filter(|&&x| num_traits::Float::abs(x) < <T as KalmanScalar>::epsilon())
             .count() as f64;
         let sparsity = zeros / total;
         trace!(
@@ -197,7 +195,7 @@ impl<T: KalmanScalar> HybridFilter<T> {
         match self.current_form {
             FilterForm::Covariance => {
                 if let Some(kf) = &mut self.kf {
-                    kf.predict();
+                    kf.predict()?;
                 }
             }
             FilterForm::Information => {
@@ -232,7 +230,7 @@ impl<T: KalmanScalar> HybridFilter<T> {
         match self.current_form {
             FilterForm::Covariance => {
                 if let Some(kf) = &self.kf {
-                    Ok(kf.x.clone())
+                    Ok(kf.state().to_vec())
                 } else {
                     warn!("HybridFilter: no active filter");
                     Err(KalmanError::FilterDivergence(
@@ -258,7 +256,7 @@ impl<T: KalmanScalar> HybridFilter<T> {
         match self.current_form {
             FilterForm::Covariance => {
                 if let Some(kf) = &self.kf {
-                    Ok(kf.P.clone())
+                    Ok(kf.covariance().to_vec())
                 } else {
                     warn!("HybridFilter: no active filter");
                     Err(KalmanError::FilterDivergence(
@@ -287,22 +285,22 @@ mod tests {
     #[test]
     fn test_kalman_information_equivalence() {
         // Create identical filters in both forms
-        let mut kf = KalmanFilter::<f64>::initialize(
+        let mut kf = KalmanFilter::<f64>::new(
             2,
             1,
-            vec![0.0, 0.0],
-            vec![1.0, 0.0, 0.0, 1.0],
-            vec![1.0, 0.1, 0.0, 1.0],
-            vec![0.01, 0.0, 0.0, 0.01],
-            vec![1.0, 0.0],
-            vec![0.1],
+            &[0.0, 0.0],
+            &[1.0, 0.0, 0.0, 1.0],
+            &[1.0, 0.1, 0.0, 1.0],
+            &[0.01, 0.0, 0.0, 0.01],
+            &[1.0, 0.0],
+            &[0.1],
         )
         .unwrap();
 
         let mut inf = kalman_to_information(&kf).unwrap();
 
         // Perform same operations
-        kf.predict();
+        kf.predict().unwrap();
         kf.update(&[1.0]).unwrap();
 
         inf.predict().unwrap();

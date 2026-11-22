@@ -1,7 +1,6 @@
 //! Core Information Filter implementation
 #![allow(unused)]
 
-use crate::filter::KalmanFilter;
 use crate::information::{InformationForm, InformationMatrix, InformationVector};
 use crate::logging::{
     check_numerical_stability, format_matrix, format_state, log_filter_dimensions,
@@ -84,7 +83,7 @@ impl<T: KalmanScalar> InformationState<T> {
         check_numerical_stability(covariance, dim, "Covariance matrix P");
 
         // Y = P^-1
-        let Y = KalmanFilter::<T>::invert_matrix(covariance, dim)?;
+        let Y = crate::matrix::invert_matrix(covariance, dim)?;
 
         // y = Y·x
         let mut y = vec![T::zero(); dim];
@@ -116,7 +115,7 @@ impl<T: KalmanScalar> InformationForm<T> for InformationState<T> {
         trace!("Information Filter: Recovering state from information form");
 
         // x = Y^-1 · y
-        let Y_inv = KalmanFilter::<T>::invert_matrix(&self.Y, self.dim)?;
+        let Y_inv = crate::matrix::invert_matrix(&self.Y, self.dim)?;
         let mut state = vec![T::zero(); self.dim];
         for i in 0..self.dim {
             for j in 0..self.dim {
@@ -135,7 +134,7 @@ impl<T: KalmanScalar> InformationForm<T> for InformationState<T> {
         trace!("Information Filter: Recovering covariance from information matrix");
 
         // P = Y^-1
-        let cov = KalmanFilter::<T>::invert_matrix(&self.Y, self.dim)?;
+        let cov = crate::matrix::invert_matrix(&self.Y, self.dim)?;
 
         check_numerical_stability(&cov, self.dim, "Recovered covariance P");
 
@@ -304,7 +303,7 @@ impl<T: KalmanScalar> InformationFilter<T> {
         }
 
         // Step 3: Y_k|k-1 = P_pred^-1
-        let Y_pred = KalmanFilter::<T>::invert_matrix(&P_pred, n)?;
+        let Y_pred = crate::matrix::invert_matrix(&P_pred, n)?;
 
         // Step 4: Compute y_k|k-1 = Y_k|k-1·F·Y_k-1^-1·y_k-1
         // First recover previous state: x_k-1 = Y_k-1^-1·y_k-1
@@ -366,7 +365,7 @@ impl<T: KalmanScalar> InformationFilter<T> {
         );
 
         // Step 1: Compute R^-1
-        let R_inv = KalmanFilter::<T>::invert_matrix(&self.R, m)?;
+        let R_inv = crate::matrix::invert_matrix(&self.R, m)?;
 
         // Step 2: Compute H^T·R^-1·H
         // First compute H^T·R^-1
@@ -435,7 +434,7 @@ impl<T: KalmanScalar> InformationFilter<T> {
             let m = z.len();
 
             // Compute R^-1
-            let R_inv = KalmanFilter::<T>::invert_matrix(R, m)?;
+            let R_inv = crate::matrix::invert_matrix(R, m)?;
 
             // Compute H^T·R^-1
             let mut HtR_inv = vec![T::zero(); n * m];

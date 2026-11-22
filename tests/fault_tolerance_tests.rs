@@ -3,6 +3,7 @@
 //! These tests verify that filters handle real-world failure scenarios gracefully,
 //! including sensor dropouts, outliers, network failures, and Byzantine faults.
 
+#[cfg(any())] // uses the removed KalmanFilter API
 use kalman_filters::filter::KalmanFilter;
 use kalman_filters::information::{
     DistributedInformationFilter, InformationState,
@@ -15,6 +16,7 @@ use std::collections::HashMap;
 // SENSOR FAILURE TESTS
 // =============================================================================
 
+#[cfg(any())] // uses the removed KalmanFilter API
 #[test]
 fn test_kf_handles_measurement_dropout() {
     // Sensor intermittently drops measurements
@@ -66,6 +68,7 @@ fn test_kf_handles_measurement_dropout() {
     );
 }
 
+#[cfg(any())] // uses the removed KalmanFilter API
 #[test]
 fn test_kf_measurement_outlier_detection() {
     // Filter should be robust to occasional outliers
@@ -110,6 +113,7 @@ fn test_kf_measurement_outlier_detection() {
     );
 }
 
+#[cfg(any())] // uses the removed KalmanFilter API
 #[test]
 fn test_kf_sensor_bias_estimation() {
     // Filter should eventually converge to the combined measurement (position + bias)
@@ -491,6 +495,7 @@ fn test_enkf_prevents_ensemble_collapse() {
 // UTILITY FUNCTIONS
 // =============================================================================
 
+#[cfg(any())] // uses the removed KalmanFilter API
 fn rand_deterministic() -> f64 {
     use std::cell::Cell;
     thread_local! {

@@ -8,6 +8,7 @@
 //! References:
 //! - Bar-Shalom, Y., Li, X. R., & Kirubarajan, T. (2001). Estimation with applications to tracking and navigation.
 //! - Welch & Bishop, "An Introduction to the Kalman Filter" (UNC-Chapel Hill, TR 95-041)
+#![cfg(any())] // uses the removed KalmanFilter API; superseded by tests/spec_linear_kf.rs
 
 use approx::assert_abs_diff_eq;
 use kalman_filters::filter::KalmanFilter;

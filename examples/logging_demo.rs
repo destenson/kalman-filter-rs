@@ -27,9 +27,8 @@
 //! ```
 
 use clap::Parser;
-use kalman_filters::{
-    ExtendedKalmanFilter, KalmanFilterBuilder, KalmanFilterTrait, NonlinearSystem,
-};
+use kalman_filters::linear::LinearKalmanFilter;
+use kalman_filters::{ExtendedKalmanFilter, NonlinearSystem};
 use log::{debug, info, warn};
 
 #[cfg(feature = "tracing-subscriber")]
@@ -128,15 +127,8 @@ fn main() {
 fn demo_linear_kf(cycles: usize) {
     info!("=== Linear Kalman Filter Demo ===");
 
-    // Create a simple 1D Kalman filter using the builder
-    let mut kf = KalmanFilterBuilder::<f64>::new(1, 1)
-        .initial_state(vec![0.0])
-        .initial_covariance(vec![1.0])
-        .transition_matrix(vec![1.0])
-        .process_noise(vec![0.001])
-        .observation_matrix(vec![1.0])
-        .measurement_noise(vec![0.1])
-        .build()
+    // Create a simple 1D Kalman filter
+    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.001], &[1.0], &[0.1])
         .unwrap();
 
     info!("Running {} predict/update cycles", cycles);
@@ -146,7 +138,7 @@ fn demo_linear_kf(cycles: usize) {
         info!("Cycle {}", i);
 
         // Predict
-        kf.predict();
+        kf.predict().unwrap();
 
         // Update with measurement
         let measurement = vec![i as f64 * 0.5];
@@ -201,38 +193,42 @@ fn demo_numerical_issues(seed: Option<u64>) {
     }
 
     // Create a filter with near-singular covariance
-    let mut kf = KalmanFilterBuilder::<f64>::new(2, 1)
-        .initial_state(vec![0.0, 0.0])
-        .initial_covariance(vec![1e-12, 0.0, 0.0, 1e-12]) // near-singular
-        .transition_matrix(vec![1.0, 0.1, 0.0, 1.0])
-        .process_noise(vec![0.001, 0.0, 0.0, 0.001])
-        .observation_matrix(vec![1.0, 0.0])
-        .measurement_noise(vec![0.1])
-        .build()
-        .unwrap();
+    let mut kf = LinearKalmanFilter::<f64>::new(
+        2,
+        1,
+        &[0.0, 0.0],
+        &[1e-12, 0.0, 0.0, 1e-12], // near-singular
+        &[1.0, 0.1, 0.0, 1.0],
+        &[0.001, 0.0, 0.0, 0.001],
+        &[1.0, 0.0],
+        &[0.1],
+    )
+    .unwrap();
 
     warn!("Created filter with near-singular covariance to trigger warnings");
 
     // This should trigger numerical stability warnings
-    kf.predict();
+    let _ = kf.predict();
 
     // Try to update - may trigger warnings about innovation covariance
     let _ = kf.update(&[1.0]);
 
     // Create a filter that will have a singular innovation covariance
-    let mut bad_kf = KalmanFilterBuilder::<f64>::new(2, 2)
-        .initial_state(vec![0.0, 0.0])
-        .initial_covariance(vec![0.0, 0.0, 0.0, 0.0]) // zero covariance!
-        .transition_matrix(vec![1.0, 0.0, 0.0, 1.0])
-        .process_noise(vec![0.0, 0.0, 0.0, 0.0]) // zero process noise
-        .observation_matrix(vec![1.0, 0.0, 0.0, 1.0])
-        .measurement_noise(vec![0.0, 0.0, 0.0, 0.0]) // zero measurement noise!
-        .build()
-        .unwrap();
+    let mut bad_kf = LinearKalmanFilter::<f64>::new(
+        2,
+        2,
+        &[0.0, 0.0],
+        &[0.0, 0.0, 0.0, 0.0], // zero covariance!
+        &[1.0, 0.0, 0.0, 1.0],
+        &[0.0, 0.0, 0.0, 0.0], // zero process noise
+        &[1.0, 0.0, 0.0, 1.0],
+        &[0.0, 0.0, 0.0, 0.0], // zero measurement noise!
+    )
+    .unwrap();
 
     warn!("Created filter with zero covariances to demonstrate error logging");
 
-    bad_kf.predict();
+    let _ = bad_kf.predict();
 
     // This should fail with a singular matrix error
     match bad_kf.update(&[1.0, 1.0]) {

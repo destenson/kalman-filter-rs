@@ -8,12 +8,9 @@ pub use crate::error::{KalmanError, KalmanResult};
 
 /// Trait for numeric types that can be used in Kalman filters
 pub trait KalmanScalar: Float + Default + fmt::Debug + fmt::Display + 'static {
-    /// Small epsilon value for numerical stability
+    /// Absolute threshold used by the nonlinear filters (not by `linear`, whose tolerances
+    /// are all relative to the matrix being tested).
     fn epsilon() -> Self;
-    /// Deprecated: Use epsilon() instead
-    fn Epsilon(&self) -> Self {
-        <Self as KalmanScalar>::epsilon()
-    }
 
     /// Convert to f64 for logging purposes
     fn to_f64(&self) -> f64 {
@@ -102,17 +99,15 @@ mod tests {
     #[test]
     fn test_kalman_scalar_f32() {
         assert_eq!(<f32 as KalmanScalar>::epsilon(), 1e-6);
-        let val = 3.14_f32;
-        assert_eq!(val.Epsilon(), 1e-6);
-        assert!((val.to_f64() - 3.14).abs() < 0.01);
+        let val = 2.5_f32;
+        assert_eq!(val.to_f64(), 2.5);
     }
 
     #[test]
     fn test_kalman_scalar_f64() {
         assert_eq!(<f64 as KalmanScalar>::epsilon(), 1e-10);
-        let val = 3.14159_f64;
-        assert_eq!(val.Epsilon(), 1e-10);
-        assert!((val.to_f64() - 3.14159).abs() < 1e-10);
+        let val = 2.71_f64;
+        assert_eq!(val.to_f64(), 2.71);
     }
 
     #[test]

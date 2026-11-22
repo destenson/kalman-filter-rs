@@ -66,8 +66,7 @@ impl<T: KalmanScalar> InformationFilterBuilder<T> {
         );
 
         // Convert to information form using matrix inversion
-        use crate::filter::KalmanFilter;
-        let Y = KalmanFilter::<T>::invert_matrix(&initial_covariance, state_dim)?;
+        let Y = crate::matrix::invert_matrix(&initial_covariance, state_dim)?;
 
         // y = Y * x
         let mut y = vec![T::zero(); state_dim];

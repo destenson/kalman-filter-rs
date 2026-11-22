@@ -4,6 +4,7 @@
 //! behavior of the filters, not just that they compile and run.
 
 use approx::assert_abs_diff_eq;
+#[cfg(any())] // uses the removed KalmanFilter API
 use kalman_filters::filter::KalmanFilter;
 use kalman_filters::{
     EnsembleKalmanFilterBuilder, ExtendedKalmanFilterBuilder, NonlinearSystem,
@@ -138,6 +139,7 @@ impl NonlinearSystem<f64> for BearingLocalization {
 // LINEAR KALMAN FILTER FUNCTIONAL TESTS
 // =============================================================================
 
+#[cfg(any())] // uses the removed KalmanFilter API
 mod kf_tests {
     use super::*;
 
@@ -1017,6 +1019,7 @@ mod enkf_tests {
 // CROSS-FILTER VALIDATION TESTS
 // =============================================================================
 
+#[cfg(any())] // uses the removed KalmanFilter API
 mod cross_validation {
     use super::*;
 

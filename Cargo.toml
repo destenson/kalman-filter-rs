@@ -22,7 +22,8 @@ std = ["rand_distr/std"]
 alloc = ["rand_distr/alloc"]
 
 # Matrix operation backends (choose one; naive-matrix is the default)
-nalgebra = ["dep:nalgebra"]
+# nalgebra is always a dependency now; the feature stays so existing feature lists resolve.
+nalgebra = []
 naive-matrix = []
 blas-backend = ["dep:ndarray", "std"]
 # Base ndarray-linalg without specific BLAS backend
@@ -62,7 +63,7 @@ approx = "0.5"
 num-traits = "0.2"
 rand = "0.9.2"
 rand_distr = { version = "0.5.1", default-features = false }
-nalgebra = { version = "0.34.1", optional = true }
+nalgebra = "0.34.1"
 ndarray = { version = "0.17.1", optional = true }
 ndarray-linalg = { version = "0.18.0", optional = true, default-features = false }
 opencv = { version = "0.97", optional = true }

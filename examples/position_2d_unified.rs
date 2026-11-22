@@ -32,7 +32,7 @@
 //! ```
 
 use clap::Parser;
-use kalman_filters::{KalmanFilterBuilder, KalmanFilterTrait};
+use kalman_filters::linear::LinearKalmanFilter;
 use rand::SeedableRng;
 use rand_distr::{Distribution, Uniform};
 
@@ -162,15 +162,7 @@ fn main() {
     let r = vec![r_val, 0.0, 0.0, r_val];
 
     // Build the Kalman filter - works identically regardless of backend!
-    let mut kf = KalmanFilterBuilder::new(4, 2)
-        .initial_state(x0)
-        .initial_covariance(p0)
-        .transition_matrix(f)
-        .process_noise(q)
-        .observation_matrix(h)
-        .measurement_noise(r)
-        .build()
-        .unwrap();
+    let mut kf = LinearKalmanFilter::<f64>::new(4, 2, &x0, &p0, &f, &q, &h, &r).unwrap();
 
     println!("Configuration:");
     println!("  Time steps: {}", args.steps);
@@ -211,7 +203,7 @@ fn main() {
         let measured_y = true_y + noise_y;
 
         // Kalman filter predict and update - same API regardless of backend!
-        kf.predict();
+        kf.predict().unwrap();
         kf.update(&[measured_x, measured_y]).unwrap();
 
         // Get estimated state

@@ -36,13 +36,7 @@ use clap::Parser;
 use rand::SeedableRng;
 use rand_distr::{Distribution, Uniform};
 
-#[cfg(not(feature = "nalgebra"))]
-use kalman_filters::{KalmanFilter, KalmanFilterBuilder, KalmanFilterTrait};
-
-#[cfg(feature = "nalgebra")]
-use kalman_filters::StaticKalmanFilter;
-#[cfg(feature = "nalgebra")]
-use nalgebra::{SMatrix, SVector};
+use kalman_filters::linear::LinearKalmanFilter;
 
 /// Command-line arguments for the 2D position tracking example
 #[derive(Parser, Debug)]
@@ -173,14 +167,7 @@ fn main() {
     let r = vec![r_val, 0.0, 0.0, r_val];
 
     // Build the Kalman filter
-    let mut kf = KalmanFilterBuilder::<f64>::new(4, 2)
-        .initial_state(x0)
-        .initial_covariance(p0)
-        .transition_matrix(f)
-        .process_noise(q)
-        .observation_matrix(h)
-        .measurement_noise(r)
-        .build()
+    let mut kf = LinearKalmanFilter::<f64>::new(4, 2, &x0, &p0, &f, &q, &h, &r)
         .expect("Failed to build Kalman filter");
 
     println!("Configuration:");
@@ -220,7 +207,7 @@ fn main() {
         let measured_y = true_y + noise_y;
 
         // Kalman filter predict step
-        kf.predict();
+        kf.predict().expect("Predict failed");
 
         // Kalman filter update step
         kf.update(&[measured_x, measured_y]).expect("Update failed");
@@ -268,46 +255,47 @@ fn main() {
 
     // State transition matrix for 2D constant velocity model
     // State: [x, y, vx, vy]
-    let F = SMatrix::<f64, 4, 4>::from([
-        [1.0, 0.0, args.dt, 0.0],  // x = x + vx * dt
-        [0.0, 1.0, 0.0, args.dt],  // y = y + vy * dt
-        [0.0, 0.0, 1.0, 0.0], // vx = vx
-        [0.0, 0.0, 0.0, 1.0], // vy = vy
-    ]);
+    let F = [
+        1.0, 0.0, args.dt, 0.0, // x = x + vx * dt
+        0.0, 1.0, 0.0, args.dt, // y = y + vy * dt
+        0.0, 0.0, 1.0, 0.0, // vx = vx
+        0.0, 0.0, 0.0, 1.0, // vy = vy
+    ];
 
     // Initial state
-    let x0 = SVector::<f64, 4>::from([args.init_x, args.init_y, args.init_vx, args.init_vy]);
+    let x0 = [args.init_x, args.init_y, args.init_vx, args.init_vy];
 
     // Initial covariance
-    let P0 = SMatrix::<f64, 4, 4>::from([
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]);
+    let P0 = [
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    ];
 
     // Process noise (acceleration uncertainty)
     let q_val = args.process_noise;
     let dt = args.dt;
-    let Q = SMatrix::<f64, 4, 4>::from([
-        [q_val * dt * dt * dt / 3.0, 0.0, q_val * dt * dt / 2.0, 0.0],
-        [0.0, q_val * dt * dt * dt / 3.0, 0.0, q_val * dt * dt / 2.0],
-        [q_val * dt * dt / 2.0, 0.0, q_val * dt, 0.0],
-        [0.0, q_val * dt * dt / 2.0, 0.0, q_val * dt],
-    ]);
+    let Q = [
+        q_val * dt * dt * dt / 3.0, 0.0, q_val * dt * dt / 2.0, 0.0,
+        0.0, q_val * dt * dt * dt / 3.0, 0.0, q_val * dt * dt / 2.0,
+        q_val * dt * dt / 2.0, 0.0, q_val * dt, 0.0,
+        0.0, q_val * dt * dt / 2.0, 0.0, q_val * dt,
+    ];
 
     // Observation matrix (we measure x and y positions)
-    let H = SMatrix::<f64, 2, 4>::from_row_slice(&[
+    let H = [
         1.0, 0.0, 0.0, 0.0, // Measure x
         0.0, 1.0, 0.0, 0.0, // Measure y
-    ]);
+    ];
 
     // Measurement noise
     let r_val = args.meas_noise;
-    let R = SMatrix::<f64, 2, 2>::from([[r_val, 0.0], [0.0, r_val]]);
+    let R = [r_val, 0.0, 0.0, r_val];
 
-    // Create the Kalman filter
-    let mut kf = StaticKalmanFilter::new(x0, P0, F, Q, H, R);
+    // Create the Kalman filter (compile-time dimensions)
+    let mut kf = LinearKalmanFilter::<f64, nalgebra::U4, nalgebra::U2>::new(4, 2, &x0, &P0, &F, &Q, &H, &R)
+        .expect("Failed to build Kalman filter");
 
     println!("Configuration:");
     println!("  Time steps: {}", args.steps);
@@ -346,11 +334,10 @@ fn main() {
         let measured_y = true_y + noise_y;
 
         // Kalman filter predict step
-        kf.predict();
+        kf.predict().expect("Predict failed");
 
         // Kalman filter update step
-        let measurement = SVector::<f64, 2>::from([measured_x, measured_y]);
-        kf.update(&measurement).expect("Update failed");
+        kf.update(&[measured_x, measured_y]).expect("Update failed");
 
         // Get estimated state
         let state = kf.state();
@@ -366,10 +353,10 @@ fn main() {
 
     println!("\nFinal state covariance (diagonal elements):");
     let P = kf.covariance();
-    println!("X position variance:  {:.6}", P[(0, 0)]);
-    println!("Y position variance:  {:.6}", P[(1, 1)]);
-    println!("X velocity variance:  {:.6}", P[(2, 2)]);
-    println!("Y velocity variance:  {:.6}", P[(3, 3)]);
+    println!("X position variance:  {:.6}", P[0]);
+    println!("Y position variance:  {:.6}", P[5]);
+    println!("X velocity variance:  {:.6}", P[10]);
+    println!("Y velocity variance:  {:.6}", P[15]);
 
     println!("\nThe filter tracked the 2D position and estimated velocities");
     println!("from noisy position measurements.");

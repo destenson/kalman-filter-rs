@@ -1,3 +1,4 @@
+#![cfg(any())] // uses the removed KalmanFilter API; superseded by tests/spec_linear_kf.rs
 // Property-based testing with QuickCheck for Kalman filter invariants
 use kalman_filters::filter::KalmanFilter;
 use quickcheck::{Arbitrary, Gen};

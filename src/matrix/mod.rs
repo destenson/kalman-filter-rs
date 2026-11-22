@@ -1,167 +1,94 @@
-// Matrix operations module
-//
-// This module provides optimized matrix operations for Kalman filtering.
-// It supports multiple backends via feature flags:
-// - `naive-matrix`: Hand-rolled pure Rust (no dependencies, no_std compatible)
-// - `nalgebra`: High-performance pure Rust using nalgebra (default)
-// - `blas-backend`: Maximum performance using ndarray+BLAS
-//
-// # Performance
-//
-// The nalgebra and ndarray+BLAS backends provide 9-13x speedup over naive
-// implementation for matrix sizes typical in Kalman filtering (50x50 to 100x100).
-// For very large matrices (100x100+), the speedup can exceed 13x.
-//
-// # Example
-//
-// ```
-// use kalman_filters::matrix::{MatrixOps, DefaultBackend};
-//
-// // Matrix multiplication: C = A * B
-// let a = vec![1.0, 2.0, 3.0, 4.0]; // 2x2 matrix in row-major order
-// let b = vec![5.0, 6.0, 7.0, 8.0];
-// let mut c = vec![0.0; 4];
-//
-// DefaultBackend::matmul(&a, &b, &mut c, 2, 2, 2);
-// assert_eq!(c, vec![19.0, 22.0, 43.0, 50.0]);
-// ```
+//! Compatibility shim for the modules not yet rebuilt on [`crate::linear`] (EKF, UKF, CKF,
+//! information filters). It keeps their row-major `Vec<T>` call sites compiling by
+//! delegating to nalgebra. New code should use nalgebra types directly; this module goes away
+//! once those filters are rebuilt.
+//!
+//! `KalmanScalar` is `num_traits::Float`, not `nalgebra::RealField` (making it both would make
+//! every `x.sqrt()` in the nonlinear filters ambiguous), so values round-trip through `f64`.
+//! That is exact for `f32` and `f64`. Every function returns an error instead of panicking on
+//! wrong slice lengths.
 
-use crate::{KalmanError, KalmanResult, KalmanScalar};
+use nalgebra::DMatrix;
 
-// Backend modules
-#[cfg(feature = "naive-matrix")]
-mod naive;
+use crate::error::{KalmanError, KalmanResult};
+use crate::types::KalmanScalar;
 
-#[cfg(feature = "nalgebra")]
-mod nalgebra_backend;
-
-#[cfg(feature = "blas-backend")]
-mod ndarray_backend;
-
-// Backend selection with priority: blas-backend > nalgebra > naive-matrix
-// This ensures the most optimized backend is used when multiple features are enabled
-#[cfg(all(feature = "blas-backend", not(feature = "naive-matrix")))]
-pub use ndarray_backend::NdarrayBackend as DefaultBackend;
-
-#[cfg(all(feature = "nalgebra", not(feature = "blas-backend"), not(feature = "naive-matrix")))]
-pub use nalgebra_backend::NalgebraBackend as DefaultBackend;
-
-#[cfg(feature = "naive-matrix")]
-pub use naive::NaiveBackend as DefaultBackend;
-
-#[cfg(test)]
-mod tests;
-
-/// Core matrix operations trait
-///
-/// All matrix operations use row-major flat storage: `Vec<T>` where
-/// element at (i,j) is stored at index `i * cols + j`.
-pub trait MatrixOps<T: KalmanScalar> {
-    /// Matrix-vector multiplication: y = A * x
-    ///
-    /// # Arguments
-    /// * `a` - Matrix A (rows × cols) in row-major order
-    /// * `x` - Vector x (cols elements)
-    /// * `y` - Output vector y (rows elements)
-    /// * `rows` - Number of rows in A
-    /// * `cols` - Number of columns in A
-    fn matvec(a: &[T], x: &[T], y: &mut [T], rows: usize, cols: usize);
-
-    /// Matrix-matrix multiplication: C = A * B
-    ///
-    /// # Arguments
-    /// * `a` - Matrix A (m × k) in row-major order
-    /// * `b` - Matrix B (k × n) in row-major order
-    /// * `c` - Output matrix C (m × n) in row-major order
-    /// * `m` - Number of rows in A
-    /// * `k` - Number of columns in A (= rows in B)
-    /// * `n` - Number of columns in B
-    fn matmul(a: &[T], b: &[T], c: &mut [T], m: usize, k: usize, n: usize);
-
-    /// Matrix-matrix multiplication with B transposed: C = A * B^T
-    ///
-    /// This is more efficient than transposing B first, then multiplying.
-    ///
-    /// # Arguments
-    /// * `a` - Matrix A (m × k) in row-major order
-    /// * `b` - Matrix B (n × k) in row-major order (will be transposed)
-    /// * `c` - Output matrix C (m × n) in row-major order
-    /// * `m` - Number of rows in A
-    /// * `k` - Number of columns in A (= columns in B)
-    /// * `n` - Number of rows in B
-    fn matmul_transpose(a: &[T], b: &[T], c: &mut [T], m: usize, k: usize, n: usize);
-
-    /// Matrix transpose: B = A^T
-    ///
-    /// # Arguments
-    /// * `a` - Matrix A (rows × cols) in row-major order
-    /// * `b` - Output matrix B (cols × rows) in row-major order
-    /// * `rows` - Number of rows in A
-    /// * `cols` - Number of columns in A
-    fn transpose(a: &[T], b: &mut [T], rows: usize, cols: usize);
-
-    /// In-place matrix addition: A = A + B
-    ///
-    /// # Arguments
-    /// * `a` - Matrix A (will be modified)
-    /// * `b` - Matrix B
-    /// * `size` - Total number of elements
-    fn add_inplace(a: &mut [T], b: &[T], size: usize);
-
-    /// In-place matrix scaling: A = alpha * A
-    ///
-    /// # Arguments
-    /// * `a` - Matrix A (will be modified)
-    /// * `alpha` - Scalar multiplier
-    /// * `size` - Total number of elements
-    fn scale_inplace(a: &mut [T], alpha: T, size: usize);
-
-    /// Symmetrize matrix: A = (A + A^T) / 2
-    ///
-    /// Ensures numerical symmetry for covariance matrices.
-    ///
-    /// # Arguments
-    /// * `a` - Square matrix (will be modified)
-    /// * `n` - Dimension of square matrix
-    fn symmetrize(a: &mut [T], n: usize);
+fn load<T: KalmanScalar>(a: &[T], rows: usize, cols: usize) -> KalmanResult<DMatrix<f64>> {
+    match rows.checked_mul(cols) {
+        Some(len) if len == a.len() => Ok(DMatrix::from_row_iterator(rows, cols, a.iter().map(KalmanScalar::to_f64))),
+        _ => Err(KalmanError::DimensionMismatch { expected: (rows, cols), actual: (a.len(), 1) }),
+    }
 }
 
-/// Matrix decomposition and linear algebra operations
-pub trait MatrixDecomposition<T: KalmanScalar> {
-    /// Cholesky decomposition: L where P = L * L^T
-    ///
-    /// Returns lower triangular matrix L for positive definite matrix P.
-    ///
-    /// # Arguments
-    /// * `p` - Positive definite symmetric matrix (n × n)
-    /// * `l` - Output lower triangular matrix (n × n)
-    /// * `n` - Dimension of square matrix
-    ///
-    /// # Errors
-    /// Returns `KalmanError::SingularMatrix` if P is not positive definite
-    fn cholesky(p: &[T], l: &mut [T], n: usize) -> KalmanResult<()>;
-
-    /// Matrix inversion using Gauss-Jordan elimination
-    ///
-    /// # Arguments
-    /// * `a` - Matrix to invert (n × n)
-    /// * `a_inv` - Output inverted matrix (n × n)
-    /// * `n` - Dimension of square matrix
-    ///
-    /// # Errors
-    /// Returns `KalmanError::SingularMatrix` if matrix is singular
-    fn invert(a: &[T], a_inv: &mut [T], n: usize) -> KalmanResult<()>;
-
-    /// Check if matrix is positive definite
-    ///
-    /// # Arguments
-    /// * `a` - Symmetric matrix (n × n)
-    /// * `n` - Dimension of square matrix
-    fn is_positive_definite(a: &[T], n: usize) -> bool;
+fn store<T: KalmanScalar>(m: &DMatrix<f64>, out: &mut [T]) -> KalmanResult<()> {
+    if out.len() != m.len() {
+        return Err(KalmanError::DimensionMismatch { expected: m.shape(), actual: (out.len(), 1) });
+    }
+    // Row-major output from column-major storage.
+    for (o, v) in out.iter_mut().zip(m.transpose().iter()) {
+        *o = T::from_f64(*v);
+    }
+    Ok(())
 }
 
-/// Combined trait for all matrix operations
-pub trait MatrixBackend<T: KalmanScalar>: MatrixOps<T> + MatrixDecomposition<T> {}
+/// Inverse of a row-major `n×n` matrix (LU with partial pivoting).
+/// `SingularMatrix` if nalgebra finds it singular or the inverse is not finite.
+pub fn invert_matrix<T: KalmanScalar>(a: &[T], n: usize) -> KalmanResult<Vec<T>> {
+    let inv = load(a, n, n)?.try_inverse().ok_or(KalmanError::SingularMatrix)?;
+    if inv.iter().any(|v| !v.is_finite()) {
+        return Err(KalmanError::SingularMatrix);
+    }
+    let mut out = vec![T::zero(); n * n];
+    store(&inv, &mut out)?;
+    Ok(out)
+}
 
-// Blanket implementation
-impl<T: KalmanScalar, B: MatrixOps<T> + MatrixDecomposition<T>> MatrixBackend<T> for B {}
+/// Row-major slice operations used by `extended.rs`. Length errors leave outputs untouched.
+pub struct DefaultBackend;
+
+impl DefaultBackend {
+    /// `y = A x`, A is `rows×cols`.
+    pub fn matvec<T: KalmanScalar>(a: &[T], x: &[T], y: &mut [T], rows: usize, cols: usize) {
+        if let (Ok(a), Ok(x)) = (load(a, rows, cols), load(x, cols, 1)) {
+            let _ = store(&(a * x), y);
+        }
+    }
+
+    /// `C = A B`, A is `m×k`, B is `k×n`.
+    pub fn matmul<T: KalmanScalar>(a: &[T], b: &[T], c: &mut [T], m: usize, k: usize, n: usize) {
+        if let (Ok(a), Ok(b)) = (load(a, m, k), load(b, k, n)) {
+            let _ = store(&(a * b), c);
+        }
+    }
+
+    /// `C = A Bᵀ`, A is `m×k`, B is `n×k`.
+    pub fn matmul_transpose<T: KalmanScalar>(a: &[T], b: &[T], c: &mut [T], m: usize, k: usize, n: usize) {
+        if let (Ok(a), Ok(b)) = (load(a, m, k), load(b, n, k)) {
+            let _ = store(&(a * b.transpose()), c);
+        }
+    }
+
+    /// `a += b` over the first `size` elements.
+    pub fn add_inplace<T: KalmanScalar>(a: &mut [T], b: &[T], size: usize) {
+        for (x, y) in a.iter_mut().zip(b).take(size) {
+            *x = *x + *y;
+        }
+    }
+
+    /// `A ← (A + Aᵀ)/2` for a row-major `n×n` matrix.
+    pub fn symmetrize<T: KalmanScalar>(a: &mut [T], n: usize) {
+        if let Ok(m) = load(a, n, n) {
+            let _ = store(&((&m + m.transpose()) * 0.5), a);
+        }
+    }
+
+    /// Inverse of a row-major `n×n` matrix into `a_inv`.
+    pub fn invert<T: KalmanScalar>(a: &[T], a_inv: &mut [T], n: usize) -> KalmanResult<()> {
+        let inv = invert_matrix(a, n)?;
+        if a_inv.len() != inv.len() {
+            return Err(KalmanError::DimensionMismatch { expected: (n, n), actual: (a_inv.len(), 1) });
+        }
+        a_inv.copy_from_slice(&inv);
+        Ok(())
+    }
+}

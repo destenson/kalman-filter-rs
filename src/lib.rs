@@ -7,39 +7,25 @@
 //!
 //! ## Features
 //!
-//! - Linear Kalman filter with predict and update steps
-//! - Dynamic dimension support without external dependencies
+//! - One linear Kalman filter, [`linear::LinearKalmanFilter`], built on nalgebra and generic
+//!   over run-time (`Dyn`) and compile-time (`Const<N>`) dimensions
+//! - Joseph-form covariance update; `S` is Cholesky-solved with a scale-relative singularity test
 //! - Support for both f32 and f64 precision
-//! - Builder pattern for easy initialization
-//! - Extended Kalman Filter (EKF) support (future)
-//! - Unscented Kalman Filter (UKF) support (future)
+//! - Extended, unscented, cubature, information, ensemble and particle filters
 //!
 //! ## Example
 //!
 //! ```
-//! use kalman_filters::{KalmanFilterBuilder, KalmanFilterTrait};
+//! use kalman_filters::linear::LinearKalmanFilter;
 //!
-//! // Create a simple 1D Kalman filter using the builder
-//! let mut kf = KalmanFilterBuilder::new(1, 1)
-//!     .initial_state(vec![0.0])
-//!     .initial_covariance(vec![1.0])
-//!     .transition_matrix(vec![1.0])
-//!     .process_noise(vec![0.001])
-//!     .observation_matrix(vec![1.0])
-//!     .measurement_noise(vec![0.1])
-//!     .build()
-//!     .unwrap();
-//!
-//! // Predict step
-//! kf.predict();
-//!
-//! // Update with measurement
+//! // 1-D filter: x0, P0, F, Q, H, R as row-major slices.
+//! let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.001], &[1.0], &[0.1]).unwrap();
+//! kf.predict().unwrap();
 //! kf.update(&[1.0]).unwrap();
 //! ```
 
 #![allow(unused, non_snake_case)] // DO NOT CHANGE
 
-pub mod builder;
 pub mod builders;
 pub mod ensemble;
 /// Error types and result definitions for the Kalman filter library
@@ -57,12 +43,8 @@ pub mod particle;
 pub mod scented;
 pub mod types;
 pub mod unscented;
-pub mod unified;
-/// Validation utilities for matrices and numerical stability checks
-pub mod validation;
 
 // Re-export main types for convenience
-pub use builder::KalmanFilterBuilder;
 pub use builders::{
     CubatureKalmanFilterBuilder, EnsembleKalmanFilterBuilder, ExtendedKalmanFilterBuilder,
     InformationFilterBuilder, ParticleFilterBuilder, UnscentedKalmanFilterBuilder,
@@ -71,19 +53,13 @@ pub use ensemble::{EnsembleKalmanFilter, EnsembleStatistics};
 pub use error::KalmanError;
 pub use extended::ExtendedKalmanFilter;
 
-pub use filter::KalmanFilter;
-/// New linear Kalman filter interface (see SPEC.md).
-pub use filter::linear;
+/// The linear Kalman filter (see SPEC.md).
+pub use filter as linear;
 
 pub use information::filter::InformationFilter;
 pub use particle::{Particle, ParticleFilter, ResamplingStrategy};
 pub use scented::CubatureKalmanFilter;
 pub use types::{JacobianStrategy, KalmanResult, KalmanScalar, NonlinearSystem};
-pub use unified::{KalmanFilterTrait, UnifiedKalmanFilter};
 pub use unscented::{UKFParameters, UnscentedKalmanFilter};
 
-#[cfg(feature = "nalgebra")]
-pub use filter::StaticKalmanFilter;
-
-#[cfg(feature = "nalgebra")]
 pub use nalgebra;

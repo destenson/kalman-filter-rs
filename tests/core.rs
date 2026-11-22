@@ -4,6 +4,7 @@
 //!
 //! These tests verify actual business logic and mathematical correctness
 //! of individual functions, not just type system compliance.
+#![cfg(any())] // uses the removed KalmanFilter API; superseded by tests/spec_linear_kf.rs
 
 use kalman_filters::filter::KalmanFilter;
 use kalman_filters::*;

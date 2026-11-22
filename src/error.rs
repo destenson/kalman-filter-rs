@@ -25,6 +25,10 @@ pub enum KalmanError {
     JacobianComputation(String),
     /// Filter divergence detected
     FilterDivergence(String),
+    /// A state or measurement dimension of zero
+    ZeroDimension,
+    /// NaN or infinity in an input
+    NonFiniteInput,
 }
 
 impl fmt::Display for KalmanError {
@@ -53,6 +57,8 @@ impl fmt::Display for KalmanError {
             KalmanError::FilterDivergence(msg) => {
                 write!(f, "Filter divergence detected: {}", msg)
             }
+            KalmanError::ZeroDimension => write!(f, "Dimensions must be at least 1"),
+            KalmanError::NonFiniteInput => write!(f, "Input contains NaN or infinity"),
         }
     }
 }
@@ -124,7 +130,7 @@ mod tests {
     #[test]
     fn test_result_type() {
         let result: KalmanResult<i32> = Ok(42);
-        assert_eq!(result.unwrap(), 42);
+        assert!(matches!(result, Ok(42)));
 
         let result: KalmanResult<i32> = Err(KalmanError::SingularMatrix);
         assert!(result.is_err());
