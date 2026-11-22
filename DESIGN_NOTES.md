@@ -4,10 +4,17 @@
 
 - `src/matrix/mod.rs`: crate-private, dependency-free, allocation-free row-major kernels (matmul, upper-triangle `A·Bᵀ`, mirror, Cholesky + row solve) and the crate's one rounding tolerance `rel_tol(k) = 64·k·ε`. A marked "Transitional" block keeps `matvec`/`matmul_transpose`/`symmetrize`/`invert_matrix` for the nonlinear filters.
 - `src/validation.rs`: `is_psd` (construction: unit-diagonal-scaled, so units don't matter) and `psd_to_working_precision` (step acceptance, SPEC B11/B21: `λ_min ≥ −ε^¾·max p_ii`).
-- `src/filter.rs`: `LinearKalmanFilter<T>` owns the model (F, Q, H, R), the estimate (x, P) and a fixed `Workspace`. `try_new` is the only validator. The order is dimensions → lengths → finiteness → PSD, one cause per error variant. Stored P0/Q/R are made exactly symmetric by mirroring, which needs no arithmetic.
-- predict: `x ← Fx`, `P ← FPFᵀ + Q`, computing the upper triangle and mirroring it. update: Cholesky of S with a pivot test relative to each diagonal, `Kᵀ = S⁻¹HP` by triangular solves, Joseph form. Both write only into the workspace. `commit(on_err)` checks finiteness and PSD, then swaps the candidate in (O(1)). A failed step leaves the filter untouched, and steady state does no heap allocation.
+- `src/filter.rs`: `LinearKalmanFilter<T>` owns the model (F, Q, H, R), the estimate (x, P) and a fixed `Workspace`. `try_new` is the only validator. The order is dimensions → lengths → finiteness → PSD, one cause per error variant. Stored P0/Q/R are made exactly symmetric by mirroring, which needs no arithmetic.- predict: `x ← Fx`, `P ← FPFᵀ + Q`, computing the upper triangle and mirroring it. update: Cholesky of S with a pivot test relative to each diagonal, `Kᵀ = S⁻¹HP` by triangular solves, Joseph form. Both write only into the workspace. `commit(on_err)` checks finiteness and PSD, then swaps the candidate in (O(1)). A failed step leaves the filter untouched, and steady state does no heap allocation.
 - `src/builder.rs`: `Covariance::{Full, Diagonal, Scalar}`, `LinearKalmanFilter::builder(..).…​.try_build()` and `try_constant_velocity(..)`. They only expand their inputs into dense slices, using `checked_mul` and `try_reserve_exact`, then call `try_new`.
 - The public path is `kalman_filters::linear::{LinearKalmanFilter, LinearKalmanFilterBuilder, Covariance}`. `mod filter` is private, and the model accessors are `pub(crate)`.
+
+### Two engines, one contract
+
+- The `nalgebra` feature selects the engine at compile time; the public type is the same in both builds. The default engine is the crate's own row-major kernels, so a default build pulls no nalgebra at all (`cargo tree -e normal` shows none).
+- With the feature on, `LinearKalmanFilter<T: KalmanScalar + RealField>` owns nalgebra matrices directly: one storage for the model, the estimate and the workspace, so `predict` and `update` still allocate nothing. The feature therefore needs a scalar that is also a nalgebra `RealField`; `f32` and `f64` are.
+- Both engines share `validation::{is_psd, psd_to_working_precision}`, `matrix::rel_tol`, the error mapping and the public API. Only the arithmetic differs.
+- **Rule: a numeric change lands in both engines or in neither.** `dev/parity/run.sh` runs one differential harness against both builds and compares the results case by case. It is the `engine-parity` CI job, and the nalgebra configuration is tested in the `nalgebra-engine` job.
+- The engines may return different *outcomes* on a numerically ill-conditioned model: the contract allows either an error or a finite PSD result there, and the two sum in a different order. `illcond04` and `illcond14` are the reviewed cases where that happens, listed in `dev/parity/run.sh`. Values are never allowed to differ, and the gate fails on any value difference.
 
 ### Migration
 - Use `kalman_filters::linear::LinearKalmanFilter`. The root re-export and the `kalman_filters::filter` path are gone.

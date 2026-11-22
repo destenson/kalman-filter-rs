@@ -1,13 +1,34 @@
 //! Conversion utilities between Kalman Filter and Information Filter forms
 
-use crate::filter::LinearKalmanFilter as KalmanFilter;
+use crate::filter::{FilterScalar, LinearKalmanFilter as KalmanFilter};
 use crate::information::{InformationFilter, InformationForm, InformationState};
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
 use log::{debug, info, trace, warn};
 use num_traits::Zero;
 
 /// Convert Kalman Filter to Information Filter
+///
+/// With the `nalgebra` feature, `T` must also implement nalgebra's `RealField`
+/// (`f32` and `f64` do).
+#[cfg(not(feature = "nalgebra"))]
 pub fn kalman_to_information<T: KalmanScalar>(
+    kf: &KalmanFilter<T>,
+) -> KalmanResult<InformationFilter<T>> {
+    kalman_to_information_impl(kf)
+}
+
+/// Convert Kalman Filter to Information Filter
+///
+/// With the `nalgebra` feature, `T` must also implement nalgebra's `RealField`
+/// (`f32` and `f64` do).
+#[cfg(feature = "nalgebra")]
+pub fn kalman_to_information<T: KalmanScalar + crate::nalgebra::RealField>(
+    kf: &KalmanFilter<T>,
+) -> KalmanResult<InformationFilter<T>> {
+    kalman_to_information_impl(kf)
+}
+
+fn kalman_to_information_impl<T: KalmanScalar + FilterScalar>(
     kf: &KalmanFilter<T>,
 ) -> KalmanResult<InformationFilter<T>> {
     let n = kf.state_dim();
@@ -27,15 +48,36 @@ pub fn kalman_to_information<T: KalmanScalar>(
         m,
         info_state.Y,
         info_state.y,
-        kf.transition().to_vec(),
-        kf.process_noise().to_vec(),
-        kf.observation().to_vec(),
-        kf.measurement_noise().to_vec(),
+        kf.transition().as_ref().to_vec(),
+        kf.process_noise().as_ref().to_vec(),
+        kf.observation().as_ref().to_vec(),
+        kf.measurement_noise().as_ref().to_vec(),
     )
 }
 
 /// Convert Information Filter to Kalman Filter
+///
+/// With the `nalgebra` feature, `T` must also implement nalgebra's `RealField`
+/// (`f32` and `f64` do).
+#[cfg(not(feature = "nalgebra"))]
 pub fn information_to_kalman<T: KalmanScalar>(
+    inf: &InformationFilter<T>,
+) -> KalmanResult<KalmanFilter<T>> {
+    information_to_kalman_impl(inf)
+}
+
+/// Convert Information Filter to Kalman Filter
+///
+/// With the `nalgebra` feature, `T` must also implement nalgebra's `RealField`
+/// (`f32` and `f64` do).
+#[cfg(feature = "nalgebra")]
+pub fn information_to_kalman<T: KalmanScalar + crate::nalgebra::RealField>(
+    inf: &InformationFilter<T>,
+) -> KalmanResult<KalmanFilter<T>> {
+    information_to_kalman_impl(inf)
+}
+
+fn information_to_kalman_impl<T: KalmanScalar + FilterScalar>(
     inf: &InformationFilter<T>,
 ) -> KalmanResult<KalmanFilter<T>> {
     let n = inf.state_dim;
@@ -55,7 +97,23 @@ pub fn information_to_kalman<T: KalmanScalar>(
 }
 
 /// Hybrid filter that can switch between forms based on sparsity
+///
+/// With the `nalgebra` feature, `T` must also implement nalgebra's `RealField`
+/// (`f32` and `f64` do).
+#[cfg(not(feature = "nalgebra"))]
 pub struct HybridFilter<T: KalmanScalar> {
+    kf: Option<KalmanFilter<T>>,
+    inf: Option<InformationFilter<T>>,
+    sparsity_threshold: f64,
+    current_form: FilterForm,
+}
+
+/// Hybrid filter that can switch between forms based on sparsity
+///
+/// With the `nalgebra` feature, `T` must also implement nalgebra's `RealField`
+/// (`f32` and `f64` do).
+#[cfg(feature = "nalgebra")]
+pub struct HybridFilter<T: KalmanScalar + crate::nalgebra::RealField> {
     kf: Option<KalmanFilter<T>>,
     inf: Option<InformationFilter<T>>,
     sparsity_threshold: f64,
@@ -71,8 +129,10 @@ pub enum FilterForm {
     Information,
 }
 
+#[cfg(not(feature = "nalgebra"))]
 impl<T: KalmanScalar> HybridFilter<T> {
     /// Create new hybrid filter
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         state_dim: usize,
         measurement_dim: usize,
@@ -84,188 +144,308 @@ impl<T: KalmanScalar> HybridFilter<T> {
         R: Vec<T>,
         sparsity_threshold: f64,
     ) -> KalmanResult<Self> {
-        debug!(
-            "Creating HybridFilter: state_dim={}, measurement_dim={}, sparsity_threshold={:.2}",
-            state_dim, measurement_dim, sparsity_threshold
-        );
-        let kf = KalmanFilter::try_new(
+        hybrid_new(
             state_dim,
             measurement_dim,
-            &initial_state,
-            &initial_covariance,
-            &F,
-            &Q,
-            &H,
-            &R,
-        )?;
-
-        Ok(Self {
-            kf: Some(kf),
-            inf: None,
+            initial_state,
+            initial_covariance,
+            F,
+            Q,
+            H,
+            R,
             sparsity_threshold,
-            current_form: FilterForm::Covariance,
-        })
+        )
     }
 
     /// Switch to information form
     pub fn to_information_form(&mut self) -> KalmanResult<()> {
-        if self.current_form == FilterForm::Information {
-            trace!("HybridFilter: already in information form");
-            return Ok(());
-        }
-
-        debug!("HybridFilter: switching from covariance to information form");
-
-        if let Some(kf) = &self.kf {
-            self.inf = Some(kalman_to_information(kf)?);
-            self.kf = None;
-            self.current_form = FilterForm::Information;
-            debug!("HybridFilter: successfully switched to information form");
-        }
-
-        Ok(())
+        hybrid_to_information_form(self)
     }
 
     /// Switch to covariance form
     pub fn to_covariance_form(&mut self) -> KalmanResult<()> {
-        if self.current_form == FilterForm::Covariance {
-            trace!("HybridFilter: already in covariance form");
-            return Ok(());
-        }
-
-        debug!("HybridFilter: switching from information to covariance form");
-
-        if let Some(inf) = &self.inf {
-            self.kf = Some(information_to_kalman(inf)?);
-            self.inf = None;
-            self.current_form = FilterForm::Covariance;
-            debug!("HybridFilter: successfully switched to covariance form");
-        }
-
-        Ok(())
+        hybrid_to_covariance_form(self)
     }
 
     /// Automatically choose form based on measurement sparsity
     pub fn auto_select_form(&mut self, H: &[T]) -> KalmanResult<()> {
-        let sparsity = Self::compute_sparsity(H);
-        debug!(
-            "HybridFilter: auto-selecting form based on sparsity={:.2}% (threshold={:.2}%)",
-            sparsity * 100.0,
-            self.sparsity_threshold * 100.0
-        );
-
-        if sparsity > self.sparsity_threshold {
-            debug!("HybridFilter: selecting information form due to high sparsity");
-            self.to_information_form()?;
-        } else {
-            debug!("HybridFilter: selecting covariance form due to low sparsity");
-            self.to_covariance_form()?;
-        }
-
-        Ok(())
-    }
-
-    /// Compute sparsity of a matrix (fraction of zeros)
-    fn compute_sparsity(matrix: &[T]) -> f64 {
-        let total = matrix.len() as f64;
-        let zeros = matrix
-            .iter()
-            .filter(|&&x| x.abs() < <T as KalmanScalar>::epsilon())
-            .count() as f64;
-        let sparsity = zeros / total;
-        trace!(
-            "Matrix sparsity: {:.1}% ({} zeros out of {} elements)",
-            sparsity * 100.0,
-            zeros as usize,
-            matrix.len()
-        );
-        sparsity
+        hybrid_auto_select_form(self, H)
     }
 
     /// Predict step
     pub fn predict(&mut self) -> KalmanResult<()> {
-        debug!("HybridFilter predict: using {:?} form", self.current_form);
-        match self.current_form {
-            FilterForm::Covariance => {
-                if let Some(kf) = &mut self.kf {
-                    kf.predict()?;
-                }
-            }
-            FilterForm::Information => {
-                if let Some(inf) = &mut self.inf {
-                    inf.predict()?;
-                }
-            }
-        }
-        Ok(())
+        hybrid_predict(self)
     }
 
     /// Update step
     pub fn update(&mut self, measurement: &[T]) -> KalmanResult<()> {
-        debug!("HybridFilter update: using {:?} form", self.current_form);
-        match self.current_form {
-            FilterForm::Covariance => {
-                if let Some(kf) = &mut self.kf {
-                    kf.update(measurement)?;
-                }
-            }
-            FilterForm::Information => {
-                if let Some(inf) = &mut self.inf {
-                    inf.update(measurement)?;
-                }
-            }
-        }
-        Ok(())
+        hybrid_update(self, measurement)
     }
 
     /// Get current state estimate
     pub fn get_state(&self) -> KalmanResult<Vec<T>> {
-        match self.current_form {
-            FilterForm::Covariance => {
-                if let Some(kf) = &self.kf {
-                    Ok(kf.state().to_vec())
-                } else {
-                    warn!("HybridFilter: no active filter");
-                    Err(KalmanError::FilterDivergence(
-                        "No active filter".to_string(),
-                    ))
-                }
-            }
-            FilterForm::Information => {
-                if let Some(inf) = &self.inf {
-                    inf.get_state()
-                } else {
-                    warn!("HybridFilter: no active filter");
-                    Err(KalmanError::FilterDivergence(
-                        "No active filter".to_string(),
-                    ))
-                }
-            }
-        }
+        hybrid_get_state(self)
     }
 
     /// Get current covariance
     pub fn get_covariance(&self) -> KalmanResult<Vec<T>> {
-        match self.current_form {
-            FilterForm::Covariance => {
-                if let Some(kf) = &self.kf {
-                    Ok(kf.covariance().to_vec())
-                } else {
-                    warn!("HybridFilter: no active filter");
-                    Err(KalmanError::FilterDivergence(
-                        "No active filter".to_string(),
-                    ))
-                }
+        hybrid_get_covariance(self)
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl<T: KalmanScalar + crate::nalgebra::RealField> HybridFilter<T> {
+    /// Create new hybrid filter
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        state_dim: usize,
+        measurement_dim: usize,
+        initial_state: Vec<T>,
+        initial_covariance: Vec<T>,
+        F: Vec<T>,
+        Q: Vec<T>,
+        H: Vec<T>,
+        R: Vec<T>,
+        sparsity_threshold: f64,
+    ) -> KalmanResult<Self> {
+        hybrid_new(
+            state_dim,
+            measurement_dim,
+            initial_state,
+            initial_covariance,
+            F,
+            Q,
+            H,
+            R,
+            sparsity_threshold,
+        )
+    }
+
+    /// Switch to information form
+    pub fn to_information_form(&mut self) -> KalmanResult<()> {
+        hybrid_to_information_form(self)
+    }
+
+    /// Switch to covariance form
+    pub fn to_covariance_form(&mut self) -> KalmanResult<()> {
+        hybrid_to_covariance_form(self)
+    }
+
+    /// Automatically choose form based on measurement sparsity
+    pub fn auto_select_form(&mut self, H: &[T]) -> KalmanResult<()> {
+        hybrid_auto_select_form(self, H)
+    }
+
+    /// Predict step
+    pub fn predict(&mut self) -> KalmanResult<()> {
+        hybrid_predict(self)
+    }
+
+    /// Update step
+    pub fn update(&mut self, measurement: &[T]) -> KalmanResult<()> {
+        hybrid_update(self, measurement)
+    }
+
+    /// Get current state estimate
+    pub fn get_state(&self) -> KalmanResult<Vec<T>> {
+        hybrid_get_state(self)
+    }
+
+    /// Get current covariance
+    pub fn get_covariance(&self) -> KalmanResult<Vec<T>> {
+        hybrid_get_covariance(self)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn hybrid_new<T: KalmanScalar + FilterScalar>(
+    state_dim: usize,
+    measurement_dim: usize,
+    initial_state: Vec<T>,
+    initial_covariance: Vec<T>,
+    F: Vec<T>,
+    Q: Vec<T>,
+    H: Vec<T>,
+    R: Vec<T>,
+    sparsity_threshold: f64,
+) -> KalmanResult<HybridFilter<T>> {
+    debug!(
+        "Creating HybridFilter: state_dim={}, measurement_dim={}, sparsity_threshold={:.2}",
+        state_dim, measurement_dim, sparsity_threshold
+    );
+    let kf = KalmanFilter::try_new(
+        state_dim,
+        measurement_dim,
+        &initial_state,
+        &initial_covariance,
+        &F,
+        &Q,
+        &H,
+        &R,
+    )?;
+
+    Ok(HybridFilter {
+        kf: Some(kf),
+        inf: None,
+        sparsity_threshold,
+        current_form: FilterForm::Covariance,
+    })
+}
+
+fn hybrid_to_information_form<T: KalmanScalar + FilterScalar>(
+    hybrid: &mut HybridFilter<T>,
+) -> KalmanResult<()> {
+    if hybrid.current_form == FilterForm::Information {
+        trace!("HybridFilter: already in information form");
+        return Ok(());
+    }
+
+    debug!("HybridFilter: switching from covariance to information form");
+
+    if let Some(kf) = &hybrid.kf {
+        hybrid.inf = Some(kalman_to_information(kf)?);
+        hybrid.kf = None;
+        hybrid.current_form = FilterForm::Information;
+        debug!("HybridFilter: successfully switched to information form");
+    }
+
+    Ok(())
+}
+
+fn hybrid_to_covariance_form<T: KalmanScalar + FilterScalar>(
+    hybrid: &mut HybridFilter<T>,
+) -> KalmanResult<()> {
+    if hybrid.current_form == FilterForm::Covariance {
+        trace!("HybridFilter: already in covariance form");
+        return Ok(());
+    }
+
+    debug!("HybridFilter: switching from information to covariance form");
+
+    if let Some(inf) = &hybrid.inf {
+        hybrid.kf = Some(information_to_kalman(inf)?);
+        hybrid.inf = None;
+        hybrid.current_form = FilterForm::Covariance;
+        debug!("HybridFilter: successfully switched to covariance form");
+    }
+
+    Ok(())
+}
+
+fn hybrid_auto_select_form<T: KalmanScalar + FilterScalar>(
+    hybrid: &mut HybridFilter<T>,
+    H: &[T],
+) -> KalmanResult<()> {
+    let sparsity = hybrid_sparsity(H);
+    debug!(
+        "HybridFilter: auto-selecting form based on sparsity={:.2}% (threshold={:.2}%)",
+        sparsity * 100.0,
+        hybrid.sparsity_threshold * 100.0
+    );
+
+    if sparsity > hybrid.sparsity_threshold {
+        debug!("HybridFilter: selecting information form due to high sparsity");
+        hybrid_to_information_form(hybrid)?;
+    } else {
+        debug!("HybridFilter: selecting covariance form due to low sparsity");
+        hybrid_to_covariance_form(hybrid)?;
+    }
+
+    Ok(())
+}
+
+fn hybrid_sparsity<T: KalmanScalar>(matrix: &[T]) -> f64 {
+    let total = matrix.len() as f64;
+    let zeros = matrix
+        .iter()
+        .filter(|&&x| <T as num_traits::Float>::abs(x) < <T as KalmanScalar>::epsilon())
+        .count() as f64;
+    let sparsity = zeros / total;
+    trace!(
+        "Matrix sparsity: {:.1}% ({} zeros out of {} elements)",
+        sparsity * 100.0,
+        zeros as usize,
+        matrix.len()
+    );
+    sparsity
+}
+
+fn hybrid_predict<T: KalmanScalar + FilterScalar>(hybrid: &mut HybridFilter<T>) -> KalmanResult<()> {
+    debug!("HybridFilter predict: using {:?} form", hybrid.current_form);
+    match hybrid.current_form {
+        FilterForm::Covariance => {
+            if let Some(kf) = &mut hybrid.kf {
+                kf.predict()?;
             }
-            FilterForm::Information => {
-                if let Some(inf) = &self.inf {
-                    inf.get_covariance()
-                } else {
-                    warn!("HybridFilter: no active filter");
-                    Err(KalmanError::FilterDivergence(
-                        "No active filter".to_string(),
-                    ))
-                }
+        }
+        FilterForm::Information => {
+            if let Some(inf) = &mut hybrid.inf {
+                inf.predict()?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn hybrid_update<T: KalmanScalar + FilterScalar>(
+    hybrid: &mut HybridFilter<T>,
+    measurement: &[T],
+) -> KalmanResult<()> {
+    debug!("HybridFilter update: using {:?} form", hybrid.current_form);
+    match hybrid.current_form {
+        FilterForm::Covariance => {
+            if let Some(kf) = &mut hybrid.kf {
+                kf.update(measurement)?;
+            }
+        }
+        FilterForm::Information => {
+            if let Some(inf) = &mut hybrid.inf {
+                inf.update(measurement)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn hybrid_get_state<T: KalmanScalar + FilterScalar>(hybrid: &HybridFilter<T>) -> KalmanResult<Vec<T>> {
+    match hybrid.current_form {
+        FilterForm::Covariance => {
+            if let Some(kf) = &hybrid.kf {
+                Ok(kf.state().to_vec())
+            } else {
+                warn!("HybridFilter: no active filter");
+                Err(KalmanError::FilterDivergence("No active filter".to_string()))
+            }
+        }
+        FilterForm::Information => {
+            if let Some(inf) = &hybrid.inf {
+                inf.get_state()
+            } else {
+                warn!("HybridFilter: no active filter");
+                Err(KalmanError::FilterDivergence("No active filter".to_string()))
+            }
+        }
+    }
+}
+
+fn hybrid_get_covariance<T: KalmanScalar + FilterScalar>(
+    hybrid: &HybridFilter<T>,
+) -> KalmanResult<Vec<T>> {
+    match hybrid.current_form {
+        FilterForm::Covariance => {
+            if let Some(kf) = &hybrid.kf {
+                Ok(kf.covariance().to_vec())
+            } else {
+                warn!("HybridFilter: no active filter");
+                Err(KalmanError::FilterDivergence("No active filter".to_string()))
+            }
+        }
+        FilterForm::Information => {
+            if let Some(inf) = &hybrid.inf {
+                inf.get_covariance()
+            } else {
+                warn!("HybridFilter: no active filter");
+                Err(KalmanError::FilterDivergence("No active filter".to_string()))
             }
         }
     }

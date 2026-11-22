@@ -27,6 +27,12 @@
 //! assert!(kf.state()[0] > 0.0);
 //! # Ok::<(), kalman_filters::KalmanError>(())
 //! ```
+//!
+//! ## Precision
+//!
+//! The scalar is a type parameter: instantiate the filter as `LinearKalmanFilter<f32>` or
+//! `LinearKalmanFilter<f64>` and every matrix and intermediate is held at that precision.
+//! Both are supported by both numeric engines (see the `nalgebra` feature).
 
 #![allow(unused, non_snake_case)] // DO NOT CHANGE
 

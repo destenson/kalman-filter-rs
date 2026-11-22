@@ -1,4 +1,5 @@
-//! The linear Kalman filter.
+//! The default implementation of the linear Kalman filter: dense row-major
+//! kernels written directly on slices.
 //!
 //! All storage is allocated once in [`LinearKalmanFilter::try_new`]: the model
 //! (F, Q, H, R), the estimate (x, P) and a fixed workspace sized for n and m.
@@ -23,11 +24,7 @@ use crate::matrix::{
 use crate::types::KalmanScalar;
 use crate::validation::{is_psd, psd_to_working_precision};
 
-/// The public module named by the specification: `kalman_filters::linear`.
-pub mod linear {
-    pub use super::LinearKalmanFilter;
-    pub use crate::builder::{Covariance, LinearKalmanFilterBuilder};
-}
+use super::{check_dims, check_len, diverged};
 
 /// Linear Kalman filter for `x_{k+1} = F x_k + w`, `z_k = H x_k + v`,
 /// `w ~ N(0, Q)`, `v ~ N(0, R)`. All matrices are dense and row-major.
@@ -67,24 +64,6 @@ impl<T: KalmanScalar> Workspace<T> {
         let z = |len: usize| vec![T::zero(); len].into_boxed_slice();
         let (nn, mn, mm) = (n * n, m * n, m * m);
         Self { x: z(n), p: z(nn), a: z(nn), ap: z(nn), y: z(m), s: z(mm), kt: z(mn), rkt: z(mn) }
-    }
-}
-
-fn diverged(what: &str) -> KalmanError {
-    KalmanError::FilterDivergence(format!("{what} is not finite"))
-}
-
-/// `ZeroDimension` unless both dimensions are positive.
-pub(crate) fn check_dims(n: usize, m: usize) -> KalmanResult<()> {
-    if n == 0 || m == 0 { Err(KalmanError::ZeroDimension) } else { Ok(()) }
-}
-
-/// `Ok` if `data` holds exactly `rows × cols` elements. An overflowing product
-/// can never equal a real slice length, so it is a `DimensionMismatch` too.
-pub(crate) fn check_len<T>(data: &[T], rows: usize, cols: usize) -> KalmanResult<()> {
-    match rows.checked_mul(cols) {
-        Some(len) if len == data.len() => Ok(()),
-        _ => Err(KalmanError::DimensionMismatch { expected: (rows, cols), actual: (data.len(), 1) }),
     }
 }
 
@@ -159,23 +138,23 @@ impl<T: KalmanScalar> LinearKalmanFilter<T> {
     }
 
     /// State transition matrix F (n×n).
-    pub(crate) fn transition(&self) -> &[T] {
-        &self.f
+    pub(crate) fn transition(&self) -> impl AsRef<[T]> + '_ {
+        &self.f[..]
     }
 
     /// Process noise covariance Q (n×n), as stored (exactly symmetric).
-    pub(crate) fn process_noise(&self) -> &[T] {
-        &self.q
+    pub(crate) fn process_noise(&self) -> impl AsRef<[T]> + '_ {
+        &self.q[..]
     }
 
     /// Observation matrix H (m×n).
-    pub(crate) fn observation(&self) -> &[T] {
-        &self.h
+    pub(crate) fn observation(&self) -> impl AsRef<[T]> + '_ {
+        &self.h[..]
     }
 
     /// Measurement noise covariance R (m×m), as stored (exactly symmetric).
-    pub(crate) fn measurement_noise(&self) -> &[T] {
-        &self.r
+    pub(crate) fn measurement_noise(&self) -> impl AsRef<[T]> + '_ {
+        &self.r[..]
     }
 
     /// `x ← F x`, `P ← F P Fᵀ + Q`. If the result is non-finite or not PSD to

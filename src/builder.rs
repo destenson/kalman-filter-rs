@@ -8,7 +8,7 @@
 use std::borrow::Cow;
 
 use crate::error::{KalmanError, KalmanResult};
-use crate::filter::{LinearKalmanFilter, check_dims, check_len};
+use crate::filter::{FilterScalar, LinearKalmanFilter, check_dims, check_len};
 use crate::types::KalmanScalar;
 
 /// A k×k covariance argument (k = n for P0 and Q, k = m for R).
@@ -89,30 +89,53 @@ impl<'a, T: KalmanScalar> LinearKalmanFilterBuilder<'a, T> {
         Self { r: Some(r), ..self }
     }
 
-    /// Expands the inputs and calls [`LinearKalmanFilter::try_new`].
-    ///
-    /// Errors: `BuilderIncomplete` (p0, q or r not set), plus exactly those of
-    /// `try_new`. A wrong `Diagonal` length is a `DimensionMismatch`.
+}
+
+/// Expands the inputs and calls [`LinearKalmanFilter::try_new`].
+///
+/// Errors: `BuilderIncomplete` (p0, q or r not set), plus exactly those of
+/// `try_new`. A wrong `Diagonal` length is a `DimensionMismatch`.
+#[cfg(not(feature = "nalgebra"))]
+impl<'a, T: KalmanScalar> LinearKalmanFilterBuilder<'a, T> {
     pub fn try_build(self) -> KalmanResult<LinearKalmanFilter<T>> {
-        let missing = |name: &str| KalmanError::BuilderIncomplete(name.into());
-        let p0 = self.p0.ok_or_else(|| missing("p0"))?;
-        let q = self.q.ok_or_else(|| missing("q"))?;
-        let r = self.r.ok_or_else(|| missing("r"))?;
-        let (n, m) = (self.n, self.m);
-        // F and H bound n·n and m·n by real slice lengths before anything is
-        // allocated from n or m.
-        check_dims(n, m)?;
-        check_len(self.f, n, n)?;
-        check_len(self.h, m, n)?;
-        let x0 = match self.x0 {
-            Some(x0) => Cow::Borrowed(x0),
-            None => Cow::Owned(zeros(n, 1)?),
-        };
-        let (p0, q, r) = (p0.to_dense(n)?, q.to_dense(n)?, r.to_dense(m)?);
-        LinearKalmanFilter::try_new(n, m, &x0, &p0, self.f, &q, self.h, &r)
+        try_build_impl(self)
     }
 }
 
+/// Expands the inputs and calls [`LinearKalmanFilter::try_new`].
+///
+/// Errors: `BuilderIncomplete` (p0, q or r not set), plus exactly those of
+/// `try_new`. A wrong `Diagonal` length is a `DimensionMismatch`.
+#[cfg(feature = "nalgebra")]
+impl<'a, T: KalmanScalar + crate::nalgebra::RealField> LinearKalmanFilterBuilder<'a, T> {
+    pub fn try_build(self) -> KalmanResult<LinearKalmanFilter<T>> {
+        try_build_impl(self)
+    }
+}
+
+fn try_build_impl<'a, T: KalmanScalar + FilterScalar>(
+    builder: LinearKalmanFilterBuilder<'a, T>,
+) -> KalmanResult<LinearKalmanFilter<T>> {
+    let LinearKalmanFilterBuilder { n, m, f, h, x0, p0, q, r } = builder;
+    let missing = |name: &str| KalmanError::BuilderIncomplete(name.into());
+    let p0 = p0.ok_or_else(|| missing("p0"))?;
+    let q = q.ok_or_else(|| missing("q"))?;
+    let r = r.ok_or_else(|| missing("r"))?;
+    // F and H bound n·n and m·n by real slice lengths before anything is
+    // allocated from n or m.
+    check_dims(n, m)?;
+    check_len(f, n, n)?;
+    check_len(h, m, n)?;
+    let x0 = match x0 {
+        Some(x0) => Cow::Borrowed(x0),
+        None => Cow::Owned(zeros(n, 1)?),
+    };
+    let (p0, q, r) = (p0.to_dense(n)?, q.to_dense(n)?, r.to_dense(m)?);
+    LinearKalmanFilter::try_new(n, m, &x0, &p0, f, &q, h, &r)
+}
+
+
+#[cfg(not(feature = "nalgebra"))]
 impl<T: KalmanScalar> LinearKalmanFilter<T> {
     /// Starts a builder for the model `F` (n×n) and `H` (m×n). Nothing is
     /// checked until [`try_build`](LinearKalmanFilterBuilder::try_build).
@@ -133,7 +156,7 @@ impl<T: KalmanScalar> LinearKalmanFilter<T> {
         f: &'a [T],
         h: &'a [T],
     ) -> LinearKalmanFilterBuilder<'a, T> {
-        LinearKalmanFilterBuilder { n: state_dim, m: measurement_dim, f, h, x0: None, p0: None, q: None, r: None }
+        builder_impl(state_dim, measurement_dim, f, h)
     }
 
     /// Constant-velocity model with `axes` independent axes, state
@@ -151,24 +174,86 @@ impl<T: KalmanScalar> LinearKalmanFilter<T> {
         meas_var: T,
         p0: Covariance<'_, T>,
     ) -> KalmanResult<Self> {
-        let n = axes.checked_mul(2).ok_or(KalmanError::DimensionMismatch { expected: (axes, 2), actual: (0, 1) })?;
-        let (mut f, mut q, mut h) = (zeros(n, n)?, zeros(n, n)?, zeros(axes, n)?);
-        let half = T::one() / (T::one() + T::one());
-        let dt2 = dt * dt;
-        let (q_pp, q_pv, q_vv) = (accel_var * dt2 * dt2 * half * half, accel_var * dt2 * dt * half, accel_var * dt2);
-        for a in 0..axes {
-            let (p, v) = (2 * a, 2 * a + 1);
-            f[p * n + p] = T::one();
-            f[p * n + v] = dt;
-            f[v * n + v] = T::one();
-            q[p * n + p] = q_pp;
-            q[p * n + v] = q_pv;
-            q[v * n + p] = q_pv;
-            q[v * n + v] = q_vv;
-            h[a * n + p] = T::one();
-        }
-        Self::builder(n, axes, &f, &h).p0(p0).q(Covariance::Full(&q)).r(Covariance::Scalar(meas_var)).try_build()
+        try_constant_velocity_impl(axes, dt, accel_var, meas_var, p0)
     }
+}
+
+#[cfg(feature = "nalgebra")]
+impl<T: KalmanScalar + crate::nalgebra::RealField> LinearKalmanFilter<T> {
+    /// Starts a builder for the model `F` (n×n) and `H` (m×n). Nothing is
+    /// checked until [`try_build`](LinearKalmanFilterBuilder::try_build).
+    ///
+    /// ```
+    /// use kalman_filters::linear::{Covariance, LinearKalmanFilter};
+    /// let kf = LinearKalmanFilter::<f64>::builder(2, 1, &[1.0, 0.1, 0.0, 1.0], &[1.0, 0.0])
+    ///     .p0(Covariance::Scalar(1.0))
+    ///     .q(Covariance::Diagonal(&[1e-4, 1e-2]))
+    ///     .r(Covariance::Scalar(0.25))
+    ///     .try_build()?;
+    /// assert_eq!(kf.state(), &[0.0, 0.0]);
+    /// # Ok::<(), kalman_filters::KalmanError>(())
+    /// ```
+    pub fn builder<'a>(
+        state_dim: usize,
+        measurement_dim: usize,
+        f: &'a [T],
+        h: &'a [T],
+    ) -> LinearKalmanFilterBuilder<'a, T> {
+        builder_impl(state_dim, measurement_dim, f, h)
+    }
+
+    /// Constant-velocity model with `axes` independent axes, state
+    /// `[pos₀, vel₀, pos₁, vel₁, …]` (n = 2·axes), positions measured (m = axes).
+    /// Per axis `F = [[1, dt], [0, 1]]`, `Q = accel_var · [[dt⁴/4, dt³/2], [dt³/2, dt²]]`
+    /// (white-noise acceleration), `R = meas_var · I`, `x0 = 0`.
+    ///
+    /// Errors are those of [`try_new`](Self::try_new): e.g. a non-finite `dt`
+    /// is `NonFiniteInput`, a negative `accel_var` or `meas_var` is
+    /// `InvalidNoiseCovariance`.
+    pub fn try_constant_velocity(
+        axes: usize,
+        dt: T,
+        accel_var: T,
+        meas_var: T,
+        p0: Covariance<'_, T>,
+    ) -> KalmanResult<Self> {
+        try_constant_velocity_impl(axes, dt, accel_var, meas_var, p0)
+    }
+}
+
+fn builder_impl<'a, T: KalmanScalar>(
+    state_dim: usize,
+    measurement_dim: usize,
+    f: &'a [T],
+    h: &'a [T],
+) -> LinearKalmanFilterBuilder<'a, T> {
+    LinearKalmanFilterBuilder { n: state_dim, m: measurement_dim, f, h, x0: None, p0: None, q: None, r: None }
+}
+
+fn try_constant_velocity_impl<T: KalmanScalar + FilterScalar>(
+    axes: usize,
+    dt: T,
+    accel_var: T,
+    meas_var: T,
+    p0: Covariance<'_, T>,
+) -> KalmanResult<LinearKalmanFilter<T>> {
+    let n = axes.checked_mul(2).ok_or(KalmanError::DimensionMismatch { expected: (axes, 2), actual: (0, 1) })?;
+    let (mut f, mut q, mut h) = (zeros(n, n)?, zeros(n, n)?, zeros(axes, n)?);
+    let half = T::one() / (T::one() + T::one());
+    let dt2 = dt * dt;
+    let (q_pp, q_pv, q_vv) = (accel_var * dt2 * dt2 * half * half, accel_var * dt2 * dt * half, accel_var * dt2);
+    for a in 0..axes {
+        let (p, v) = (2 * a, 2 * a + 1);
+        f[p * n + p] = T::one();
+        f[p * n + v] = dt;
+        f[v * n + v] = T::one();
+        q[p * n + p] = q_pp;
+        q[p * n + v] = q_pv;
+        q[v * n + p] = q_pv;
+        q[v * n + v] = q_vv;
+        h[a * n + p] = T::one();
+    }
+    LinearKalmanFilter::<T>::builder(n, axes, &f, &h).p0(p0).q(Covariance::Full(&q)).r(Covariance::Scalar(meas_var)).try_build()
 }
 
 #[cfg(test)]

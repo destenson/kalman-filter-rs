@@ -28,6 +28,26 @@ jobs:
           exit 1
         fi
 
+  nalgebra-engine:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Test the nalgebra engine
+      run: cargo test --verbose --features nalgebra
+    - name: Build every target with the nalgebra engine
+      run: cargo build --all-targets --verbose --features nalgebra
+
+  engine-parity:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Both engines must agree case by case
+      run: bash dev/parity/run.sh
+
   features:
 
     runs-on: ubuntu-latest
