@@ -140,23 +140,6 @@ impl<T: KalmanScalar> LinearKalmanFilter<T> {
         Ok(Self { n, m, x: x0.into(), p, f: f.into(), q, h: h.into(), r, ws })
     }
 
-    /// Temporary alias of [`try_new`](Self::try_new), kept only so the frozen
-    /// spec tests compile; it will be removed.
-    #[doc(hidden)]
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        state_dim: usize,
-        measurement_dim: usize,
-        x0: &[T],
-        p0: &[T],
-        f: &[T],
-        q: &[T],
-        h: &[T],
-        r: &[T],
-    ) -> KalmanResult<Self> {
-        Self::try_new(state_dim, measurement_dim, x0, p0, f, q, h, r)
-    }
-
     pub fn state_dim(&self) -> usize {
         self.n
     }

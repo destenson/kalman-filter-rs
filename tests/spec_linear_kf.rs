@@ -298,7 +298,7 @@ const H: [f64; 2] = [1.0, 0.0];
 const R: [f64; 1] = [0.1];
 
 fn baseline() -> LinearKalmanFilter<f64> {
-    LinearKalmanFilter::<f64>::new(2, 1, &X0, &P0, &F, &Q, &H, &R).expect("valid baseline")
+    LinearKalmanFilter::<f64>::try_new(2, 1, &X0, &P0, &F, &Q, &H, &R).expect("valid baseline")
 }
 
 // A richer model for the oracle comparison: n = 4, m = 2, correlated R,
@@ -352,7 +352,7 @@ fn construction_reports_dimensions_and_initial_estimate() {
     assert_eq!(v(kf.covariance()), P0.to_vec());
 
     let kf32 =
-        LinearKalmanFilter::<f32>::new(2, 1, &to_f32(&X0), &to_f32(&P0), &to_f32(&F), &to_f32(&Q), &to_f32(&H), &to_f32(&R))
+        LinearKalmanFilter::<f32>::try_new(2, 1, &to_f32(&X0), &to_f32(&P0), &to_f32(&F), &to_f32(&Q), &to_f32(&H), &to_f32(&R))
             .expect("valid f32 model");
     assert_eq!(v(kf32.state()), to_f32(&X0));
     assert_eq!(v(kf32.covariance()), to_f32(&P0));
@@ -368,13 +368,13 @@ fn construction_rejects_wrong_length_inputs() {
     let m = 1;
     let short2 = [1.0];
     let long4 = [1.0, 0.0, 0.0, 1.0, 0.0];
-    assert!(is_dimension_mismatch(&LinearKalmanFilter::<f64>::new(n, m, &[0.0], &P0, &F, &Q, &H, &R)), "x0");
-    assert!(is_dimension_mismatch(&LinearKalmanFilter::<f64>::new(n, m, &X0, &short2, &F, &Q, &H, &R)), "p0 short");
-    assert!(is_dimension_mismatch(&LinearKalmanFilter::<f64>::new(n, m, &X0, &long4, &F, &Q, &H, &R)), "p0 long");
-    assert!(is_dimension_mismatch(&LinearKalmanFilter::<f64>::new(n, m, &X0, &P0, &[1.0, 0.0], &Q, &H, &R)), "f");
-    assert!(is_dimension_mismatch(&LinearKalmanFilter::<f64>::new(n, m, &X0, &P0, &F, &[0.1], &H, &R)), "q");
-    assert!(is_dimension_mismatch(&LinearKalmanFilter::<f64>::new(n, m, &X0, &P0, &F, &Q, &[1.0], &R)), "h");
-    assert!(is_dimension_mismatch(&LinearKalmanFilter::<f64>::new(n, m, &X0, &P0, &F, &Q, &H, &[0.1, 0.0])), "r");
+    assert!(is_dimension_mismatch(&LinearKalmanFilter::<f64>::try_new(n, m, &[0.0], &P0, &F, &Q, &H, &R)), "x0");
+    assert!(is_dimension_mismatch(&LinearKalmanFilter::<f64>::try_new(n, m, &X0, &short2, &F, &Q, &H, &R)), "p0 short");
+    assert!(is_dimension_mismatch(&LinearKalmanFilter::<f64>::try_new(n, m, &X0, &long4, &F, &Q, &H, &R)), "p0 long");
+    assert!(is_dimension_mismatch(&LinearKalmanFilter::<f64>::try_new(n, m, &X0, &P0, &[1.0, 0.0], &Q, &H, &R)), "f");
+    assert!(is_dimension_mismatch(&LinearKalmanFilter::<f64>::try_new(n, m, &X0, &P0, &F, &[0.1], &H, &R)), "q");
+    assert!(is_dimension_mismatch(&LinearKalmanFilter::<f64>::try_new(n, m, &X0, &P0, &F, &Q, &[1.0], &R)), "h");
+    assert!(is_dimension_mismatch(&LinearKalmanFilter::<f64>::try_new(n, m, &X0, &P0, &F, &Q, &H, &[0.1, 0.0])), "r");
 }
 
 // ===========================================================================
@@ -384,14 +384,14 @@ fn construction_rejects_wrong_length_inputs() {
 #[test]
 fn spec_change_zero_dimensions_are_rejected_without_panic() {
     // m = 0 with a non-empty R: current code divides by m (src/filter.rs:135) and panics.
-    let r = LinearKalmanFilter::<f64>::new(1, 0, &[0.0], &[1.0], &[1.0], &[0.1], &[], &[1.0]);
+    let r = LinearKalmanFilter::<f64>::try_new(1, 0, &[0.0], &[1.0], &[1.0], &[0.1], &[], &[1.0]);
     assert!(r.is_err(), "measurement_dim = 0 must be rejected");
     // n = 0 / m = 0 with consistent (empty) inputs: currently accepted.
-    let r = LinearKalmanFilter::<f64>::new(1, 0, &[0.0], &[1.0], &[1.0], &[0.1], &[], &[]);
+    let r = LinearKalmanFilter::<f64>::try_new(1, 0, &[0.0], &[1.0], &[1.0], &[0.1], &[], &[]);
     assert!(r.is_err(), "measurement_dim = 0 must be rejected");
-    let r = LinearKalmanFilter::<f64>::new(0, 1, &[], &[], &[], &[], &[], &[1.0]);
+    let r = LinearKalmanFilter::<f64>::try_new(0, 1, &[], &[], &[], &[], &[], &[1.0]);
     assert!(r.is_err(), "state_dim = 0 must be rejected");
-    let r = LinearKalmanFilter::<f64>::new(0, 0, &[], &[], &[], &[], &[], &[]);
+    let r = LinearKalmanFilter::<f64>::try_new(0, 0, &[], &[], &[], &[], &[], &[]);
     assert!(r.is_err(), "zero dimensions must be rejected");
 }
 
@@ -402,17 +402,17 @@ fn spec_change_zero_dimensions_are_rejected_without_panic() {
 #[test]
 fn spec_change_rejects_asymmetric_initial_covariance() {
     let p0 = [1.0, 0.5, 0.0, 1.0];
-    let r = LinearKalmanFilter::<f64>::new(2, 1, &X0, &p0, &F, &Q, &H, &R);
+    let r = LinearKalmanFilter::<f64>::try_new(2, 1, &X0, &p0, &F, &Q, &H, &R);
     assert!(matches!(r, Err(KalmanError::InvalidCovariance)), "asymmetric P0 must be InvalidCovariance");
 }
 
 #[test]
 fn spec_change_rejects_indefinite_initial_covariance() {
     // Negative diagonal.
-    let r = LinearKalmanFilter::<f64>::new(2, 1, &X0, &[-1.0, 0.0, 0.0, 1.0], &F, &Q, &H, &R);
+    let r = LinearKalmanFilter::<f64>::try_new(2, 1, &X0, &[-1.0, 0.0, 0.0, 1.0], &F, &Q, &H, &R);
     assert!(matches!(r, Err(KalmanError::InvalidCovariance)), "negative-diagonal P0");
     // Positive diagonal but indefinite (eigenvalues 3 and -1).
-    let r = LinearKalmanFilter::<f64>::new(2, 1, &X0, &[1.0, 2.0, 2.0, 1.0], &F, &Q, &H, &R);
+    let r = LinearKalmanFilter::<f64>::try_new(2, 1, &X0, &[1.0, 2.0, 2.0, 1.0], &F, &Q, &H, &R);
     assert!(matches!(r, Err(KalmanError::InvalidCovariance)), "indefinite P0");
 }
 
@@ -423,14 +423,14 @@ fn spec_change_rejects_indefinite_initial_covariance() {
 #[test]
 fn spec_change_rejects_invalid_process_noise() {
     for q in [[0.01, 0.005, 0.0, 0.01], [-0.01, 0.0, 0.0, 0.01], [0.01, 0.02, 0.02, 0.01]] {
-        let r = LinearKalmanFilter::<f64>::new(2, 1, &X0, &P0, &F, &q, &H, &R);
+        let r = LinearKalmanFilter::<f64>::try_new(2, 1, &X0, &P0, &F, &q, &H, &R);
         assert!(matches!(r, Err(KalmanError::InvalidNoiseCovariance)), "Q = {q:?} must be InvalidNoiseCovariance");
     }
 }
 
 #[test]
 fn rejects_negative_measurement_noise() {
-    let r = LinearKalmanFilter::<f64>::new(2, 1, &X0, &P0, &F, &Q, &H, &[-0.1]);
+    let r = LinearKalmanFilter::<f64>::try_new(2, 1, &X0, &P0, &F, &Q, &H, &[-0.1]);
     assert!(matches!(r, Err(KalmanError::InvalidNoiseCovariance)));
 }
 
@@ -438,7 +438,7 @@ fn rejects_negative_measurement_noise() {
 fn spec_change_rejects_asymmetric_or_indefinite_measurement_noise() {
     let h = [1.0, 0.0, 0.0, 1.0];
     for r_bad in [[1.0, 0.5, 0.0, 1.0], [1.0, 2.0, 2.0, 1.0]] {
-        let r = LinearKalmanFilter::<f64>::new(2, 2, &X0, &P0, &F, &Q, &h, &r_bad);
+        let r = LinearKalmanFilter::<f64>::try_new(2, 2, &X0, &P0, &F, &Q, &h, &r_bad);
         assert!(matches!(r, Err(KalmanError::InvalidNoiseCovariance)), "R = {r_bad:?} must be InvalidNoiseCovariance");
     }
 }
@@ -449,7 +449,7 @@ fn accepts_singular_positive_semidefinite_matrices() {
     // rank-deficient PSD R are all valid models.
     let h = [1.0, 0.0, 0.0, 1.0];
     let r_singular = [1.0, 1.0, 1.0, 1.0];
-    let kf = LinearKalmanFilter::<f64>::new(2, 2, &X0, &[0.0; 4], &F, &[0.0; 4], &h, &r_singular);
+    let kf = LinearKalmanFilter::<f64>::try_new(2, 2, &X0, &[0.0; 4], &F, &[0.0; 4], &h, &r_singular);
     assert!(kf.is_ok(), "PSD (singular) P0, Q, R must be accepted: {:?}", kf.err());
 }
 
@@ -462,12 +462,12 @@ fn spec_change_rejects_non_finite_construction_inputs() {
     let nan = f64::NAN;
     let inf = f64::INFINITY;
     let cases: Vec<(&str, Result<LinearKalmanFilter<f64>, KalmanError>)> = vec![
-        ("x0", LinearKalmanFilter::new(2, 1, &[nan, 0.0], &P0, &F, &Q, &H, &R)),
-        ("p0", LinearKalmanFilter::new(2, 1, &X0, &[nan, 0.0, 0.0, 1.0], &F, &Q, &H, &R)),
-        ("f", LinearKalmanFilter::new(2, 1, &X0, &P0, &[1.0, inf, 0.0, 1.0], &Q, &H, &R)),
-        ("q", LinearKalmanFilter::new(2, 1, &X0, &P0, &F, &[0.01, 0.0, 0.0, nan], &H, &R)),
-        ("h", LinearKalmanFilter::new(2, 1, &X0, &P0, &F, &Q, &[nan, 0.0], &R)),
-        ("r", LinearKalmanFilter::new(2, 1, &X0, &P0, &F, &Q, &H, &[nan])),
+        ("x0", LinearKalmanFilter::try_new(2, 1, &[nan, 0.0], &P0, &F, &Q, &H, &R)),
+        ("p0", LinearKalmanFilter::try_new(2, 1, &X0, &[nan, 0.0, 0.0, 1.0], &F, &Q, &H, &R)),
+        ("f", LinearKalmanFilter::try_new(2, 1, &X0, &P0, &[1.0, inf, 0.0, 1.0], &Q, &H, &R)),
+        ("q", LinearKalmanFilter::try_new(2, 1, &X0, &P0, &F, &[0.01, 0.0, 0.0, nan], &H, &R)),
+        ("h", LinearKalmanFilter::try_new(2, 1, &X0, &P0, &F, &Q, &[nan, 0.0], &R)),
+        ("r", LinearKalmanFilter::try_new(2, 1, &X0, &P0, &F, &Q, &H, &[nan])),
     ];
     for (what, r) in cases {
         assert!(r.is_err(), "non-finite {what} must be rejected at construction");
@@ -493,7 +493,7 @@ fn spec_change_update_rejects_non_finite_measurement() {
 fn predict_propagates_state_and_covariance() {
     let p0 = [2.0, 0.5, 0.5, 1.0];
     let q = [0.01, 0.0, 0.0, 0.02];
-    let mut kf = LinearKalmanFilter::<f64>::new(2, 1, &[1.0, 2.0], &p0, &F, &q, &H, &R).unwrap();
+    let mut kf = LinearKalmanFilter::<f64>::try_new(2, 1, &[1.0, 2.0], &p0, &F, &q, &H, &R).unwrap();
     kf.predict().unwrap();
     // x = F x ; P = F P F^T + Q  (hand-computed)
     assert_close(&v(kf.state()), &[1.2, 2.0], 1e-12, "x");
@@ -507,7 +507,7 @@ fn predict_propagates_state_and_covariance() {
 #[test]
 fn scalar_update_matches_closed_form() {
     // 1-D: K = P/(P+R), x+ = x + K (z - x), P+ = (1-K) P
-    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[0.25]).unwrap();
+    let mut kf = LinearKalmanFilter::<f64>::try_new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[0.25]).unwrap();
     kf.update(&[2.0]).unwrap();
     let k = 1.0 / 1.25;
     assert_close(&v(kf.state()), &[k * 2.0], 1e-12, "x");
@@ -518,7 +518,7 @@ fn scalar_update_matches_closed_form() {
 fn matches_reference_filter_f64() {
     let mut oracle = rich_model();
     let (n, m) = (oracle.n, oracle.m);
-    let mut kf = LinearKalmanFilter::<f64>::new(n, m, &oracle.x, &oracle.p, &oracle.f, &oracle.q, &oracle.h, &oracle.r).unwrap();
+    let mut kf = LinearKalmanFilter::<f64>::try_new(n, m, &oracle.x, &oracle.p, &oracle.f, &oracle.q, &oracle.h, &oracle.r).unwrap();
     for k in 0..50 {
         kf.predict().unwrap();
         oracle.predict();
@@ -536,7 +536,7 @@ fn matches_reference_filter_f64() {
 fn matches_reference_filter_f32() {
     let mut oracle = rich_model();
     let (n, m) = (oracle.n, oracle.m);
-    let mut kf = LinearKalmanFilter::<f32>::new(
+    let mut kf = LinearKalmanFilter::<f32>::try_new(
         n,
         m,
         &to_f32(&oracle.x),
@@ -563,7 +563,7 @@ fn scalar_random_walk_reaches_riccati_steady_state() {
     // Random walk: Pp = P + Q, P = Pp R / (Pp + R).
     // Steady-state predicted covariance solves Pp^2 - Q Pp - Q R = 0.
     let (q, r) = (0.1, 1.0);
-    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[10.0], &[1.0], &[q], &[1.0], &[r]).unwrap();
+    let mut kf = LinearKalmanFilter::<f64>::try_new(1, 1, &[0.0], &[10.0], &[1.0], &[q], &[1.0], &[r]).unwrap();
     for _ in 0..200 {
         kf.predict().unwrap();
         kf.update(&[0.0]).unwrap();
@@ -580,7 +580,7 @@ fn unobserved_state_keeps_growing_uncertainty() {
     let q = [0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.01];
     let h = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
     let r = [0.1, 0.0, 0.0, 0.1];
-    let mut kf = LinearKalmanFilter::<f64>::new(3, 2, &[0.0; 3], &eye3, &eye3, &q, &h, &r).unwrap();
+    let mut kf = LinearKalmanFilter::<f64>::try_new(3, 2, &[0.0; 3], &eye3, &eye3, &q, &h, &r).unwrap();
     for _ in 0..50 {
         kf.predict().unwrap();
         kf.update(&[5.0, 3.0]).unwrap();
@@ -612,7 +612,7 @@ fn estimates_are_statistically_consistent_nees_nis() {
     let (mut nees_sum, mut nis_sum, mut count) = (0.0, 0.0, 0usize);
     for _ in 0..runs {
         let mut xt = [x0[0] + 10f64.sqrt() * rng.normal(), x0[1] + rng.normal()];
-        let mut kf = LinearKalmanFilter::<f64>::new(2, 1, &x0, &p0, &f, &q, &h, &[rv]).unwrap();
+        let mut kf = LinearKalmanFilter::<f64>::try_new(2, 1, &x0, &p0, &f, &q, &h, &[rv]).unwrap();
         for _ in 0..steps {
             let (w0, w1) = (rng.normal(), rng.normal());
             xt = [xt[0] + dt * xt[1] + l00 * w0, xt[1] + l10 * w0 + l11 * w1];
@@ -657,7 +657,7 @@ fn update_with_singular_innovation_covariance_fails_atomically() {
     // P0 = 0 and a rank-deficient R make S = H P H^T + R singular.
     let h = [1.0, 0.0, 0.0, 1.0];
     let r = [1.0, 1.0, 1.0, 1.0];
-    let mut kf = LinearKalmanFilter::<f64>::new(2, 2, &X0, &[0.0; 4], &[1.0, 0.0, 0.0, 1.0], &[0.0; 4], &h, &r).unwrap();
+    let mut kf = LinearKalmanFilter::<f64>::try_new(2, 2, &X0, &[0.0; 4], &[1.0, 0.0, 0.0, 1.0], &[0.0; 4], &h, &r).unwrap();
     let (x, p) = (v(kf.state()), v(kf.covariance()));
     let res = kf.update(&[1.0, 2.0]);
     assert!(matches!(res, Err(KalmanError::SingularMatrix)), "expected SingularMatrix, got {res:?}");
@@ -675,12 +675,12 @@ fn spec_change_small_scale_update_is_not_reported_singular() {
     // chosen units. Current code inverts S with an absolute pivot threshold
     // (KalmanScalar::epsilon: 1e-10 for f64, 1e-6 for f32; src/matrix/naive.rs:143)
     // and reports SingularMatrix.
-    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[4e-12], &[1.0], &[0.0], &[1.0], &[4e-12]).unwrap();
+    let mut kf = LinearKalmanFilter::<f64>::try_new(1, 1, &[0.0], &[4e-12], &[1.0], &[0.0], &[1.0], &[4e-12]).unwrap();
     kf.update(&[1e-6]).expect("f64: S = 8e-12 is well conditioned");
     assert_close(&v(kf.state()), &[0.5e-6], 1e-9, "f64 x");
     assert_close(&v(kf.covariance()), &[2e-12], 1e-9, "f64 P");
 
-    let mut kf = LinearKalmanFilter::<f32>::new(1, 1, &[0.0], &[1e-7], &[1.0], &[0.0], &[1.0], &[1e-7]).unwrap();
+    let mut kf = LinearKalmanFilter::<f32>::try_new(1, 1, &[0.0], &[1e-7], &[1.0], &[0.0], &[1.0], &[1e-7]).unwrap();
     kf.update(&[1e-3]).expect("f32: S = 2e-7 is well conditioned");
     assert_close(&to_f64(&v(kf.state())), &[0.5e-3], 1e-5, "f32 x");
     assert_close(&to_f64(&v(kf.covariance())), &[0.5e-7], 1e-5, "f32 P");
@@ -721,7 +721,7 @@ macro_rules! psd_run {
             let c = $conv_in;
             let back = $conv_out;
             let x0 = vec![0.0; n];
-            let mut kf = LinearKalmanFilter::<$t>::new(n, m, &c(&x0), &c(p0), &c(f), &c(q), &c(h), &c(r))
+            let mut kf = LinearKalmanFilter::<$t>::try_new(n, m, &c(&x0), &c(p0), &c(f), &c(q), &c(h), &c(r))
                 .unwrap_or_else(|e| panic!("{label}: construction failed: {e:?}"));
             for k in 0..10_000 {
                 kf.predict().unwrap_or_else(|e| panic!("{label}: predict {k} failed: {e:?}"));
@@ -769,8 +769,8 @@ fn covariance_stays_symmetric_psd_well_conditioned() {
 #[test]
 fn spec_change_no_heap_allocation_in_steady_state() {
     let o = rich_model();
-    let mut kf64 = LinearKalmanFilter::<f64>::new(o.n, o.m, &o.x, &o.p, &o.f, &o.q, &o.h, &o.r).unwrap();
-    let mut kf32 = LinearKalmanFilter::<f32>::new(
+    let mut kf64 = LinearKalmanFilter::<f64>::try_new(o.n, o.m, &o.x, &o.p, &o.f, &o.q, &o.h, &o.r).unwrap();
+    let mut kf32 = LinearKalmanFilter::<f32>::try_new(
         o.n,
         o.m,
         &to_f32(&o.x),
@@ -815,7 +815,7 @@ fn spec_change_no_heap_allocation_in_steady_state() {
 /// Returns (x / s, P / s²) after 10 predict+update cycles.
 fn scaled_random_walk(s: f64) -> Result<(f64, f64), String> {
     let s2 = s * s;
-    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0 * s2], &[1.0], &[0.01 * s2], &[1.0], &[0.5 * s2])
+    let mut kf = LinearKalmanFilter::<f64>::try_new(1, 1, &[0.0], &[1.0 * s2], &[1.0], &[0.01 * s2], &[1.0], &[0.5 * s2])
         .map_err(|e| format!("new: {e:?}"))?;
     for k in 0..10 {
         kf.predict().map_err(|e| format!("predict {k}: {e:?}"))?;
@@ -840,7 +840,7 @@ fn spec_change_noise_covariance_validation_is_scale_invariant() {
     // A tiny R next to P0 = 1: S = 1 + 1e-14 is perfectly conditioned, so this
     // isolates construction from B10. Closed form: x = z/(1+R), P = R/(1+R).
     let r = 1e-14;
-    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[r])
+    let mut kf = LinearKalmanFilter::<f64>::try_new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[r])
         .unwrap_or_else(|e| panic!("f64 R = {r:e} is positive definite but rejected: {e:?}"));
     kf.update(&[1.0]).expect("S = 1 + 1e-14 is well conditioned");
     assert_close(&v(kf.state()), &[1.0 / (1.0 + r)], 1e-15, "x");
@@ -848,10 +848,10 @@ fn spec_change_noise_covariance_validation_is_scale_invariant() {
     assert!((p - r / (1.0 + r)).abs() <= 1e-9 * r, "P = {p:e}, expected {:e}", r / (1.0 + r));
 
     // f32 (1e-13 is a normal f32) and a multichannel R with one precise channel.
-    let r32 = LinearKalmanFilter::<f32>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[1e-13]);
+    let r32 = LinearKalmanFilter::<f32>::try_new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[1e-13]);
     assert!(r32.is_ok(), "f32 R = 1e-13 rejected: {:?}", r32.err());
     let i2 = [1.0, 0.0, 0.0, 1.0];
-    let res = LinearKalmanFilter::<f64>::new(2, 2, &[0.0, 0.0], &i2, &i2, &[0.0; 4], &i2, &[1.0, 0.0, 0.0, 1e-13]);
+    let res = LinearKalmanFilter::<f64>::try_new(2, 2, &[0.0, 0.0], &i2, &i2, &[0.0; 4], &i2, &[1.0, 0.0, 0.0, 1e-13]);
     assert!(res.is_ok(), "R = diag(1, 1e-13) rejected: {:?}", res.err());
 }
 
@@ -874,7 +874,7 @@ fn spec_change_overflowing_dimensions_are_rejected_without_panic() {
     let mut failures = Vec::new();
     for (m, h, r) in cases {
         let res = catch_unwind(AssertUnwindSafe(|| {
-            LinearKalmanFilter::<f64>::new(2, m, &X0, &P0, &F, &Q, h, r).map(|_| ())
+            LinearKalmanFilter::<f64>::try_new(2, m, &X0, &P0, &F, &Q, h, r).map(|_| ())
         }));
         match res {
             Ok(Err(_)) => {}
@@ -910,14 +910,14 @@ fn assert_finite_or_unchanged(
 #[test]
 fn spec_change_predict_never_commits_non_finite_estimate() {
     // F x overflows: x0 = 1e200, F = 1e200 (all inputs finite and valid).
-    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[1e200], &[1.0], &[1e200], &[0.0], &[1.0], &[1.0]).unwrap();
+    let mut kf = LinearKalmanFilter::<f64>::try_new(1, 1, &[1e200], &[1.0], &[1e200], &[0.0], &[1.0], &[1.0]).unwrap();
     let before = (v(kf.state()), v(kf.covariance()));
     let res = kf.predict();
     assert_finite_or_unchanged("predict, F x overflows", res, before, (v(kf.state()), v(kf.covariance())));
 
     // F P Fᵀ overflows: P0 = 1e200, F = 1e200. Today P becomes inf with Ok, and
     // the next update returns Ok with a NaN state.
-    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[1.0], &[1e200], &[1e200], &[0.0], &[1.0], &[1.0]).unwrap();
+    let mut kf = LinearKalmanFilter::<f64>::try_new(1, 1, &[1.0], &[1e200], &[1e200], &[0.0], &[1.0], &[1.0]).unwrap();
     let before = (v(kf.state()), v(kf.covariance()));
     let res = kf.predict();
     assert_finite_or_unchanged("predict, F P F^T overflows", res, before, (v(kf.state()), v(kf.covariance())));
@@ -930,12 +930,12 @@ fn spec_change_predict_never_commits_non_finite_estimate() {
 fn spec_change_update_never_commits_non_finite_estimate() {
     // Finite x0 and z whose difference overflows: y = z - H x = +inf
     // (src/filter.rs:266-270, :315-317; nothing is checked before committing).
-    let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[-1e308], &[1.0], &[1.0], &[0.0], &[1.0], &[1.0]).unwrap();
+    let mut kf = LinearKalmanFilter::<f64>::try_new(1, 1, &[-1e308], &[1.0], &[1.0], &[0.0], &[1.0], &[1.0]).unwrap();
     let before = (v(kf.state()), v(kf.covariance()));
     let res = kf.update(&[1e308]);
     assert_finite_or_unchanged("f64 update, innovation overflows", res, before, (v(kf.state()), v(kf.covariance())));
 
-    let mut kf = LinearKalmanFilter::<f32>::new(1, 1, &[-3e38], &[1.0], &[1.0], &[0.0], &[1.0], &[1.0]).unwrap();
+    let mut kf = LinearKalmanFilter::<f32>::try_new(1, 1, &[-3e38], &[1.0], &[1.0], &[0.0], &[1.0], &[1.0]).unwrap();
     let before = (to_f64(&v(kf.state())), to_f64(&v(kf.covariance())));
     let res = kf.update(&[3e38]);
     let after = (to_f64(&v(kf.state())), to_f64(&v(kf.covariance())));
@@ -990,7 +990,7 @@ fn spec_change_large_scale_singular_innovation_is_detected() {
             let r = [scale, hb * scale, hb * scale, hb * hb * scale];
             let s = [scale + r[0], scale * hb + r[1], scale * hb + r[2], scale * hb * hb + r[3]];
             assert!(ref_cholesky_is_singular(&s, 2), "reference failed to flag h=[1,{hb}] scale={scale:e}");
-            let mut kf = LinearKalmanFilter::<f64>::new(1, 2, &[0.0], &[scale], &[1.0], &[0.0], &h, &r).unwrap();
+            let mut kf = LinearKalmanFilter::<f64>::try_new(1, 2, &[0.0], &[scale], &[1.0], &[0.0], &h, &r).unwrap();
             let res = kf.update(&[0.0, 1.0]);
             let (x, p) = (v(kf.state())[0], v(kf.covariance())[0]);
             match res {
@@ -1061,7 +1061,7 @@ fn spec_change_successful_update_never_yields_indefinite_covariance() {
         check_covariance(&pr, 2, 1e-10, 1e-9).expect("reference Joseph+Cholesky must be PSD");
     }
 
-    let mut kf = LinearKalmanFilter::<f64>::new(2, 2, &x0, &p0, &i2, &[0.0; 4], &h, &i2).unwrap();
+    let mut kf = LinearKalmanFilter::<f64>::try_new(2, 2, &x0, &p0, &i2, &[0.0; 4], &h, &i2).unwrap();
     match kf.update(&z) {
         Err(KalmanError::SingularMatrix) => {
             assert_eq!(v(kf.state()), x0.to_vec());
@@ -1117,7 +1117,7 @@ fn spec_change_measurement_unit_change_does_not_change_estimate() {
         let mut oracle = rich_model();
         // Feasibility: the textbook oracle run directly on the rescaled model.
         let mut oracle_scaled = rich_model_unit_scaled(&c);
-        let mut kf = LinearKalmanFilter::<f64>::new(sm.n, sm.m, &sm.x, &sm.p, &sm.f, &sm.q, &sm.h, &sm.r)
+        let mut kf = LinearKalmanFilter::<f64>::try_new(sm.n, sm.m, &sm.x, &sm.p, &sm.f, &sm.q, &sm.h, &sm.r)
             .unwrap_or_else(|e| panic!("f64 c={c1:e}: construction failed: {e:?}"));
         for k in 0..20 {
             let z = rich_measurement(k);
@@ -1139,7 +1139,7 @@ fn spec_change_measurement_unit_change_does_not_change_estimate() {
     let c = [1.0, 1e-3];
     let sm = rich_model_unit_scaled(&c);
     let mut oracle = rich_model();
-    let mut kf = LinearKalmanFilter::<f32>::new(
+    let mut kf = LinearKalmanFilter::<f32>::try_new(
         sm.n,
         sm.m,
         &to_f32(&sm.x),

@@ -17,7 +17,7 @@ on top of it. This spec says *what* the filter must do, not *how* it is built.
 **The existing API may break**, provided `DESIGN_NOTES.md` has a short migration note
 (old type or method → new one). Callers may rely only on the items below. Anything else a
 candidate exposes is the candidate's choice, but there must still be one validated way to
-construct the linear filter, plus at most one delegating front end (see B16, Q5).
+construct the linear filter; ergonomic helpers and builders may sit on top of it (see B16, Q5).
 
 ```rust
 // crate root
@@ -30,7 +30,7 @@ pub struct LinearKalmanFilter<T>;          // T = f32 and T = f64 must work. No 
 impl LinearKalmanFilter<T> {
     /// All matrices are dense, row-major slices:
     /// x0: n, p0: n×n, f: n×n, q: n×n, h: m×n, r: m×m.
-    pub fn new(state_dim: usize, measurement_dim: usize,
+    pub fn try_new(state_dim: usize, measurement_dim: usize,
                x0: &[T], p0: &[T], f: &[T], q: &[T], h: &[T], r: &[T])
         -> KalmanResult<Self>;
 
@@ -195,10 +195,11 @@ symmetric input must always pass the symmetry check.
   (no validation at all, `src/filter.rs:484`), `KalmanFilterBuilder::build`
   (`src/builder.rs:128,200`; it picks different backends by dimension and validates
   differently per path), `UnifiedKalmanFilter`/`IntoUnified`, and `legacy::KalmanFilter`.
-  These collapse to one *validated* path: `LinearKalmanFilter::new`. A candidate may
-  add **one** typed or ergonomic front end (e.g. compile-time dimensions, or a
-  builder) provided it delegates to the same validation and adds no behavior of its
-  own. Wrappers, unified enums and per-backend constructors are not allowed.
+  These collapse to one *validated* path: `LinearKalmanFilter::try_new`. Ergonomic
+  helper constructors and builders are allowed on top of it, provided every one of them
+  delegates to the same validation, adds no behavior of its own, and never panics
+  (amended after freeze; see §9). Wrappers, unified enums and per-backend constructors
+  are not allowed.
 - **B17 (KEEP): `f32` and `f64` are both supported** (`KalmanScalar` impls,
   `src/types.rs:51-62`).
 
@@ -262,7 +263,7 @@ symmetric input must always pass the symmetry check.
 - `src/unified.rs`: the `UnifiedKalmanFilter` enum, `IntoUnified`, `KalmanFilterTrait`
   and its `set_*` model setters. Time-varying model setters are not part of this
   contract.
-- `src/builder.rs`: `KalmanFilterBuilder` (replaced by `LinearKalmanFilter::new`). The
+- `src/builder.rs`: `KalmanFilterBuilder` (replaced by `LinearKalmanFilter::try_new` and its builder). The
   re-exports in `lib.rs` may be removed or replaced.
 - `StaticKalmanFilter<T, M, N>` as a separate public algorithm. A candidate may still use
   const-generic or nalgebra storage *internally*.
@@ -289,7 +290,7 @@ symmetric input must always pass the symmetry check.
 - **Q4 Separation of concerns:** `log` and Prometheus calls are never interleaved with the
   numeric steps of predict/update. If instrumentation is kept, it wraps the math (for
   example before and after a call) or lives in a separate layer.
-- **Q5 One validated construction path** (B16, B2–B6), plus at most one front end that delegates to it.
+- **Q5 One validated construction path** (B16, B2–B6), with ergonomic helpers and builders that delegate to it.
 - **Q6 Build:** Rust edition 2024. `cargo build --all-targets` is green with default
   features and needs no system libraries. nalgebra may become a required dependency, or
   the matrix layer may stay own-code. The choice must be justified in `DESIGN_NOTES.md`.
@@ -400,3 +401,17 @@ public interface; B13, for example, would need a compile-fail test.
 - **B15 / Q3:** named only division by a dimension; integer overflow of dimension
   products is now listed (B19).
 - **Q1:** now forbids absolute magnitude thresholds explicitly (B18, B21, B22).
+
+## 9. Amendments after freeze (owner decisions)
+
+The tournament measured candidates against the frozen text above (tests unchanged). The
+owner amended the contract afterwards; the final build implements these amendments.
+
+- **Naming (R20):** a constructor that can fail is named `try_*` and returns
+  `KalmanResult<Self>`: `try_new`, a builder's `try_build()`, `try_constant_velocity(..)`.
+  Plain names are only for infallible constructors. The frozen tests were renamed from
+  `new` to `try_new` mechanically after the final build was verified; no assertion
+  changed. The crate-wide convention is tracked in DES-156.
+- **Ergonomic construction (R19):** helpers and builders that take fewer parameters
+  are required, not just allowed (B16 and Q5 above are updated to match).
+- **No required matrix library (R21):** nalgebra stays an optional feature (Q6).
