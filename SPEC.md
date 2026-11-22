@@ -1,7 +1,8 @@
 # SPEC — linear Kalman filter core (design-tournament contract)
 
 Baseline: commit `c93b68c`. Candidate-owned paths: `src/filter.rs`, `src/matrix/`,
-`src/types.rs`, `src/error.rs`, `src/builder.rs`, `src/unified.rs`, `src/legacy.rs`.
+`src/types.rs`, `src/error.rs`, `src/builder.rs`, `src/unified.rs`, `src/legacy.rs`,
+`src/validation.rs` (used only by `src/filter.rs`; home of the B18 defect).
 Frozen acceptance tests: `tests/spec_linear_kf.rs`.
 
 ## 1. Purpose
