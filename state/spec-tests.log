@@ -1,0 +1,536 @@
+
+running 32 tests
+.......... 10/32
+spec_change_covariance_stays_psd_ill_conditioned_f32 --- FAILED
+spec_change_covariance_stays_psd_ill_conditioned_f64 --- FAILED
+spec_change_measurement_unit_change_does_not_change_estimate --- FAILED
+spec_change_large_scale_singular_innovation_is_detected --- FAILED
+spec_change_noise_covariance_validation_is_scale_invariant --- FAILED
+spec_change_overflowing_dimensions_are_rejected_without_panic --- FAILED
+spec_change_predict_never_commits_non_finite_estimate --- FAILED
+spec_change_rejects_asymmetric_initial_covariance --- FAILED
+spec_change_rejects_asymmetric_or_indefinite_measurement_noise --- FAILED
+spec_change_rejects_indefinite_initial_covariance --- FAILED
+spec_change_rejects_invalid_process_noise --- FAILED
+spec_change_rejects_non_finite_construction_inputs --- FAILED
+spec_change_small_scale_update_is_not_reported_singular --- FAILED
+spec_change_update_never_commits_non_finite_estimate --- FAILED
+spec_change_successful_update_never_yields_indefinite_covariance --- FAILED
+spec_change_no_heap_allocation_in_steady_state --- FAILED
+spec_change_update_rejects_non_finite_measurement --- FAILED
+. 28/32
+spec_change_zero_dimensions_are_rejected_without_panic --- FAILED
+...
+failures:
+
+---- spec_change_covariance_stays_psd_ill_conditioned_f32 stdout ----
+
+thread 'spec_change_covariance_stays_psd_ill_conditioned_f32' (570) panicked at tests/spec_linear_kf.rs:740:1:
+model B f32: step 0: not PSD: eigenvalues [0.8006909970445228, -5.089084335080956e-5]
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: spec_linear_kf::psd_run_f32
+             at ./tests/spec_linear_kf.rs:732:21
+   3: spec_linear_kf::spec_change_covariance_stays_psd_ill_conditioned_f32
+             at ./tests/spec_linear_kf.rs:752:5
+   4: spec_linear_kf::spec_change_covariance_stays_psd_ill_conditioned_f32::{closure#0}
+             at ./tests/spec_linear_kf.rs:750:58
+   5: <spec_linear_kf::spec_change_covariance_stays_psd_ill_conditioned_f32::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   6: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_covariance_stays_psd_ill_conditioned_f64 stdout ----
+
+thread 'spec_change_covariance_stays_psd_ill_conditioned_f64' (571) panicked at tests/spec_linear_kf.rs:739:1:
+model A f64: step 1: not PSD: eigenvalues [-6.900869630325506e-11, 1.3070704416352868e-8]
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: spec_linear_kf::psd_run_f64
+             at ./tests/spec_linear_kf.rs:732:21
+   3: spec_linear_kf::spec_change_covariance_stays_psd_ill_conditioned_f64
+             at ./tests/spec_linear_kf.rs:745:5
+   4: spec_linear_kf::spec_change_covariance_stays_psd_ill_conditioned_f64::{closure#0}
+             at ./tests/spec_linear_kf.rs:743:58
+   5: <spec_linear_kf::spec_change_covariance_stays_psd_ill_conditioned_f64::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   6: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_measurement_unit_change_does_not_change_estimate stdout ----
+
+thread 'spec_change_measurement_unit_change_does_not_change_estimate' (573) panicked at tests/spec_linear_kf.rs:1132:47:
+f64 c=3e-6 step 0: update failed: SingularMatrix
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: spec_linear_kf::spec_change_measurement_unit_change_does_not_change_estimate::{closure#2}
+             at ./tests/spec_linear_kf.rs:1132:47
+   3: <core::result::Result<(), kalman_filters::error::KalmanError>>::unwrap_or_else::<spec_linear_kf::spec_change_measurement_unit_change_does_not_change_estimate::{closure#2}>
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs:1622:23
+   4: spec_linear_kf::spec_change_measurement_unit_change_does_not_change_estimate
+             at ./tests/spec_linear_kf.rs:1132:28
+   5: spec_linear_kf::spec_change_measurement_unit_change_does_not_change_estimate::{closure#0}
+             at ./tests/spec_linear_kf.rs:1108:66
+   6: <spec_linear_kf::spec_change_measurement_unit_change_does_not_change_estimate::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   7: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_large_scale_singular_innovation_is_detected stdout ----
+
+thread 'spec_change_large_scale_singular_innovation_is_detected' (572) panicked at tests/spec_linear_kf.rs:1004:5:
+singular S mishandled in 1/376 cases:
+h=[1,0.1] scale=1e8: Ok(()), x=0e0, P=-5e7
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: spec_linear_kf::spec_change_large_scale_singular_innovation_is_detected
+             at ./tests/spec_linear_kf.rs:1004:5
+   3: spec_linear_kf::spec_change_large_scale_singular_innovation_is_detected::{closure#0}
+             at ./tests/spec_linear_kf.rs:975:61
+   4: <spec_linear_kf::spec_change_large_scale_singular_innovation_is_detected::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   5: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_noise_covariance_validation_is_scale_invariant stdout ----
+
+thread 'spec_change_noise_covariance_validation_is_scale_invariant' (575) panicked at tests/spec_linear_kf.rs:835:58:
+scale 1e-7: valid model rejected: new: InvalidNoiseCovariance
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: spec_linear_kf::spec_change_noise_covariance_validation_is_scale_invariant::{closure#0}
+             at ./tests/spec_linear_kf.rs:835:58
+   3: <core::result::Result<(f64, f64), alloc::string::String>>::unwrap_or_else::<spec_linear_kf::spec_change_noise_covariance_validation_is_scale_invariant::{closure#0}>
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs:1622:23
+   4: spec_linear_kf::spec_change_noise_covariance_validation_is_scale_invariant
+             at ./tests/spec_linear_kf.rs:835:39
+   5: spec_linear_kf::spec_change_noise_covariance_validation_is_scale_invariant::{closure#0}
+             at ./tests/spec_linear_kf.rs:828:64
+   6: <spec_linear_kf::spec_change_noise_covariance_validation_is_scale_invariant::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   7: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_overflowing_dimensions_are_rejected_without_panic stdout ----
+
+thread 'spec_change_overflowing_dimensions_are_rejected_without_panic' (576) panicked at src/filter.rs:127:40:
+attempt to multiply with overflow
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: core::panicking::panic_const::panic_const_mul_overflow
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:175:17
+   3: <kalman_filters::filter::KalmanFilter<f64>>::initialize
+             at ./src/filter.rs:127:40
+   4: <kalman_filters::filter::linear::LinearKalmanFilter<f64>>::new
+             at ./src/filter.rs:577:25
+   5: spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}
+             at ./tests/spec_linear_kf.rs:877:13
+   6: <spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   7: <core::panic::unwind_safe::AssertUnwindSafe<spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panic/unwind_safe.rs:275:9
+   8: std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}>, core::result::Result<(), kalman_filters::error::KalmanError>>
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:581:40
+   9: __rust_try
+  10: std::panicking::catch_unwind::<core::result::Result<(), kalman_filters::error::KalmanError>, core::panic::unwind_safe::AssertUnwindSafe<spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}>>
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:544:19
+  11: std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}>, core::result::Result<(), kalman_filters::error::KalmanError>>
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panic.rs:359:14
+  12: spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic
+             at ./tests/spec_linear_kf.rs:876:19
+  13: spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}
+             at ./tests/spec_linear_kf.rs:863:67
+  14: <spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+  15: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+thread 'spec_change_overflowing_dimensions_are_rejected_without_panic' (576) panicked at src/filter.rs:127:40:
+attempt to multiply with overflow
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: core::panicking::panic_const::panic_const_mul_overflow
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:175:17
+   3: <kalman_filters::filter::KalmanFilter<f64>>::initialize
+             at ./src/filter.rs:127:40
+   4: <kalman_filters::filter::linear::LinearKalmanFilter<f64>>::new
+             at ./src/filter.rs:577:25
+   5: spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}
+             at ./tests/spec_linear_kf.rs:877:13
+   6: <spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   7: <core::panic::unwind_safe::AssertUnwindSafe<spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panic/unwind_safe.rs:275:9
+   8: std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}>, core::result::Result<(), kalman_filters::error::KalmanError>>
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:581:40
+   9: __rust_try
+  10: std::panicking::catch_unwind::<core::result::Result<(), kalman_filters::error::KalmanError>, core::panic::unwind_safe::AssertUnwindSafe<spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}>>
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:544:19
+  11: std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}>, core::result::Result<(), kalman_filters::error::KalmanError>>
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panic.rs:359:14
+  12: spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic
+             at ./tests/spec_linear_kf.rs:876:19
+  13: spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}
+             at ./tests/spec_linear_kf.rs:863:67
+  14: <spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+  15: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+thread 'spec_change_overflowing_dimensions_are_rejected_without_panic' (576) panicked at src/filter.rs:127:40:
+attempt to multiply with overflow
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: core::panicking::panic_const::panic_const_mul_overflow
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:175:17
+   3: <kalman_filters::filter::KalmanFilter<f64>>::initialize
+             at ./src/filter.rs:127:40
+   4: <kalman_filters::filter::linear::LinearKalmanFilter<f64>>::new
+             at ./src/filter.rs:577:25
+   5: spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}
+             at ./tests/spec_linear_kf.rs:877:13
+   6: <spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   7: <core::panic::unwind_safe::AssertUnwindSafe<spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panic/unwind_safe.rs:275:9
+   8: std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}>, core::result::Result<(), kalman_filters::error::KalmanError>>
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:581:40
+   9: __rust_try
+  10: std::panicking::catch_unwind::<core::result::Result<(), kalman_filters::error::KalmanError>, core::panic::unwind_safe::AssertUnwindSafe<spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}>>
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:544:19
+  11: std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}>, core::result::Result<(), kalman_filters::error::KalmanError>>
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panic.rs:359:14
+  12: spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic
+             at ./tests/spec_linear_kf.rs:876:19
+  13: spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}
+             at ./tests/spec_linear_kf.rs:863:67
+  14: <spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+  15: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+thread 'spec_change_overflowing_dimensions_are_rejected_without_panic' (576) panicked at tests/spec_linear_kf.rs:885:5:
+[
+    "measurement_dim = 18446744073709551615, h.len() = 2: panicked",
+    "measurement_dim = 9223372036854775808, h.len() = 2: panicked",
+    "measurement_dim = 9223372036854775808, h.len() = 0: panicked",
+]
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic
+             at ./tests/spec_linear_kf.rs:885:5
+   3: spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0}
+             at ./tests/spec_linear_kf.rs:863:67
+   4: <spec_linear_kf::spec_change_overflowing_dimensions_are_rejected_without_panic::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   5: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_predict_never_commits_non_finite_estimate stdout ----
+
+thread 'spec_change_predict_never_commits_non_finite_estimate' (577) panicked at tests/spec_linear_kf.rs:900:19:
+predict, F x overflows: returned Ok but state = [inf], covariance = [inf]
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: spec_linear_kf::assert_finite_or_unchanged
+             at ./tests/spec_linear_kf.rs:900:19
+   3: spec_linear_kf::spec_change_predict_never_commits_non_finite_estimate
+             at ./tests/spec_linear_kf.rs:916:5
+   4: spec_linear_kf::spec_change_predict_never_commits_non_finite_estimate::{closure#0}
+             at ./tests/spec_linear_kf.rs:911:59
+   5: <spec_linear_kf::spec_change_predict_never_commits_non_finite_estimate::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   6: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_rejects_asymmetric_initial_covariance stdout ----
+
+thread 'spec_change_rejects_asymmetric_initial_covariance' (578) panicked at tests/spec_linear_kf.rs:406:5:
+asymmetric P0 must be InvalidCovariance
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: spec_linear_kf::spec_change_rejects_asymmetric_initial_covariance
+             at ./tests/spec_linear_kf.rs:406:5
+   3: spec_linear_kf::spec_change_rejects_asymmetric_initial_covariance::{closure#0}
+             at ./tests/spec_linear_kf.rs:403:55
+   4: <spec_linear_kf::spec_change_rejects_asymmetric_initial_covariance::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   5: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_rejects_asymmetric_or_indefinite_measurement_noise stdout ----
+
+thread 'spec_change_rejects_asymmetric_or_indefinite_measurement_noise' (579) panicked at tests/spec_linear_kf.rs:442:9:
+R = [1.0, 0.5, 0.0, 1.0] must be InvalidNoiseCovariance
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: spec_linear_kf::spec_change_rejects_asymmetric_or_indefinite_measurement_noise
+             at ./tests/spec_linear_kf.rs:442:9
+   3: spec_linear_kf::spec_change_rejects_asymmetric_or_indefinite_measurement_noise::{closure#0}
+             at ./tests/spec_linear_kf.rs:438:68
+   4: <spec_linear_kf::spec_change_rejects_asymmetric_or_indefinite_measurement_noise::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   5: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_rejects_indefinite_initial_covariance stdout ----
+
+thread 'spec_change_rejects_indefinite_initial_covariance' (580) panicked at tests/spec_linear_kf.rs:413:5:
+negative-diagonal P0
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: spec_linear_kf::spec_change_rejects_indefinite_initial_covariance
+             at ./tests/spec_linear_kf.rs:413:5
+   3: spec_linear_kf::spec_change_rejects_indefinite_initial_covariance::{closure#0}
+             at ./tests/spec_linear_kf.rs:410:55
+   4: <spec_linear_kf::spec_change_rejects_indefinite_initial_covariance::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   5: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_rejects_invalid_process_noise stdout ----
+
+thread 'spec_change_rejects_invalid_process_noise' (581) panicked at tests/spec_linear_kf.rs:427:9:
+Q = [0.01, 0.005, 0.0, 0.01] must be InvalidNoiseCovariance
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: spec_linear_kf::spec_change_rejects_invalid_process_noise
+             at ./tests/spec_linear_kf.rs:427:9
+   3: spec_linear_kf::spec_change_rejects_invalid_process_noise::{closure#0}
+             at ./tests/spec_linear_kf.rs:424:47
+   4: <spec_linear_kf::spec_change_rejects_invalid_process_noise::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   5: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_rejects_non_finite_construction_inputs stdout ----
+
+thread 'spec_change_rejects_non_finite_construction_inputs' (582) panicked at tests/spec_linear_kf.rs:473:9:
+non-finite x0 must be rejected at construction
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: spec_linear_kf::spec_change_rejects_non_finite_construction_inputs
+             at ./tests/spec_linear_kf.rs:473:9
+   3: spec_linear_kf::spec_change_rejects_non_finite_construction_inputs::{closure#0}
+             at ./tests/spec_linear_kf.rs:461:56
+   4: <spec_linear_kf::spec_change_rejects_non_finite_construction_inputs::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   5: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_small_scale_update_is_not_reported_singular stdout ----
+
+thread 'spec_change_small_scale_update_is_not_reported_singular' (583) panicked at tests/spec_linear_kf.rs:679:24:
+f64: S = 8e-12 is well conditioned: SingularMatrix
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: core::result::unwrap_failed
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs:1867:5
+   3: <core::result::Result<(), kalman_filters::error::KalmanError>>::expect
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/result.rs:1185:23
+   4: spec_linear_kf::spec_change_small_scale_update_is_not_reported_singular
+             at ./tests/spec_linear_kf.rs:679:24
+   5: spec_linear_kf::spec_change_small_scale_update_is_not_reported_singular::{closure#0}
+             at ./tests/spec_linear_kf.rs:673:61
+   6: <spec_linear_kf::spec_change_small_scale_update_is_not_reported_singular::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   7: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_update_never_commits_non_finite_estimate stdout ----
+
+thread 'spec_change_update_never_commits_non_finite_estimate' (585) panicked at tests/spec_linear_kf.rs:900:19:
+f64 update, innovation overflows: returned Ok but state = [inf], covariance = [0.5]
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: spec_linear_kf::assert_finite_or_unchanged
+             at ./tests/spec_linear_kf.rs:900:19
+   3: spec_linear_kf::spec_change_update_never_commits_non_finite_estimate
+             at ./tests/spec_linear_kf.rs:936:5
+   4: spec_linear_kf::spec_change_update_never_commits_non_finite_estimate::{closure#0}
+             at ./tests/spec_linear_kf.rs:930:58
+   5: <spec_linear_kf::spec_change_update_never_commits_non_finite_estimate::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   6: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_successful_update_never_yields_indefinite_covariance stdout ----
+
+thread 'spec_change_successful_update_never_yields_indefinite_covariance' (584) panicked at tests/spec_linear_kf.rs:1074:13:
+negative variance: P = [0.0, -9.999999999999992e29, -9.999999999999992e29, -2664535259100376.0]
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: spec_linear_kf::spec_change_successful_update_never_yields_indefinite_covariance
+             at ./tests/spec_linear_kf.rs:1074:13
+   3: spec_linear_kf::spec_change_successful_update_never_yields_indefinite_covariance::{closure#0}
+             at ./tests/spec_linear_kf.rs:1046:70
+   4: <spec_linear_kf::spec_change_successful_update_never_yields_indefinite_covariance::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   5: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_no_heap_allocation_in_steady_state stdout ----
+
+thread 'spec_change_no_heap_allocation_in_steady_state' (574) panicked at tests/spec_linear_kf.rs:806:5:
+assertion `left == right` failed: f64: heap allocations in 100 predict+update cycles
+  left: 1500
+ right: 0
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: core::panicking::assert_failed_inner
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:434:23
+   3: core::panicking::assert_failed::<usize, usize>
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:394:5
+   4: spec_linear_kf::spec_change_no_heap_allocation_in_steady_state
+             at ./tests/spec_linear_kf.rs:806:5
+   5: spec_linear_kf::spec_change_no_heap_allocation_in_steady_state::{closure#0}
+             at ./tests/spec_linear_kf.rs:770:52
+   6: <spec_linear_kf::spec_change_no_heap_allocation_in_steady_state::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   7: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_update_rejects_non_finite_measurement stdout ----
+
+thread 'spec_change_update_rejects_non_finite_measurement' (586) panicked at tests/spec_linear_kf.rs:482:5:
+NaN measurement must be rejected
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: spec_linear_kf::spec_change_update_rejects_non_finite_measurement
+             at ./tests/spec_linear_kf.rs:482:5
+   3: spec_linear_kf::spec_change_update_rejects_non_finite_measurement::{closure#0}
+             at ./tests/spec_linear_kf.rs:478:55
+   4: <spec_linear_kf::spec_change_update_rejects_non_finite_measurement::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   5: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- spec_change_zero_dimensions_are_rejected_without_panic stdout ----
+
+thread 'spec_change_zero_dimensions_are_rejected_without_panic' (587) panicked at src/filter.rs:136:26:
+attempt to divide by zero
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: core::panicking::panic_const::panic_const_div_by_zero
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:175:17
+   3: <kalman_filters::filter::KalmanFilter<f64>>::initialize
+             at ./src/filter.rs:136:26
+   4: <kalman_filters::filter::linear::LinearKalmanFilter<f64>>::new
+             at ./src/filter.rs:577:25
+   5: spec_linear_kf::spec_change_zero_dimensions_are_rejected_without_panic
+             at ./tests/spec_linear_kf.rs:387:13
+   6: spec_linear_kf::spec_change_zero_dimensions_are_rejected_without_panic::{closure#0}
+             at ./tests/spec_linear_kf.rs:385:60
+   7: <spec_linear_kf::spec_change_zero_dimensions_are_rejected_without_panic::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   8: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    spec_change_covariance_stays_psd_ill_conditioned_f32
+    spec_change_covariance_stays_psd_ill_conditioned_f64
+    spec_change_large_scale_singular_innovation_is_detected
+    spec_change_measurement_unit_change_does_not_change_estimate
+    spec_change_no_heap_allocation_in_steady_state
+    spec_change_noise_covariance_validation_is_scale_invariant
+    spec_change_overflowing_dimensions_are_rejected_without_panic
+    spec_change_predict_never_commits_non_finite_estimate
+    spec_change_rejects_asymmetric_initial_covariance
+    spec_change_rejects_asymmetric_or_indefinite_measurement_noise
+    spec_change_rejects_indefinite_initial_covariance
+    spec_change_rejects_invalid_process_noise
+    spec_change_rejects_non_finite_construction_inputs
+    spec_change_small_scale_update_is_not_reported_singular
+    spec_change_successful_update_never_yields_indefinite_covariance
+    spec_change_update_never_commits_non_finite_estimate
+    spec_change_update_rejects_non_finite_measurement
+    spec_change_zero_dimensions_are_rejected_without_panic
+
+test result: FAILED. 14 passed; 18 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.88s
+
+error: test failed, to rerun pass `--test spec_linear_kf`

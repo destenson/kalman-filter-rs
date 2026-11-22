@@ -1,0 +1,4 @@
+[tourney 04:39:32] assigned 7 candidates (mapping.tsv is for humans/scripts only)
+[tourney 04:39:32] agent implement-A: start (cwd /home/user/kalman-filter-rs.tourney/linear-core/A)
+[tourney 04:39:32] agent implement-C: start (cwd /home/user/kalman-filter-rs.tourney/linear-core/C)
+[tourney 04:39:32] agent implement-B: start (cwd /home/user/kalman-filter-rs.tourney/linear-core/B)

@@ -1,0 +1,25 @@
+{
+ "target": "spec",
+ "build_ok": true,
+ "tests_ok": false,
+ "tests_passed": 14,
+ "tests_failed": 18,
+ "test_seconds": 5,
+ "lint_count": 141,
+ "loc": 3744,
+ "files": 12,
+ "frozen_violations": [],
+ "out_of_scope_changes": [],
+ "extra": {
+  "unwraps": 27,
+  "vec_allocs": 206,
+  "cfg_attrs": 99
+ },
+ "agent": {
+  "cost_usd": null,
+  "turns": null,
+  "duration_s": null,
+  "is_error": null,
+  "subtype": null
+ }
+}

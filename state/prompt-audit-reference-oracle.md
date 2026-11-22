@@ -1,0 +1,112 @@
+You are an **auditor** hunting for defects before a design-tournament contract is
+frozen. A draft contract exists (`SPEC.md` and the tests in `SPEC.md tests/spec_linear_kf.rs`); it
+already lists known defects. Your job is to find defects it **misses**, in the code
+under `src/filter.rs src/matrix src/types.rs src/error.rs src/builder.rs src/unified.rs src/legacy.rs`, as observable through the public interface defined in SPEC.md.
+
+# Your lens
+**Behavior against an independent reference oracle.** Write a small, obviously-correct
+reference implementation of the core behavior *inside your test file* (slow and naive
+is fine), then compare the code under audit against it on many seeded random inputs
+and on deliberately hard ones: boundary sizes, extreme magnitudes or lengths, unusual
+but valid combinations, long sequences of operations, every supported type/precision.
+Look for: wrong results, off-by-one and ordering errors, precision or overflow loss,
+accumulated drift, thresholds that are absolute where they should be relative,
+results that differ across supported types more than the types explain.
+
+# Brief
+
+## Goal
+Rebuild the *linear* Kalman filter core of the `kalman_filters` crate (state model,
+predict, update, matrix layer, construction API) as one clean, numerically robust
+implementation that the nonlinear filters (EKF/UKF/CKF/IF) can later be rebuilt on.
+
+## Scope
+Candidates own: src/filter.rs, src/matrix/, src/types.rs, src/error.rs, src/builder.rs,
+src/unified.rs, src/legacy.rs. Every other module (extended, unscented, scented,
+information, particle, ensemble, builders/, logging, metrics, validation, examples,
+benches, existing tests/) may receive only minimal mechanical edits to keep compiling;
+those are rebuilt in later tournaments. `cargo build --all-targets` with default
+features must stay green.
+
+## Hard constraints
+- Rust edition 2024. Default features must build with no system libraries.
+- No panic reachable from the public API on bad input: return `KalmanError`.
+- f32 and f64 supported.
+- nalgebra may become a required dependency, or the matrix layer may stay own-code;
+  the candidate decides and justifies it. ndarray/BLAS backends are out of scope
+  (may be removed or left untouched behind their features).
+- The public API may break. Give a short migration note in DESIGN_NOTES.md.
+
+## What is wrong today (commit c93b68c)
+- Two parallel implementations of one algorithm: `KalmanFilter<T>` with flat `Vec<T>`
+  matrices (src/filter.rs:32) and `StaticKalmanFilter<T, M, N>` on nalgebra
+  (src/filter.rs:460) duplicate predict/update. On top: src/unified.rs (720 lines: an
+  enum, `IntoUnified`, `KalmanFilterTrait`), src/legacy.rs, src/builder.rs and
+  src/builders/*. Four ways to construct and wrap one algorithm.
+- Covariance update is the simple form `P = (I − KH)P` plus symmetrization
+  (src/filter.rs:328-347 and :533), not Joseph form. `test_joseph_form`
+  (src/filter.rs:1065) only asserts P shrinks, which the simple form also satisfies —
+  a test that cannot fail.
+- Innovation covariance S is explicitly inverted (src/filter.rs:297) instead of solved
+  (e.g. Cholesky).
+- ~10 heap allocations per predict+update (`vec![…]` temporaries) and a hand-rolled
+  triple loop for P·Hᵀ (src/filter.rs:309) bypassing the backend.
+- Prometheus metrics and `log` trace blocks are interleaved with every numeric step
+  of predict/update.
+- src/legacy.rs accepts `control_dim` and documents it as "unused" — input silently
+  ignored. Control input is not supported.
+- Public mutable fields (`kf.x`, `kf.P`, …): invariants (dimensions, symmetric PSD
+  covariance) cannot be enforced.
+- Panic paths reachable from the public API: integer division by a zero dimension
+  (src/filter.rs:136) and indexing before length checks (src/builder.rs:377). (The
+  `.unwrap()`s in filter.rs/matrix/ are in test modules; the non-test ones are in the
+  feature-gated ndarray backend.)
+- src/legacy.rs is not declared in lib.rs, so it is dead code that never compiles.
+
+## Quality bar
+- Joseph-form (or equally stable) covariance update; solve with S rather than invert it.
+- Covariance stays symmetric PSD over 10⁴ steps on an ill-conditioned model, f32 and f64.
+- No heap allocation in steady-state predict/update for fixed dimensions.
+- Logging/metrics are never interleaved with the math.
+- One validated construction path (see SPEC.md); dimensions and inputs validated there.
+
+## Non-goals
+Nonlinear filters, particle/ensemble filters, OpenCV, redesigning prometheus
+integration, ndarray/BLAS backends, no_std (keep it possible; don't implement it).
+Do not add features beyond what SPEC.md requires.
+
+## Note to the spec author: the contract's public interface
+Because the API may break, SPEC.md defines a *new, minimal* public interface for the
+linear filter (construction with validated dimensions, predict, update, state and
+covariance accessors, error type), small enough not to dictate internal design.
+The frozen tests in tests/spec_linear_kf.rs target only that interface. To make KEEP
+tests compile and pass on today's code, you may add a thin adapter (e.g. a
+`kalman_filters::linear` module in src/filter.rs) that maps the new interface onto
+the current implementation. Candidates will replace it. Don't fix any defects in
+the adapter: CHANGE tests should fail on it.
+
+# Method
+1. Read SPEC.md first so you do not re-report known defects (its CHANGE behaviors).
+2. Hunt through your lens. For each suspected defect, write a test **against the
+   public interface in SPEC.md** in a new test file whose name starts with `audit_`
+   (in the project's test directory). Run it (`cargo test --quiet --test spec_linear_kf && cargo test --quiet --lib` shows how tests run here;
+   run just your file where possible).
+3. A defect is **confirmed** only if your test fails on the current code for the
+   reason you state, and would pass on a correct implementation. Where cheap, prove
+   the latter with a small reference computation inside the test.
+4. Keep tests deterministic (fixed seeds) with tolerances justified by the precision.
+
+# Rules
+- Do not edit SPEC.md, `SPEC.md tests/spec_linear_kf.rs`, or anything under `src/filter.rs src/matrix src/types.rs src/error.rs src/builder.rs src/unified.rs src/legacy.rs`. Only
+  add `audit_*` test files.
+- Out-of-scope modules: note defects you happen to see in one line, do not test them.
+- Do not commit; the harness commits.
+
+# Final message (your report; markdown)
+## Confirmed
+For each: `AUD-n` | one-line defect | where (file:line in current code) | test name |
+evidence (observed vs expected values) | proposed spec behavior (one sentence).
+## Suspected, not confirmed
+Short list with why you could not confirm.
+## Spec problems
+Anything in SPEC.md or its tests that looks wrong, too strict, or untestable.

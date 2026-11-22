@@ -1,0 +1,486 @@
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:571:46
+    |
+571 |         let mut enkf = EnsembleKalmanFilter::new(
+    |                                              ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:608:42
+    |
+608 |         let enkf = EnsembleKalmanFilter::new(
+    |                                          ^^^
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:684:52
+    |
+684 |         let mut enkf_small = EnsembleKalmanFilter::new(
+    |                                                    ^^^
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:697:52
+    |
+697 |         let mut enkf_large = EnsembleKalmanFilter::new(
+    |                                                    ^^^
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:734:46
+    |
+734 |         let mut enkf = EnsembleKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:790:46
+    |
+790 |         let mut enkf = EnsembleKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:830:46
+    |
+830 |         let mut enkf = EnsembleKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:534:45
+    |
+534 |         let mut ekf = ExtendedKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:561:45
+    |
+561 |         let mut ekf = ExtendedKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:606:44
+    |
+606 |         let result = ExtendedKalmanFilter::new(
+    |                                            ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:645:45
+    |
+645 |         let mut ekf = ExtendedKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:673:45
+    |
+673 |         let mut ekf = ExtendedKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:788:51
+    |
+788 |         let mut ekf_small = ExtendedKalmanFilter::new(
+    |                                                   ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:799:51
+    |
+799 |         let mut ekf_large = ExtendedKalmanFilter::new(
+    |                                                   ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:879:45
+    |
+879 |         let mut ekf = ExtendedKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:905:41
+    |
+905 |         let ekf = ExtendedKalmanFilter::new(
+    |                                         ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:522:45
+    |
+522 |         let mut filter = InformationFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:573:45
+    |
+573 |         let mut filter = InformationFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:607:45
+    |
+607 |         let mut filter = InformationFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:634:52
+    |
+634 |         let mut filter = InformationFilter::<f64>::new(
+    |                                                    ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:665:45
+    |
+665 |         let mut filter = InformationFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:757:32
+    |
+757 |             InformationFilter::new(
+    |                                ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:582:38
+    |
+582 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:633:42
+    |
+633 |             let mut pf = ParticleFilter::new(
+    |                                          ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:672:38
+    |
+672 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:729:38
+    |
+729 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:779:38
+    |
+779 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:818:38
+    |
+818 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:866:38
+    |
+866 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:916:38
+    |
+916 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `scented::CubatureKalmanFilter::<T, S>::new`: Use CubatureKalmanFilterBuilder instead
+   --> src/scented.rs:529:45
+    |
+529 |         let mut ckf = CubatureKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `scented::CubatureKalmanFilter::<T, S>::new`: Use CubatureKalmanFilterBuilder instead
+   --> src/scented.rs:561:41
+    |
+561 |         let ckf = CubatureKalmanFilter::new(
+    |                                         ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:668:46
+    |
+668 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:737:46
+    |
+737 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:756:46
+    |
+756 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:775:42
+    |
+775 |         let ukf = UnscentedKalmanFilter::new(
+    |                                          ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:799:46
+    |
+799 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:825:46
+    |
+825 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:877:46
+    |
+877 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:900:46
+    |
+900 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:957:46
+    |
+957 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+    --> src/unscented.rs:1009:59
+     |
+1009 |         let mut ukf_conservative = UnscentedKalmanFilter::new(
+     |                                                           ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+    --> src/unscented.rs:1028:57
+     |
+1028 |         let mut ukf_aggressive = UnscentedKalmanFilter::new(
+     |                                                         ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+    --> src/unscented.rs:1064:42
+     |
+1064 |         let ukf = UnscentedKalmanFilter::new(
+     |                                          ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+    --> src/unscented.rs:1106:45
+     |
+1106 |         let result = UnscentedKalmanFilter::new(
+     |                                             ^^^
+
+warning: unused variable: `dt`
+   --> tests/fault_tolerance_tests.rs:391:34
+    |
+391 |     let motion = |state: &[f64], dt: f64| -> Vec<f64> {
+    |                                  ^^ help: if this is intentional, prefix it with an underscore: `_dt`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable `Y_init` should have a snake case name
+   --> tests/fault_tolerance_tests.rs:157:9
+    |
+157 |     let Y_init = vec![1.0, 0.0, 0.0, 1.0];
+    |         ^^^^^^ help: convert the identifier to snake case (notice the capitalization): `y_init`
+    |
+    = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: variable `H` should have a snake case name
+   --> tests/fault_tolerance_tests.rs:171:9
+    |
+171 |     let H = vec![1.0, 0.0];
+    |         ^ help: convert the identifier to snake case: `h`
+
+warning: variable `R` should have a snake case name
+   --> tests/fault_tolerance_tests.rs:172:9
+    |
+172 |     let R = vec![0.1];
+    |         ^ help: convert the identifier to snake case: `r`
+
+warning: variable `Y_init` should have a snake case name
+   --> tests/fault_tolerance_tests.rs:255:9
+    |
+255 |     let Y_init = vec![1.0, 0.0, 0.0, 1.0];
+    |         ^^^^^^ help: convert the identifier to snake case (notice the capitalization): `y_init`
+
+warning: variable `H` should have a snake case name
+   --> tests/fault_tolerance_tests.rs:275:9
+    |
+275 |     let H = vec![1.0, 0.0];
+    |         ^ help: convert the identifier to snake case: `h`
+
+warning: variable `R` should have a snake case name
+   --> tests/fault_tolerance_tests.rs:276:9
+    |
+276 |     let R = vec![0.1];
+    |         ^ help: convert the identifier to snake case: `r`
+
+warning: use of deprecated associated function `kalman_filters::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> examples/particle_filter_robot.rs:172:34
+    |
+172 |     let mut pf = ParticleFilter::new(
+    |                                  ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `kalman_filters::CubatureKalmanFilter::<T, S>::new`: Use CubatureKalmanFilterBuilder instead
+   --> examples/ckf_high_dimensional.rs:194:41
+    |
+194 |     let mut ckf = CubatureKalmanFilter::new(
+    |                                         ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `kalman_filters::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+  --> tests/information_tests.rs:80:38
+   |
+80 |     let mut inf = InformationFilter::new(
+   |                                      ^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `kalman_filters::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> tests/information_tests.rs:104:38
+    |
+104 |     let mut inf = InformationFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `kalman_filters::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> tests/information_tests.rs:411:38
+    |
+411 |     let mut inf = InformationFilter::new(
+    |                                      ^^^
+
+warning: variable `delta_Y_a` should have a snake case name
+   --> tests/property_tests.rs:233:9
+    |
+233 |     let delta_Y_a = vec![2.0, 0.0, 0.0, 2.0];
+    |         ^^^^^^^^^ help: convert the identifier to snake case (notice the capitalization): `delta_y_a`
+    |
+    = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: variable `delta_Y_b` should have a snake case name
+   --> tests/property_tests.rs:236:9
+    |
+236 |     let delta_Y_b = vec![1.0, 0.0, 0.0, 1.0];
+    |         ^^^^^^^^^ help: convert the identifier to snake case (notice the capitalization): `delta_y_b`
+
+warning: use of deprecated associated function `kalman_filters::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> examples/ukf_nonlinear_tracking.rs:210:42
+    |
+210 |     let mut ukf = UnscentedKalmanFilter::new(
+    |                                          ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `kalman_filters::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> examples/enkf_weather_model.rs:191:42
+    |
+191 |     let mut enkf = EnsembleKalmanFilter::new(
+    |                                          ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `kalman_filters::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> benches/kalman_benchmarks.rs:112:41
+    |
+112 |     let mut ekf = ExtendedKalmanFilter::new(
+    |                                         ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `kalman_filters::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> benches/kalman_benchmarks.rs:130:42
+    |
+130 |     let mut ukf = UnscentedKalmanFilter::new(
+    |                                          ^^^
+
+warning: use of deprecated associated function `kalman_filters::CubatureKalmanFilter::<T, S>::new`: Use CubatureKalmanFilterBuilder instead
+   --> benches/kalman_benchmarks.rs:148:41
+    |
+148 |     let mut ckf = CubatureKalmanFilter::new(
+    |                                         ^^^
+
+warning: use of deprecated associated function `kalman_filters::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> benches/kalman_benchmarks.rs:166:44
+    |
+166 |     let mut if_filter = InformationFilter::new(
+    |                                            ^^^
+
+warning: use of deprecated associated function `kalman_filters::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> benches/kalman_benchmarks.rs:186:34
+    |
+186 |     let mut pf = ParticleFilter::new(
+    |                                  ^^^
+
+warning: use of deprecated associated function `kalman_filters::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> benches/kalman_benchmarks.rs:220:42
+    |
+220 |     let mut enkf = EnsembleKalmanFilter::new(
+    |                                          ^^^
+
+warning: use of deprecated associated function `kalman_filters::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> benches/kalman_benchmarks.rs:298:38
+    |
+298 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `kalman_filters::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> benches/kalman_benchmarks.rs:346:46
+    |
+346 |         let mut enkf = EnsembleKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `kalman_filters::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> benches/kalman_benchmarks.rs:510:42
+    |
+510 |             let mut pf = ParticleFilter::new(
+    |                                          ^^^
+
+warning: use of deprecated associated function `kalman_filters::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> benches/kalman_benchmarks.rs:563:39
+    |
+563 |                 ExtendedKalmanFilter::new(
+    |                                       ^^^
+
+warning: use of deprecated associated function `kalman_filters::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> benches/kalman_benchmarks.rs:581:40
+    |
+581 |                 UnscentedKalmanFilter::new(
+    |                                        ^^^
+
+warning: use of deprecated associated function `kalman_filters::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> benches/kalman_benchmarks.rs:598:33
+    |
+598 |                 ParticleFilter::new(
+    |                                 ^^^
+
+warning: use of deprecated associated function `kalman_filters::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> benches/kalman_benchmarks.rs:617:39
+    |
+617 |                 EnsembleKalmanFilter::new(
+    |                                       ^^^
+
+warning: use of deprecated associated function `kalman_filters::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> examples/logging_demo.rs:154:84
+    |
+154 |     let mut ekf: ExtendedKalmanFilter<f64, PendulumSystem> = ExtendedKalmanFilter::new(
+    |                                                                                    ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: variable `Y_init` should have a snake case name
+   --> tests/numerical_stability_tests.rs:153:9
+    |
+153 |     let Y_init = vec![1e-8, 0.0, 0.0, 1e-8]; // Nearly zero information
+    |         ^^^^^^ help: convert the identifier to snake case (notice the capitalization): `y_init`
+    |
+    = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: variable `Y_init` should have a snake case name
+   --> tests/numerical_stability_tests.rs:184:9
+    |
+184 |     let Y_init = vec![1.0, 0.0, 0.0, 1.0];
+    |         ^^^^^^ help: convert the identifier to snake case (notice the capitalization): `y_init`
+

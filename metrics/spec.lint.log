@@ -1,0 +1,1271 @@
+warning: this function has too many arguments (8/7)
+   --> src/extended.rs:127:5
+    |
+127 | /     pub fn initialize(
+128 | |         system: S,
+129 | |         initial_state: Vec<T>,
+130 | |         initial_covariance: Vec<T>,
+...   |
+135 | |         control: Option<Vec<T>>,
+136 | |     ) -> KalmanResult<Self> {
+    | |___________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_arguments
+    = note: `#[warn(clippy::too_many_arguments)]` on by default
+
+warning: the loop variable `i` is used to index `ky`
+   --> src/extended.rs:383:18
+    |
+383 |         for i in 0..n {
+    |                  ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+    = note: `#[warn(clippy::needless_range_loop)]` on by default
+help: consider using an iterator and enumerate()
+    |
+383 -         for i in 0..n {
+383 +         for (i, <item>) in ky.iter().enumerate().take(n) {
+    |
+
+warning: doc list item overindented
+  --> src/filter.rs:22:5
+   |
+22 | ///           x = x + K * y, P = (I - K * H) * P
+   |     ^^^^^^^^^^ help: try using `  ` (2 spaces)
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#doc_overindented_list_items
+   = note: `#[warn(clippy::doc_overindented_list_items)]` on by default
+
+warning: this function has too many arguments (8/7)
+  --> src/filter.rs:76:5
+   |
+76 | /     pub fn initialize(
+77 | |         state_dim: usize,
+78 | |         measurement_dim: usize,
+79 | |         initial_state: Vec<T>,
+...  |
+84 | |         measurement_noise: Vec<T>,
+85 | |     ) -> KalmanResult<Self> {
+   | |___________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_arguments
+
+warning: the loop variable `i` is used to index `ky`
+   --> src/filter.rs:325:18
+    |
+325 |         for i in 0..n {
+    |                  ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+325 -         for i in 0..n {
+325 +         for (i, <item>) in ky.iter().enumerate().take(n) {
+    |
+
+warning: you seem to want to iterate on a map's keys
+   --> src/information/consensus.rs:119:29
+    |
+119 |         for (node_id, _) in local_states.iter() {
+    |                             ^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#for_kv_map
+    = note: `#[warn(clippy::for_kv_map)]` on by default
+help: use the corresponding method
+    |
+119 -         for (node_id, _) in local_states.iter() {
+119 +         for node_id in local_states.keys() {
+    |
+
+warning: the loop variable `i` is used to index `new_Y`
+   --> src/information/consensus.rs:126:26
+    |
+126 |                 for i in 0..n * n {
+    |                          ^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+126 -                 for i in 0..n * n {
+126 +                 for (i, <item>) in new_Y.iter_mut().enumerate().take(n * n) {
+    |
+
+warning: the loop variable `i` is used to index `new_y`
+   --> src/information/consensus.rs:129:26
+    |
+129 |                 for i in 0..n {
+    |                          ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+129 -                 for i in 0..n {
+129 +                 for (i, <item>) in new_y.iter_mut().enumerate().take(n) {
+    |
+
+warning: this `if` statement can be collapsed
+   --> src/information/consensus.rs:137:21
+    |
+137 | /                     if let Some(weight) = self.weights.get(&(*node_id, *neighbor_id)) {
+138 | |                         if let Some(neighbor_state) = local_states.get(neighbor_id) {
+139 | |                             for i in 0..n * n {
+140 | |                                 new_Y[i] = new_Y[i] + *weight * neighbor_state.Y[i];
+...   |
+146 | |                     }
+    | |_____________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#collapsible_if
+    = note: `#[warn(clippy::collapsible_if)]` on by default
+help: collapse nested if block
+    |
+137 ~                     if let Some(weight) = self.weights.get(&(*node_id, *neighbor_id))
+138 ~                         && let Some(neighbor_state) = local_states.get(neighbor_id) {
+139 |                             for i in 0..n * n {
+...
+144 |                             }
+145 ~                         }
+    |
+
+warning: the loop variable `i` is used to index `new_Y`
+   --> src/information/consensus.rs:139:38
+    |
+139 | ...                   for i in 0..n * n {
+    |                                ^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+139 -                             for i in 0..n * n {
+139 +                             for (i, <item>) in new_Y.iter_mut().enumerate().take(n * n) {
+    |
+
+warning: the loop variable `i` is used to index `new_y`
+   --> src/information/consensus.rs:142:38
+    |
+142 | ...                   for i in 0..n {
+    |                                ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+142 -                             for i in 0..n {
+142 +                             for (i, <item>) in new_y.iter_mut().enumerate().take(n) {
+    |
+
+warning: the loop variable `i` is used to index `new_Y`
+   --> src/information/consensus.rs:152:26
+    |
+152 |                 for i in 0..n * n {
+    |                          ^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+152 -                 for i in 0..n * n {
+152 +                 for (i, <item>) in new_Y.iter().enumerate().take(n * n) {
+    |
+
+warning: the loop variable `i` is used to index `new_y`
+   --> src/information/consensus.rs:158:26
+    |
+158 |                 for i in 0..n {
+    |                          ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+158 -                 for i in 0..n {
+158 +                 for (i, <item>) in new_y.iter().enumerate().take(n) {
+    |
+
+warning: the loop variable `i` is used to index `avg_Y`
+   --> src/information/consensus.rs:216:22
+    |
+216 |             for i in 0..n * n {
+    |                      ^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+216 -             for i in 0..n * n {
+216 +             for (i, <item>) in avg_Y.iter_mut().enumerate().take(n * n) {
+    |
+
+warning: the loop variable `i` is used to index `avg_y`
+   --> src/information/consensus.rs:219:22
+    |
+219 |             for i in 0..n {
+    |                      ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+219 -             for i in 0..n {
+219 +             for (i, <item>) in avg_y.iter_mut().enumerate().take(n) {
+    |
+
+warning: the loop variable `i` is used to index `consensus_Y`
+   --> src/information/consensus.rs:308:26
+    |
+308 |                 for i in 0..n * n {
+    |                          ^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+308 -                 for i in 0..n * n {
+308 +                 for (i, <item>) in consensus_Y.iter_mut().enumerate().take(n * n) {
+    |
+
+warning: the loop variable `i` is used to index `consensus_y`
+   --> src/information/consensus.rs:311:26
+    |
+311 |                 for i in 0..n {
+    |                          ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+311 -                 for i in 0..n {
+311 +                 for (i, <item>) in consensus_y.iter_mut().enumerate().take(n) {
+    |
+
+warning: this function has too many arguments (9/7)
+  --> src/information/conversion.rs:85:5
+   |
+85 | /     pub fn new(
+86 | |         state_dim: usize,
+87 | |         measurement_dim: usize,
+88 | |         initial_state: Vec<T>,
+...  |
+94 | |         sparsity_threshold: f64,
+95 | |     ) -> KalmanResult<Self> {
+   | |___________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_arguments
+
+warning: the loop variable `i` is used to index `avg_Y`
+   --> src/information/distributed.rs:340:22
+    |
+340 |             for i in 0..n * n {
+    |                      ^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+340 -             for i in 0..n * n {
+340 +             for (i, <item>) in avg_Y.iter_mut().enumerate().take(n * n) {
+    |
+
+warning: the loop variable `i` is used to index `avg_y`
+   --> src/information/distributed.rs:343:22
+    |
+343 |             for i in 0..n {
+    |                      ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+343 -             for i in 0..n {
+343 +             for (i, <item>) in avg_y.iter_mut().enumerate().take(n) {
+    |
+
+warning: this function has too many arguments (8/7)
+   --> src/information/filter.rs:182:5
+    |
+182 | /     pub fn new(
+183 | |         state_dim: usize,
+184 | |         measurement_dim: usize,
+185 | |         initial_Y: Vec<T>,
+...   |
+190 | |         R: Vec<T>,
+191 | |     ) -> KalmanResult<Self> {
+    | |___________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (8/7)
+   --> src/information/filter.rs:196:5
+    |
+196 | /     pub fn initialize(
+197 | |         state_dim: usize,
+198 | |         measurement_dim: usize,
+199 | |         initial_Y: Vec<T>,
+...   |
+204 | |         R: Vec<T>,
+205 | |     ) -> KalmanResult<Self> {
+    | |___________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_arguments
+
+warning: the loop variable `i` is used to index `result`
+  --> src/information/sparse.rs:85:18
+   |
+85 |         for i in 0..self.rows {
+   |                  ^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+   |
+85 -         for i in 0..self.rows {
+85 +         for (i, <item>) in result.iter_mut().enumerate().take(self.rows) {
+   |
+
+warning: the loop variable `j` is used to index `h_col`
+   --> src/information/sparse.rs:250:22
+    |
+250 |             for j in 0..m {
+    |                      ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+250 -             for j in 0..m {
+250 +             for (j, <item>) in h_col.iter_mut().enumerate().take(m) {
+    |
+
+warning: the loop variable `k` is used to index `h_col_j`
+   --> src/information/sparse.rs:273:26
+    |
+273 |                 for k in 0..m {
+    |                          ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+273 -                 for k in 0..m {
+273 +                 for (k, <item>) in h_col_j.iter_mut().enumerate().take(m) {
+    |
+
+warning: this `if` statement can be collapsed
+   --> src/logging.rs:241:9
+    |
+241 | /         if log::log_enabled!(log::Level::Debug) {
+242 | |             if let Some(det) = small_determinant(covariance, size) {
+243 | |                 log::debug!("{}: Determinant = {:.6e}", context, det);
+244 | |             }
+245 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+241 ~         if log::log_enabled!(log::Level::Debug)
+242 ~             && let Some(det) = small_determinant(covariance, size) {
+243 |                 log::debug!("{}: Determinant = {:.6e}", context, det);
+244 ~             }
+    |
+
+warning: the loop variable `i` is only used to index `a`
+  --> src/matrix/naive.rs:64:18
+   |
+64 |         for i in 0..size {
+   |                  ^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator
+   |
+64 -         for i in 0..size {
+64 +         for <item> in a.iter_mut().take(size) {
+   |
+
+warning: the loop variable `i` is only used to index `l`
+  --> src/matrix/naive.rs:87:18
+   |
+87 |         for i in 0..n * n {
+   |                  ^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator
+   |
+87 -         for i in 0..n * n {
+87 +         for <item> in l.iter_mut().take(n * n) {
+   |
+
+warning: this looks like you are swapping elements of `aug` manually
+   --> src/matrix/naive.rs:154:21
+    |
+154 | /                     let tmp = aug[i * (2 * n) + j];
+155 | |                     aug[i * (2 * n) + j] = aug[pivot_row * (2 * n) + j];
+156 | |                     aug[pivot_row * (2 * n) + j] = tmp;
+    | |_______________________________________________________^ help: try: `aug.swap(i * (2 * n) + j, pivot_row * (2 * n) + j);`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_swap
+    = note: `#[warn(clippy::manual_swap)]` on by default
+
+warning: the loop variable `i` is used to index `new_state`
+   --> src/particle/filter.rs:201:22
+    |
+201 |             for i in 0..self.state_dim {
+    |                      ^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+201 -             for i in 0..self.state_dim {
+201 +             for (i, <item>) in new_state.iter_mut().enumerate().take(self.state_dim) {
+    |
+
+warning: the loop variable `i` is used to index `mean`
+   --> src/particle/filter.rs:529:22
+    |
+529 |             for i in 0..self.state_dim {
+    |                      ^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+529 -             for i in 0..self.state_dim {
+529 +             for (i, <item>) in mean.iter_mut().enumerate().take(self.state_dim) {
+    |
+
+warning: the loop variable `j` is used to index `point_state`
+   --> src/scented.rs:254:22
+    |
+254 |             for j in 0..n {
+    |                      ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+254 -             for j in 0..n {
+254 +             for (j, <item>) in point_state.iter_mut().enumerate().take(n) {
+    |
+
+warning: the loop variable `j` is used to index `point_state`
+   --> src/scented.rs:339:22
+    |
+339 |             for j in 0..n {
+    |                      ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+339 -             for j in 0..n {
+339 +             for (j, <item>) in point_state.iter_mut().enumerate().take(n) {
+    |
+
+warning: the loop variable `j` is used to index `x_diff`
+   --> src/scented.rs:379:22
+    |
+379 |             for j in 0..n {
+    |                      ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+379 -             for j in 0..n {
+379 +             for (j, <item>) in x_diff.iter_mut().enumerate().take(n) {
+    |
+
+warning: this function has too many arguments (8/7)
+   --> src/unscented.rs:149:5
+    |
+149 | /     pub fn initialize(
+150 | |         system: S,
+151 | |         initial_state: Vec<T>,
+152 | |         initial_covariance: Vec<T>,
+...   |
+157 | |         control: Option<Vec<T>>,
+158 | |     ) -> KalmanResult<Self> {
+    | |___________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_arguments
+
+warning: the loop variable `j` is used to index `sigma_state`
+   --> src/unscented.rs:352:22
+    |
+352 |             for j in 0..n {
+    |                      ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+352 -             for j in 0..n {
+352 +             for (j, <item>) in sigma_state.iter_mut().enumerate().take(n) {
+    |
+
+warning: the loop variable `j` is used to index `sigma_state`
+   --> src/unscented.rs:453:22
+    |
+453 |             for j in 0..n {
+    |                      ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+453 -             for j in 0..n {
+453 +             for (j, <item>) in sigma_state.iter_mut().enumerate().take(n) {
+    |
+
+warning: the loop variable `j` is used to index `x_diff`
+   --> src/unscented.rs:493:22
+    |
+493 |             for j in 0..n {
+    |                      ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+493 -             for j in 0..n {
+493 +             for (j, <item>) in x_diff.iter_mut().enumerate().take(n) {
+    |
+
+warning: use of deprecated associated function `kalman_filters::CubatureKalmanFilter::<T, S>::new`: Use CubatureKalmanFilterBuilder instead
+   --> examples/ckf_high_dimensional.rs:194:41
+    |
+194 |     let mut ckf = CubatureKalmanFilter::new(
+    |                                         ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: useless use of `vec!`
+   --> tests/functional_tests.rs:166:23
+    |
+166 |             kf.update(&vec![true_pos]).unwrap();
+    |                       ^^^^^^^^^^^^^^^ help: you can use a slice directly: `&[true_pos]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+    = note: `#[warn(clippy::useless_vec)]` on by default
+
+warning: useless use of `vec!`
+   --> tests/functional_tests.rs:200:20
+    |
+200 |         kf1.update(&vec![10.0]).unwrap();
+    |                    ^^^^^^^^^^^ help: you can use a slice directly: `&[10.0]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> tests/functional_tests.rs:212:20
+    |
+212 |         kf2.update(&vec![10.0]).unwrap();
+    |                    ^^^^^^^^^^^ help: you can use a slice directly: `&[10.0]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> tests/functional_tests.rs:260:23
+    |
+260 |             kf.update(&vec![measurement]).unwrap();
+    |                       ^^^^^^^^^^^^^^^^^^ help: you can use a slice directly: `&[measurement]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> tests/functional_tests.rs:298:23
+    |
+298 |             kf.update(&vec![0.0]).unwrap();
+    |                       ^^^^^^^^^^ help: you can use a slice directly: `&[0.0]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> tests/functional_tests.rs:339:23
+    |
+339 |             kf.update(&vec![0.0]).unwrap();
+    |                       ^^^^^^^^^^ help: you can use a slice directly: `&[0.0]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> tests/functional_tests.rs:381:23
+    |
+381 |             kf.update(&vec![i as f64 * dt]).unwrap();
+    |                       ^^^^^^^^^^^^^^^^^^^^ help: you can use a slice directly: `&[i as f64 * dt]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> tests/functional_tests.rs:402:23
+    |
+402 |             kf.update(&vec![i as f64 * dt]).unwrap();
+    |                       ^^^^^^^^^^^^^^^^^^^^ help: you can use a slice directly: `&[i as f64 * dt]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> tests/functional_tests.rs:530:29
+    |
+530 |         let mut numerical = vec![0.0; 4];
+    |                             ^^^^^^^^^^^^ help: you can use an array directly: `[0.0; 4]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: use of deprecated associated function `kalman_filters::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+  --> tests/information_tests.rs:80:38
+   |
+80 |     let mut inf = InformationFilter::new(
+   |                                      ^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `kalman_filters::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> tests/information_tests.rs:104:38
+    |
+104 |     let mut inf = InformationFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `kalman_filters::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> tests/information_tests.rs:411:38
+    |
+411 |     let mut inf = InformationFilter::new(
+    |                                      ^^^
+
+warning: this function has too many arguments (10/7)
+   --> tests/spec_linear_kf.rs:720:9
+    |
+720 |         fn $name(label: &str, n: usize, m: usize, p0: &[f64], f: &[f64], q: &[f64], h: &[f64], r: &[f64], sym_tol: f64, psd_tol: f64) {
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+739 | psd_run!(psd_run_f64, f64, |a: &[f64]| a.to_vec(), |a: &[f64]| a.to_vec());
+    | -------------------------------------------------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_arguments
+    = note: `#[warn(clippy::too_many_arguments)]` on by default
+    = note: this warning originates in the macro `psd_run` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: this function has too many arguments (10/7)
+   --> tests/spec_linear_kf.rs:720:9
+    |
+720 |         fn $name(label: &str, n: usize, m: usize, p0: &[f64], f: &[f64], q: &[f64], h: &[f64], r: &[f64], sym_tol: f64, psd_tol: f64) {
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+740 | psd_run!(psd_run_f32, f32, |a: &[f64]| to_f32(a), |a: &[f32]| to_f64(a));
+    | ------------------------------------------------------------------------ in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_arguments
+    = note: this warning originates in the macro `psd_run` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: the use of negated comparison operators on partially ordered types produces code that is hard to read and refactor, please consider using the `partial_cmp` method instead, to make it clear that the two values could be incomparable
+   --> tests/spec_linear_kf.rs:959:12
+    |
+959 |         if !(d > 1e3 * f64::EPSILON * s[j * m + j]) {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#neg_cmp_op_on_partial_ord
+    = note: `#[warn(clippy::neg_cmp_op_on_partial_ord)]` on by default
+
+warning: the use of negated comparison operators on partially ordered types produces code that is hard to read and refactor, please consider using the `partial_cmp` method instead, to make it clear that the two values could be incomparable
+    --> tests/spec_linear_kf.rs:1016:8
+     |
+1016 |     if !(d > 1e-15 * s[3].abs().max(s[0].abs())) {
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#neg_cmp_op_on_partial_ord
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:571:46
+    |
+571 |         let mut enkf = EnsembleKalmanFilter::new(
+    |                                              ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:608:42
+    |
+608 |         let enkf = EnsembleKalmanFilter::new(
+    |                                          ^^^
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:684:52
+    |
+684 |         let mut enkf_small = EnsembleKalmanFilter::new(
+    |                                                    ^^^
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:697:52
+    |
+697 |         let mut enkf_large = EnsembleKalmanFilter::new(
+    |                                                    ^^^
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:734:46
+    |
+734 |         let mut enkf = EnsembleKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:790:46
+    |
+790 |         let mut enkf = EnsembleKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `ensemble::filter::EnsembleKalmanFilter::<T, S>::new`: Use EnsembleKalmanFilterBuilder instead
+   --> src/ensemble/filter.rs:830:46
+    |
+830 |         let mut enkf = EnsembleKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:535:45
+    |
+535 |         let mut ekf = ExtendedKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:562:45
+    |
+562 |         let mut ekf = ExtendedKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:607:44
+    |
+607 |         let result = ExtendedKalmanFilter::new(
+    |                                            ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:646:45
+    |
+646 |         let mut ekf = ExtendedKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:674:45
+    |
+674 |         let mut ekf = ExtendedKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:789:51
+    |
+789 |         let mut ekf_small = ExtendedKalmanFilter::new(
+    |                                                   ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:800:51
+    |
+800 |         let mut ekf_large = ExtendedKalmanFilter::new(
+    |                                                   ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:880:45
+    |
+880 |         let mut ekf = ExtendedKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `extended::ExtendedKalmanFilter::<T, S>::new`: Use ExtendedKalmanFilterBuilder instead
+   --> src/extended.rs:906:41
+    |
+906 |         let ekf = ExtendedKalmanFilter::new(
+    |                                         ^^^
+
+warning: variable `Y_init` should have a snake case name
+   --> tests/numerical_stability_tests.rs:147:9
+    |
+147 |     let Y_init = vec![1e-8, 0.0, 0.0, 1e-8]; // Nearly zero information
+    |         ^^^^^^ help: convert the identifier to snake case (notice the capitalization): `y_init`
+    |
+    = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: variable `Y_init` should have a snake case name
+   --> tests/numerical_stability_tests.rs:178:9
+    |
+178 |     let Y_init = vec![1.0, 0.0, 0.0, 1.0];
+    |         ^^^^^^ help: convert the identifier to snake case (notice the capitalization): `y_init`
+
+warning: this operation has no effect
+   --> examples/position_2d.rs:242:47
+    |
+242 |     println!("X position variance:  {:.6}", p[0 * 4 + 0]);
+    |                                               ^^^^^^^^^ help: consider reducing it to: `0`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#identity_op
+    = note: `#[warn(clippy::identity_op)]` on by default
+
+error: this operation will always return zero. This is likely not the intended outcome
+   --> examples/position_2d.rs:242:47
+    |
+242 |     println!("X position variance:  {:.6}", p[0 * 4 + 0]);
+    |                                               ^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#erasing_op
+    = note: `#[deny(clippy::erasing_op)]` on by default
+
+warning: this operation has no effect
+   --> examples/position_2d.rs:243:47
+    |
+243 |     println!("Y position variance:  {:.6}", p[1 * 4 + 1]);
+    |                                               ^^^^^ help: consider reducing it to: `4`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#identity_op
+
+error: could not compile `kalman_filters` (example "position_2d") due to 1 previous error; 2 warnings emitted
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:523:45
+    |
+523 |         let mut filter = InformationFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:574:45
+    |
+574 |         let mut filter = InformationFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:608:45
+    |
+608 |         let mut filter = InformationFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:635:52
+    |
+635 |         let mut filter = InformationFilter::<f64>::new(
+    |                                                    ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:666:45
+    |
+666 |         let mut filter = InformationFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `information::filter::InformationFilter::<T>::new`: Use InformationFilterBuilder instead
+   --> src/information/filter.rs:758:32
+    |
+758 |             InformationFilter::new(
+    |                                ^^^
+
+warning: this operation has no effect
+   --> examples/position_2d_unified.rs:231:49
+    |
+231 |     println!("  X position variance:  {:.6}", p[0 * 4 + 0]);
+    |                                                 ^^^^^^^^^ help: consider reducing it to: `0`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#identity_op
+    = note: `#[warn(clippy::identity_op)]` on by default
+
+error: this operation will always return zero. This is likely not the intended outcome
+   --> examples/position_2d_unified.rs:231:49
+    |
+231 |     println!("  X position variance:  {:.6}", p[0 * 4 + 0]);
+    |                                                 ^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#erasing_op
+    = note: `#[deny(clippy::erasing_op)]` on by default
+
+warning: this operation has no effect
+   --> examples/position_2d_unified.rs:232:49
+    |
+232 |     println!("  Y position variance:  {:.6}", p[1 * 4 + 1]);
+    |                                                 ^^^^^ help: consider reducing it to: `4`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#identity_op
+
+error: could not compile `kalman_filters` (example "position_2d_unified") due to 1 previous error; 2 warnings emitted
+warning: use of deprecated associated function `kalman_filters::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> examples/particle_filter_robot.rs:172:34
+    |
+172 |     let mut pf = ParticleFilter::new(
+    |                                  ^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+error: approximate value of `f{32, 64}::consts::PI` found
+  --> examples/particle_filter_robot.rs:75:35
+   |
+75 |     #[arg(long, default_value_t = 3.14159265358979323846)]
+   |                                   ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: consider using the constant directly
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#approx_constant
+   = note: `#[deny(clippy::approx_constant)]` on by default
+
+error: approximate value of `f{32, 64}::consts::PI` found
+  --> examples/particle_filter_robot.rs:75:35
+   |
+75 |     #[arg(long, default_value_t = 3.14159265358979323846)]
+   |                                   ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: consider using the constant directly
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#approx_constant
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:582:38
+    |
+582 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:633:42
+    |
+633 |             let mut pf = ParticleFilter::new(
+    |                                          ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:672:38
+    |
+672 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:729:38
+    |
+729 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:779:38
+    |
+779 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:818:38
+    |
+818 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:866:38
+    |
+866 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+warning: useless use of `vec!`
+   --> examples/particle_filter_robot.rs:187:21
+    |
+187 |       let landmarks = vec![
+    |  _____________________^
+188 | |         (args.landmark1_x, args.landmark1_y),
+189 | |         (args.landmark2_x, args.landmark2_y),
+190 | |         (args.landmark3_x, args.landmark3_y),
+191 | |         (args.landmark4_x, args.landmark4_y),
+192 | |     ];
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+    = note: `#[warn(clippy::useless_vec)]` on by default
+help: you can use an array directly
+    |
+187 ~     let landmarks = [(args.landmark1_x, args.landmark1_y),
+188 +         (args.landmark2_x, args.landmark2_y),
+189 +         (args.landmark3_x, args.landmark3_y),
+190 ~         (args.landmark4_x, args.landmark4_y)];
+    |
+
+warning: use of deprecated associated function `particle::filter::ParticleFilter::<T>::new`: Use ParticleFilterBuilder instead
+   --> src/particle/filter.rs:916:38
+    |
+916 |         let mut pf = ParticleFilter::new(
+    |                                      ^^^
+
+error: could not compile `kalman_filters` (example "particle_filter_robot") due to 2 previous errors; 2 warnings emitted
+warning: use of deprecated associated function `scented::CubatureKalmanFilter::<T, S>::new`: Use CubatureKalmanFilterBuilder instead
+   --> src/scented.rs:530:45
+    |
+530 |         let mut ckf = CubatureKalmanFilter::new(
+    |                                             ^^^
+
+warning: use of deprecated associated function `scented::CubatureKalmanFilter::<T, S>::new`: Use CubatureKalmanFilterBuilder instead
+   --> src/scented.rs:562:41
+    |
+562 |         let ckf = CubatureKalmanFilter::new(
+    |                                         ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:669:46
+    |
+669 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:738:46
+    |
+738 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:757:46
+    |
+757 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:776:42
+    |
+776 |         let ukf = UnscentedKalmanFilter::new(
+    |                                          ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:800:46
+    |
+800 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:826:46
+    |
+826 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:878:46
+    |
+878 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:901:46
+    |
+901 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+   --> src/unscented.rs:958:46
+    |
+958 |         let mut ukf = UnscentedKalmanFilter::new(
+    |                                              ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+    --> src/unscented.rs:1010:59
+     |
+1010 |         let mut ukf_conservative = UnscentedKalmanFilter::new(
+     |                                                           ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+    --> src/unscented.rs:1029:57
+     |
+1029 |         let mut ukf_aggressive = UnscentedKalmanFilter::new(
+     |                                                         ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+    --> src/unscented.rs:1065:42
+     |
+1065 |         let ukf = UnscentedKalmanFilter::new(
+     |                                          ^^^
+
+warning: use of deprecated associated function `unscented::UnscentedKalmanFilter::<T, S>::new`: Use UnscentedKalmanFilterBuilder instead
+    --> src/unscented.rs:1107:45
+     |
+1107 |         let result = UnscentedKalmanFilter::new(
+     |                                             ^^^
+
+warning: the loop variable `state_idx` is used to index `sample_mean`
+   --> src/ensemble/filter.rs:627:26
+    |
+627 |         for state_idx in 0..state_dim {
+    |                          ^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+    = note: `#[warn(clippy::needless_range_loop)]` on by default
+help: consider using an iterator and enumerate()
+    |
+627 -         for state_idx in 0..state_dim {
+627 +         for (state_idx, <item>) in sample_mean.iter_mut().enumerate().take(state_dim) {
+    |
+
+warning: used `unwrap()` on `Ok` value
+   --> src/error.rs:127:20
+    |
+127 |         assert_eq!(result.unwrap(), 42);
+    |                    ^^^^^^^^^^^^^^^
+    |
+help: remove the `Ok` and `unwrap()`
+   --> src/error.rs:126:41
+    |
+126 |         let result: KalmanResult<i32> = Ok(42);
+    |                                         ^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#unnecessary_literal_unwrap
+    = note: `#[warn(clippy::unnecessary_literal_unwrap)]` on by default
+
+warning: the loop variable `i` is used to index `ky`
+   --> src/extended.rs:383:18
+    |
+383 |         for i in 0..n {
+    |                  ^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_range_loop
+help: consider using an iterator and enumerate()
+    |
+383 -         for i in 0..n {
+383 +         for (i, <item>) in ky.iter().enumerate().take(n) {
+    |
+
+error: approximate value of `f{32, 64}::consts::PI` found
+   --> src/logging.rs:329:26
+    |
+329 |         let state = vec![3.14159];
+    |                          ^^^^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#approx_constant
+    = note: `#[deny(clippy::approx_constant)]` on by default
+
+error: approximate value of `f32::consts::PI` found
+   --> src/types.rs:105:19
+    |
+105 |         let val = 3.14_f32;
+    |                   ^^^^^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#approx_constant
+
+error: approximate value of `f{32, 64}::consts::PI` found
+   --> src/types.rs:107:33
+    |
+107 |         assert!((val.to_f64() - 3.14).abs() < 0.01);
+    |                                 ^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#approx_constant
+
+error: approximate value of `f64::consts::PI` found
+   --> src/types.rs:113:19
+    |
+113 |         let val = 3.14159_f64;
+    |                   ^^^^^^^^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#approx_constant
+
+error: approximate value of `f{32, 64}::consts::PI` found
+   --> src/types.rs:115:33
+    |
+115 |         assert!((val.to_f64() - 3.14159).abs() < 1e-10);
+    |                                 ^^^^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#approx_constant
+
+warning: useless use of `vec!`
+   --> src/extended.rs:748:33
+    |
+748 |             let mut numerical = vec![0.0; 4];
+    |                                 ^^^^^^^^^^^^ help: you can use an array directly: `[0.0; 4]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+    = note: `#[warn(clippy::useless_vec)]` on by default
+
+warning: useless use of `vec!`
+   --> src/filter.rs:698:27
+    |
+698 |         let mut product = vec![0.0; 4];
+    |                           ^^^^^^^^^^^^ help: you can use an array directly: `[0.0; 4]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> src/filter.rs:789:32
+    |
+789 |         let result = kf.update(&vec![0.5]);
+    |                                ^^^^^^^^^^ help: you can use a slice directly: `&[0.5]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> src/filter.rs:812:23
+    |
+812 |             kf.update(&vec![5.0, 3.0]).unwrap();
+    |                       ^^^^^^^^^^^^^^^ help: you can use a slice directly: `&[5.0, 3.0]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> src/filter.rs:864:29
+    |
+864 |             kf_low_q.update(&vec![*z]).unwrap();
+    |                             ^^^^^^^^^ help: you can use a slice directly: `&[*z]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> src/filter.rs:867:30
+    |
+867 |             kf_high_q.update(&vec![*z]).unwrap();
+    |                              ^^^^^^^^^ help: you can use a slice directly: `&[*z]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> src/filter.rs:899:23
+    |
+899 |             kf.update(&vec![0.0]).unwrap();
+    |                       ^^^^^^^^^^ help: you can use a slice directly: `&[0.0]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> src/filter.rs:906:19
+    |
+906 |         kf.update(&vec![100.0]).unwrap(); // Massive outlier
+    |                   ^^^^^^^^^^^^ help: you can use a slice directly: `&[100.0]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> src/filter.rs:932:23
+    |
+932 |             kf.update(&vec![1.0, 2.0]).unwrap();
+    |                       ^^^^^^^^^^^^^^^ help: you can use a slice directly: `&[1.0, 2.0]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> src/filter.rs:973:23
+    |
+973 |             kf.update(&vec![true_value]).unwrap();
+    |                       ^^^^^^^^^^^^^^^^^ help: you can use a slice directly: `&[true_value]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+    --> src/filter.rs:1000:26
+     |
+1000 |         kf_high_r.update(&vec![10.0]).unwrap();
+     |                          ^^^^^^^^^^^ help: you can use a slice directly: `&[10.0]`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+    --> src/filter.rs:1020:25
+     |
+1020 |         kf_low_r.update(&vec![10.0]).unwrap();
+     |                         ^^^^^^^^^^^ help: you can use a slice directly: `&[10.0]`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+    --> src/filter.rs:1052:23
+     |
+1052 |             kf.update(&vec![*z]).unwrap();
+     |                       ^^^^^^^^^ help: you can use a slice directly: `&[*z]`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+    --> src/filter.rs:1085:23
+     |
+1085 |             kf.update(&vec![0.0]).unwrap();
+     |                       ^^^^^^^^^^ help: you can use a slice directly: `&[0.0]`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+    --> src/filter.rs:1127:23
+     |
+1127 |             kf.update(&vec![true_value]).unwrap();
+     |                       ^^^^^^^^^^^^^^^^^ help: you can use a slice directly: `&[true_value]`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+    --> src/filter.rs:1158:19
+     |
+1158 |         kf.update(&vec![1.0]).unwrap();
+     |                   ^^^^^^^^^^ help: you can use a slice directly: `&[1.0]`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+warning: useless use of `vec!`
+   --> src/unscented.rs:836:26
+    |
+836 |         let true_state = vec![1.0, 0.5];
+    |                          ^^^^^^^^^^^^^^ help: you can use an array directly: `[1.0, 0.5]`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_vec
+
+error: could not compile `kalman_filters` (lib test) due to 5 previous errors; 102 warnings emitted
