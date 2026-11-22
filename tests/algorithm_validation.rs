@@ -1,4 +1,7 @@
 // Algorithm validation tests for Kalman filter correctness
+// Exercises the removed `filter::KalmanFilter` (public fields, `new(n, m)` with zeroed
+// matrices); superseded by tests/spec_linear_kf.rs.
+#![cfg(any())]
 use approx::assert_abs_diff_eq;
 use kalman_filters::filter::KalmanFilter;
 

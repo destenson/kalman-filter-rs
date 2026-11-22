@@ -1,3 +1,6 @@
+// Exercises the removed `filter::KalmanFilter` (public fields, `new(n, m)` with zeroed
+// matrices, `initialize`); superseded by tests/spec_linear_kf.rs.
+#![cfg(any())]
 #![allow(non_snake_case)]
 
 //! Unit tests for core Kalman filter functions

@@ -23,8 +23,10 @@ pub enum KalmanError {
     BuilderIncomplete(String),
     /// Jacobian computation failed
     JacobianComputation(String),
-    /// Filter divergence detected
+    /// Filter divergence detected (e.g. a step would produce a non-finite estimate)
     FilterDivergence(String),
+    /// An argument is invalid: a zero dimension, or a NaN/±∞ value. Names the argument.
+    InvalidInput(&'static str),
 }
 
 impl fmt::Display for KalmanError {
@@ -53,6 +55,7 @@ impl fmt::Display for KalmanError {
             KalmanError::FilterDivergence(msg) => {
                 write!(f, "Filter divergence detected: {}", msg)
             }
+            KalmanError::InvalidInput(what) => write!(f, "Invalid input: {}", what),
         }
     }
 }

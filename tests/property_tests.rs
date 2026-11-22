@@ -3,7 +3,7 @@
 //! These tests verify mathematical invariants that should hold for ALL valid inputs,
 //! not just specific test cases. They test the fundamental properties of Kalman filtering.
 
-use kalman_filters::filter::KalmanFilter;
+use kalman_filters::linear::LinearKalmanFilter as KalmanFilter;
 use kalman_filters::information::{InformationForm, InformationState, kalman_to_information};
 use kalman_filters::{ExtendedKalmanFilterBuilder, InformationFilterBuilder, NonlinearSystem};
 
@@ -18,16 +18,20 @@ fn property_covariance_always_positive_semidefinite() {
     // Property: Covariance matrix P must always be positive semi-definite
     // This means all eigenvalues >= 0, or equivalently: x^T P x >= 0 for all x
 
-    let mut kf = KalmanFilter::<f64>::new(2, 1);
-    kf.x = vec![0.0, 0.0];
-    kf.P = vec![1.0, 0.0, 0.0, 1.0];
-    kf.F = vec![1.0, 0.1, 0.0, 1.0];
-    kf.Q = vec![0.01, 0.0, 0.0, 0.01];
-    kf.H = vec![1.0, 0.0];
-    kf.R = vec![0.1];
+    let mut kf = KalmanFilter::<f64>::new(
+        2,
+        1,
+        &[0.0, 0.0],
+        &[1.0, 0.0, 0.0, 1.0],
+        &[1.0, 0.1, 0.0, 1.0],
+        &[0.01, 0.0, 0.0, 0.01],
+        &[1.0, 0.0],
+        &[0.1],
+    )
+    .unwrap();
 
     for i in 0..100 {
-        kf.predict();
+        kf.predict().unwrap();
 
         if i % 2 == 0 {
             kf.update(&[i as f64 * 0.1]).unwrap();
@@ -35,8 +39,8 @@ fn property_covariance_always_positive_semidefinite() {
 
         // Check positive semi-definite property
         // For 2x2 matrix: det >= 0 and trace >= 0 and P[0][0] >= 0 and P[1][1] >= 0
-        let det = kf.P[0] * kf.P[3] - kf.P[1] * kf.P[2];
-        let trace = kf.P[0] + kf.P[3];
+        let det = kf.covariance()[0] * kf.covariance()[3] - kf.covariance()[1] * kf.covariance()[2];
+        let trace = kf.covariance()[0] + kf.covariance()[3];
 
         assert!(
             det >= -EPSILON,
@@ -51,16 +55,16 @@ fn property_covariance_always_positive_semidefinite() {
             trace
         );
         assert!(
-            kf.P[0] >= -EPSILON,
+            kf.covariance()[0] >= -EPSILON,
             "Diagonal element P[0][0] must be non-negative at step {}: {}",
             i,
-            kf.P[0]
+            kf.covariance()[0]
         );
         assert!(
-            kf.P[3] >= -EPSILON,
+            kf.covariance()[3] >= -EPSILON,
             "Diagonal element P[1][1] must be non-negative at step {}: {}",
             i,
-            kf.P[3]
+            kf.covariance()[3]
         );
     }
 }
@@ -69,23 +73,27 @@ fn property_covariance_always_positive_semidefinite() {
 fn property_covariance_symmetry() {
     // Property: Covariance matrix must always be symmetric: P = P^T
 
-    let mut kf = KalmanFilter::<f64>::new(3, 2);
-    kf.x = vec![0.0, 0.0, 0.0];
-    kf.P = vec![1.0, 0.1, 0.2, 0.1, 1.0, 0.3, 0.2, 0.3, 1.0];
-    kf.F = vec![1.0, 0.1, 0.0, 0.0, 1.0, 0.1, 0.0, 0.0, 1.0];
-    kf.Q = vec![0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.01];
-    kf.H = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
-    kf.R = vec![0.1, 0.0, 0.0, 0.1];
+    let mut kf = KalmanFilter::<f64>::new(
+        3,
+        2,
+        &[0.0, 0.0, 0.0],
+        &[1.0, 0.1, 0.2, 0.1, 1.0, 0.3, 0.2, 0.3, 1.0],
+        &[1.0, 0.1, 0.0, 0.0, 1.0, 0.1, 0.0, 0.0, 1.0],
+        &[0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.01],
+        &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+        &[0.1, 0.0, 0.0, 0.1],
+    )
+    .unwrap();
 
     for i in 0..50 {
-        kf.predict();
+        kf.predict().unwrap();
         kf.update(&[i as f64 * 0.1, i as f64 * 0.05]).unwrap();
 
         // Check symmetry: P[i][j] == P[j][i]
         for row in 0..3 {
             for col in 0..3 {
-                let p_ij = kf.P[row * 3 + col];
-                let p_ji = kf.P[col * 3 + row];
+                let p_ij = kf.covariance()[row * 3 + col];
+                let p_ji = kf.covariance()[col * 3 + row];
                 assert!(
                     (p_ij - p_ji).abs() < EPSILON,
                     "Covariance not symmetric at step {}: P[{}][{}]={} != P[{}][{}]={}",
@@ -107,22 +115,26 @@ fn property_update_never_increases_uncertainty() {
     // Property: Update step (with measurement) should never increase uncertainty
     // i.e., trace(P_posterior) <= trace(P_prior)
 
-    let mut kf = KalmanFilter::<f64>::new(2, 1);
-    kf.x = vec![0.0, 0.0];
-    kf.P = vec![10.0, 0.0, 0.0, 10.0];
-    kf.F = vec![1.0, 0.1, 0.0, 1.0];
-    kf.Q = vec![0.1, 0.0, 0.0, 0.1];
-    kf.H = vec![1.0, 0.0];
-    kf.R = vec![1.0];
+    let mut kf = KalmanFilter::<f64>::new(
+        2,
+        1,
+        &[0.0, 0.0],
+        &[10.0, 0.0, 0.0, 10.0],
+        &[1.0, 0.1, 0.0, 1.0],
+        &[0.1, 0.0, 0.0, 0.1],
+        &[1.0, 0.0],
+        &[1.0],
+    )
+    .unwrap();
 
     for i in 0..50 {
-        kf.predict();
+        kf.predict().unwrap();
 
-        let trace_before_update = kf.P[0] + kf.P[3];
+        let trace_before_update = kf.covariance()[0] + kf.covariance()[3];
 
         kf.update(&[i as f64 * 0.1]).unwrap();
 
-        let trace_after_update = kf.P[0] + kf.P[3];
+        let trace_after_update = kf.covariance()[0] + kf.covariance()[3];
 
         assert!(
             trace_after_update <= trace_before_update + EPSILON,
@@ -139,23 +151,27 @@ fn property_predict_with_q_increases_uncertainty() {
     // Property: Predict step with non-zero Q should increase or maintain uncertainty
     // trace(P_k+1|k) >= trace(P_k|k) when Q > 0
 
-    let mut kf = KalmanFilter::<f64>::new(2, 1);
-    kf.x = vec![0.0, 0.0];
-    kf.P = vec![0.1, 0.0, 0.0, 0.1];
-    kf.F = vec![1.0, 0.1, 0.0, 1.0];
-    kf.Q = vec![0.05, 0.0, 0.0, 0.05]; // Non-zero process noise
-    kf.H = vec![1.0, 0.0];
-    kf.R = vec![0.1];
+    let mut kf = KalmanFilter::<f64>::new(
+        2,
+        1,
+        &[0.0, 0.0],
+        &[0.1, 0.0, 0.0, 0.1],
+        &[1.0, 0.1, 0.0, 1.0],
+        &[0.05, 0.0, 0.0, 0.05], // Non-zero process noise
+        &[1.0, 0.0],
+        &[0.1],
+    )
+    .unwrap();
 
     // After update, predict should increase uncertainty
     kf.update(&[1.0]).unwrap();
 
     for i in 0..20 {
-        let trace_before = kf.P[0] + kf.P[3];
+        let trace_before = kf.covariance()[0] + kf.covariance()[3];
 
-        kf.predict();
+        kf.predict().unwrap();
 
-        let trace_after = kf.P[0] + kf.P[3];
+        let trace_after = kf.covariance()[0] + kf.covariance()[3];
 
         assert!(
             trace_after >= trace_before - EPSILON,
@@ -257,15 +273,15 @@ fn property_information_addition_is_commutative() {
 fn property_kf_if_equivalence_maintained() {
     // Property: Converting KF -> IF -> KF should preserve state and covariance
 
-    let kf_original = KalmanFilter::<f64>::initialize(
+    let kf_original = KalmanFilter::<f64>::new(
         2,
         1,
-        vec![1.0, 2.0],
-        vec![2.0, 0.5, 0.5, 1.5],
-        vec![1.0, 0.1, 0.0, 1.0],
-        vec![0.01, 0.0, 0.0, 0.01],
-        vec![1.0, 0.0],
-        vec![0.1],
+        &[1.0, 2.0],
+        &[2.0, 0.5, 0.5, 1.5],
+        &[1.0, 0.1, 0.0, 1.0],
+        &[0.01, 0.0, 0.0, 0.01],
+        &[1.0, 0.0],
+        &[0.1],
     )
     .unwrap();
 
@@ -279,10 +295,10 @@ fn property_kf_if_equivalence_maintained() {
     // Check state preservation
     for i in 0..2 {
         assert!(
-            (kf_original.x[i] - recovered_state[i]).abs() < EPSILON,
+            (kf_original.state()[i] - recovered_state[i]).abs() < EPSILON,
             "State not preserved in KF->IF conversion: x[{}] = {} vs {}",
             i,
-            kf_original.x[i],
+            kf_original.state()[i],
             recovered_state[i]
         );
     }
@@ -290,10 +306,10 @@ fn property_kf_if_equivalence_maintained() {
     // Check covariance preservation
     for i in 0..4 {
         assert!(
-            (kf_original.P[i] - recovered_cov[i]).abs() < 1e-6,
+            (kf_original.covariance()[i] - recovered_cov[i]).abs() < 1e-6,
             "Covariance not preserved in KF->IF conversion: P[{}] = {} vs {}",
             i,
-            kf_original.P[i],
+            kf_original.covariance()[i],
             recovered_cov[i]
         );
     }
@@ -307,25 +323,30 @@ fn property_kf_if_equivalence_maintained() {
 fn property_innovation_has_correct_covariance() {
     // Property: Innovation covariance S = H*P*H^T + R
 
-    let mut kf = KalmanFilter::<f64>::new(2, 1);
-    kf.x = vec![0.0, 0.0];
-    kf.P = vec![1.0, 0.2, 0.2, 1.0];
-    kf.F = vec![1.0, 0.1, 0.0, 1.0];
-    kf.Q = vec![0.01, 0.0, 0.0, 0.01];
-    kf.H = vec![1.0, 0.5]; // Non-trivial H
-    kf.R = vec![0.25];
+    let r = [0.25];
+    let mut kf = KalmanFilter::<f64>::new(
+        2,
+        1,
+        &[0.0, 0.0],
+        &[1.0, 0.2, 0.2, 1.0],
+        &[1.0, 0.1, 0.0, 1.0],
+        &[0.01, 0.0, 0.0, 0.01],
+        &[1.0, 0.5], // Non-trivial H
+        &r,
+    )
+    .unwrap();
 
-    kf.predict();
+    kf.predict().unwrap();
 
     // Manually compute expected S = H*P*H^T + R
     // H*P = [1.0, 0.5] * [[P00, P01], [P10, P11]]
     //     = [P00 + 0.5*P10, P01 + 0.5*P11]
-    let hp_0 = kf.P[0] + 0.5 * kf.P[2];
-    let hp_1 = kf.P[1] + 0.5 * kf.P[3];
+    let hp_0 = kf.covariance()[0] + 0.5 * kf.covariance()[2];
+    let hp_1 = kf.covariance()[1] + 0.5 * kf.covariance()[3];
 
     // (H*P)*H^T = [hp_0, hp_1] * [1.0, 0.5]^T
     //           = hp_0 * 1.0 + hp_1 * 0.5
-    let expected_s = hp_0 * 1.0 + hp_1 * 0.5 + kf.R[0];
+    let expected_s = hp_0 * 1.0 + hp_1 * 0.5 + r[0];
 
     // In practice, we can't directly observe S, but we can verify its properties
     // The innovation should have variance approximately S
@@ -371,13 +392,17 @@ fn property_ekf_reduces_to_kf_for_linear_systems() {
     let dt = 0.1;
 
     // Standard KF
-    let mut kf = KalmanFilter::<f64>::new(2, 1);
-    kf.x = vec![0.0, 1.0];
-    kf.P = vec![1.0, 0.0, 0.0, 1.0];
-    kf.F = vec![1.0, dt, 0.0, 1.0];
-    kf.Q = vec![0.01, 0.0, 0.0, 0.01];
-    kf.H = vec![1.0, 0.0];
-    kf.R = vec![0.1];
+    let mut kf = KalmanFilter::<f64>::new(
+        2,
+        1,
+        &[0.0, 1.0],
+        &[1.0, 0.0, 0.0, 1.0],
+        &[1.0, dt, 0.0, 1.0],
+        &[0.01, 0.0, 0.0, 0.01],
+        &[1.0, 0.0],
+        &[0.1],
+    )
+    .unwrap();
 
     // EKF with linearized system
     let mut ekf = ExtendedKalmanFilterBuilder::new(LinearizedSystem)
@@ -393,7 +418,7 @@ fn property_ekf_reduces_to_kf_for_linear_systems() {
     for i in 0..30 {
         let z = i as f64 * 0.1;
 
-        kf.predict();
+        kf.predict().unwrap();
         ekf.predict();
 
         kf.update(&[z]).unwrap();
@@ -402,11 +427,11 @@ fn property_ekf_reduces_to_kf_for_linear_systems() {
         // States should match
         for j in 0..2 {
             assert!(
-                (kf.x[j] - ekf.state()[j]).abs() < 1e-6,
+                (kf.state()[j] - ekf.state()[j]).abs() < 1e-6,
                 "EKF and KF state diverged at step {}, component {}: KF={}, EKF={}",
                 i,
                 j,
-                kf.x[j],
+                kf.state()[j],
                 ekf.state()[j]
             );
         }
@@ -414,11 +439,11 @@ fn property_ekf_reduces_to_kf_for_linear_systems() {
         // Covariances should match
         for j in 0..4 {
             assert!(
-                (kf.P[j] - ekf.covariance()[j]).abs() < 1e-6,
+                (kf.covariance()[j] - ekf.covariance()[j]).abs() < 1e-6,
                 "EKF and KF covariance diverged at step {}, element {}: KF={}, EKF={}",
                 i,
                 j,
-                kf.P[j],
+                kf.covariance()[j],
                 ekf.covariance()[j]
             );
         }
@@ -435,28 +460,33 @@ fn property_normalized_innovation_squared_is_chi_squared_distributed() {
     // NIS = innovation^T * S^(-1) * innovation ~ χ²(m) where m is measurement dim
     // For large samples, mean should be approximately m
 
-    let mut kf = KalmanFilter::<f64>::new(2, 1);
-    kf.x = vec![0.0, 0.0];
-    kf.P = vec![1.0, 0.0, 0.0, 1.0];
-    kf.F = vec![1.0, 0.0, 0.0, 1.0];
-    kf.Q = vec![0.1, 0.0, 0.0, 0.1];
-    kf.H = vec![1.0, 0.0];
-    kf.R = vec![0.5];
+    let (h, r) = ([1.0, 0.0], [0.5]);
+    let mut kf = KalmanFilter::<f64>::new(
+        2,
+        1,
+        &[0.0, 0.0],
+        &[1.0, 0.0, 0.0, 1.0],
+        &[1.0, 0.0, 0.0, 1.0],
+        &[0.1, 0.0, 0.0, 0.1],
+        &h,
+        &r,
+    )
+    .unwrap();
 
     let mut nis_values = Vec::new();
 
     for i in 0..100 {
-        kf.predict();
+        kf.predict().unwrap();
 
         let measurement = i as f64 * 0.1 + 0.1 * pseudo_randn(i);
-        let innovation = measurement - (kf.H[0] * kf.x[0] + kf.H[1] * kf.x[1]);
+        let innovation = measurement - (h[0] * kf.state()[0] + h[1] * kf.state()[1]);
 
         // S = H*P*H^T + R (for 1D measurement, this is scalar)
-        let s = kf.H[0] * kf.P[0] * kf.H[0]
-            + kf.H[0] * kf.P[1] * kf.H[1]
-            + kf.H[1] * kf.P[2] * kf.H[0]
-            + kf.H[1] * kf.P[3] * kf.H[1]
-            + kf.R[0];
+        let s = h[0] * kf.covariance()[0] * h[0]
+            + h[0] * kf.covariance()[1] * h[1]
+            + h[1] * kf.covariance()[2] * h[0]
+            + h[1] * kf.covariance()[3] * h[1]
+            + r[0];
 
         let nis = innovation * innovation / s;
         nis_values.push(nis);

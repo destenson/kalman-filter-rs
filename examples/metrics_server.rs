@@ -37,7 +37,7 @@ fn main() {
 #[cfg(feature = "prometheus-metrics")]
 fn main() {
     use clap::Parser;
-    use kalman_filters::{KalmanFilterBuilder, KalmanFilterTrait};
+    use kalman_filters::linear::LinearKalmanFilter;
     use rand::SeedableRng;
     use rand_distr::{Distribution, Normal};
     use std::net::TcpListener;
@@ -119,15 +119,17 @@ fn main() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         let noise_dist = Normal::new(0.0, meas_noise_std).unwrap();
         // Create a simple 2D position-velocity Kalman filter
-        let mut kf = KalmanFilterBuilder::new(2, 1)
-            .initial_state(vec![0.0, 0.0])
-            .initial_covariance(vec![1.0, 0.0, 0.0, 1.0])
-            .transition_matrix(vec![1.0, dt, 0.0, 1.0])
-            .process_noise(vec![process_noise_pos, 0.0, 0.0, process_noise_vel])
-            .observation_matrix(vec![1.0, 0.0]) // observe position only
-            .measurement_noise(vec![meas_noise])
-            .build()
-            .expect("Failed to build Kalman filter");
+        let mut kf = LinearKalmanFilter::new(
+            2,
+            1,
+            &[0.0, 0.0],
+            &[1.0, 0.0, 0.0, 1.0],
+            &[1.0, dt, 0.0, 1.0],
+            &[process_noise_pos, 0.0, 0.0, process_noise_vel],
+            &[1.0, 0.0], // observe position only
+            &[meas_noise],
+        )
+        .expect("Failed to build Kalman filter");
 
         println!("Running Kalman filter simulation...");
 
@@ -135,7 +137,9 @@ fn main() {
         let mut time: f64 = 0.0;
         loop {
             // Predict step
-            kf.predict();
+            if let Err(e) = kf.predict() {
+                eprintln!("Predict failed: {:?}", e);
+            }
 
             // Generate synthetic measurement (true position with noise)
             let true_position = time;

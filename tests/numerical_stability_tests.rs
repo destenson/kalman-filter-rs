@@ -3,7 +3,7 @@
 //! These tests verify that filters handle challenging numerical situations correctly,
 //! not just that they compile and run with well-conditioned inputs.
 
-use kalman_filters::filter::KalmanFilter;
+use kalman_filters::linear::LinearKalmanFilter as KalmanFilter;
 use kalman_filters::{
     ExtendedKalmanFilterBuilder, InformationFilterBuilder, NonlinearSystem,
     UnscentedKalmanFilterBuilder,
@@ -18,23 +18,27 @@ const EPSILON: f64 = 1e-10;
 #[test]
 fn test_kf_ill_conditioned_covariance_recovery() {
     // Start with poorly conditioned covariance (high condition number)
-    let mut kf = KalmanFilter::<f64>::new(2, 1);
-    kf.x = vec![0.0, 0.0];
-    kf.P = vec![1000.0, 999.0, 999.0, 1000.0]; // Condition number ≈ 1000
-    kf.F = vec![1.0, 0.0, 0.0, 1.0];
-    kf.Q = vec![0.01, 0.0, 0.0, 0.01];
-    kf.H = vec![1.0, 0.0];
-    kf.R = vec![0.1];
+    let mut kf = KalmanFilter::<f64>::new(
+        2,
+        1,
+        &[0.0, 0.0],
+        &[1000.0, 999.0, 999.0, 1000.0], // Condition number ≈ 1000
+        &[1.0, 0.0, 0.0, 1.0],
+        &[0.01, 0.0, 0.0, 0.01],
+        &[1.0, 0.0],
+        &[0.1],
+    )
+    .unwrap();
 
     // Multiple updates should regularize the covariance
     for i in 0..100 {
-        kf.predict();
+        kf.predict().unwrap();
         let result = kf.update(&[i as f64 * 0.1]);
         assert!(result.is_ok(), "Update {} failed: {:?}", i, result);
     }
 
     // Covariance should be well-conditioned now
-    let det = kf.P[0] * kf.P[3] - kf.P[1] * kf.P[2];
+    let det = kf.covariance()[0] * kf.covariance()[3] - kf.covariance()[1] * kf.covariance()[2];
     assert!(det > EPSILON, "Covariance became singular: det={}", det);
     assert!(
         det < 100.0,
@@ -46,17 +50,21 @@ fn test_kf_ill_conditioned_covariance_recovery() {
 #[test]
 fn test_kf_extreme_measurement_noise_ratio() {
     // Test when measurement noise is orders of magnitude different from process noise
-    let mut kf = KalmanFilter::<f64>::new(2, 1);
-    kf.x = vec![0.0, 0.0];
-    kf.P = vec![1.0, 0.0, 0.0, 1.0];
-    kf.F = vec![1.0, 0.1, 0.0, 1.0];
-    kf.Q = vec![1e-12, 0.0, 0.0, 1e-12]; // Tiny process noise
-    kf.H = vec![1.0, 0.0];
-    kf.R = vec![1e6]; // Huge measurement noise
+    let mut kf = KalmanFilter::<f64>::new(
+        2,
+        1,
+        &[0.0, 0.0],
+        &[1.0, 0.0, 0.0, 1.0],
+        &[1.0, 0.1, 0.0, 1.0],
+        &[1e-12, 0.0, 0.0, 1e-12], // Tiny process noise
+        &[1.0, 0.0],
+        &[1e6], // Huge measurement noise
+    )
+    .unwrap();
 
     // Should still be able to update without numerical issues
     for _ in 0..20 {
-        kf.predict();
+        kf.predict().unwrap();
         let result = kf.update(&[1.0]);
         assert!(result.is_ok(), "Update failed with extreme noise ratio");
     }
@@ -66,73 +74,74 @@ fn test_kf_extreme_measurement_noise_ratio() {
     // K = P*H'/S ≈ P*H'/R (very small)
     // State should barely move from measurements
     assert!(
-        kf.x[0].abs() < 0.01,
+        kf.state()[0].abs() < 0.01,
         "State moved too much with huge measurement noise: {}",
-        kf.x[0]
+        kf.state()[0]
     );
 }
 
 #[test]
 fn test_kf_perfect_measurements() {
     // When measurements have zero noise (theoretically), covariance should collapse
-    let mut kf = KalmanFilter::<f64>::new(1, 1);
-    kf.x = vec![5.0];
-    kf.P = vec![10.0];
-    kf.F = vec![1.0];
-    kf.Q = vec![0.0];
-    kf.H = vec![1.0];
-    kf.R = vec![1e-15]; // Nearly zero measurement noise
+    // x0 = 5, P0 = 10, F = 1, Q = 0, H = 1, R nearly zero
+    let mut kf =
+        KalmanFilter::<f64>::new(1, 1, &[5.0], &[10.0], &[1.0], &[0.0], &[1.0], &[1e-15]).unwrap();
 
-    kf.predict();
+    kf.predict().unwrap();
     let result = kf.update(&[0.0]);
     assert!(result.is_ok(), "Should handle near-zero measurement noise");
 
     // State should jump to measurement
     assert!(
-        (kf.x[0] - 0.0).abs() < 1e-6,
+        (kf.state()[0] - 0.0).abs() < 1e-6,
         "State should be at measurement: {}",
-        kf.x[0]
+        kf.state()[0]
     );
 
     // Covariance should be very small but not exactly zero (numerical floor)
-    assert!(kf.P[0] < 1e-10, "Covariance should be tiny: {}", kf.P[0]);
+    assert!(kf.covariance()[0] < 1e-10, "Covariance should be tiny: {}", kf.covariance()[0]);
 }
 
 #[test]
 fn test_kf_loss_of_observability() {
     // Observable system loses observability mid-flight
-    let mut kf = KalmanFilter::<f64>::new(3, 2);
-
-    kf.x = vec![0.0, 0.0, 0.0];
-    kf.P = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-    kf.F = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-    kf.Q = vec![0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.01];
-    kf.H = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0]; // Observe x and y
-    kf.R = vec![0.1, 0.0, 0.0, 0.1];
+    let f = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+    let q = [0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.01];
+    let mut kf = KalmanFilter::<f64>::new(
+        3,
+        2,
+        &[0.0, 0.0, 0.0],
+        &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        &f,
+        &q,
+        &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0], // Observe x and y
+        &[0.1, 0.0, 0.0, 0.1],
+    )
+    .unwrap();
 
     // Run with full observability
     for _ in 0..10 {
-        kf.predict();
+        kf.predict().unwrap();
         kf.update(&[1.0, 2.0]).unwrap();
     }
-    let p_before = kf.P[8]; // Variance of z (unobservable)
+    let p_before = kf.covariance()[8]; // Variance of z (unobservable)
 
     // Lose observability of y (only observe x now)
-    kf.H = vec![1.0, 0.0, 0.0]; // Only observe x
-    kf.R = vec![0.1];
-    kf.measurement_dim = 1;
+    // (the model is fixed per filter, so continue from the current estimate)
+    kf = KalmanFilter::<f64>::new(3, 1, kf.state(), kf.covariance(), &f, &q, &[1.0, 0.0, 0.0], &[0.1])
+        .unwrap(); // Only observe x
 
     // Run without y observation
     for _ in 0..20 {
-        kf.predict();
+        kf.predict().unwrap();
         kf.update(&[1.0]).unwrap();
     }
 
     // Uncertainty in z should have grown
     assert!(
-        kf.P[8] > p_before,
+        kf.covariance()[8] > p_before,
         "Unobservable state uncertainty should grow: {} <= {}",
-        kf.P[8],
+        kf.covariance()[8],
         p_before
     );
 }
@@ -357,51 +366,43 @@ fn test_ekf_vs_ukf_on_highly_nonlinear_system() {
 #[test]
 fn test_kf_prevents_covariance_underflow() {
     // Covariance should not underflow to exactly zero
-    let mut kf = KalmanFilter::<f64>::new(1, 1);
-    kf.x = vec![0.0];
-    kf.P = vec![1.0];
-    kf.F = vec![1.0];
-    kf.Q = vec![0.0]; // No process noise
-    kf.H = vec![1.0];
-    kf.R = vec![1e-10]; // Tiny measurement noise
+    // No process noise, tiny measurement noise
+    let mut kf =
+        KalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[1e-10]).unwrap();
 
     // Many updates with near-perfect measurements
     for i in 0..1000 {
-        kf.predict();
+        kf.predict().unwrap();
         kf.update(&[i as f64]).unwrap();
     }
 
     // Covariance should remain positive (numerical floor)
     assert!(
-        kf.P[0] > 0.0,
+        kf.covariance()[0] > 0.0,
         "Covariance should not underflow to zero: {}",
-        kf.P[0]
+        kf.covariance()[0]
     );
 }
 
 #[test]
 fn test_kf_prevents_covariance_overflow() {
     // Covariance should not overflow with large process noise
-    let mut kf = KalmanFilter::<f64>::new(1, 1);
-    kf.x = vec![0.0];
-    kf.P = vec![1.0];
-    kf.F = vec![1.0];
-    kf.Q = vec![1e6]; // Huge process noise
-    kf.H = vec![1.0];
-    kf.R = vec![1e6]; // Huge measurement noise
+    // Huge process noise, huge measurement noise
+    let mut kf =
+        KalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[1e6], &[1.0], &[1e6]).unwrap();
 
     // Many predict steps without update
     for _ in 0..100 {
-        kf.predict();
+        kf.predict().unwrap();
     }
 
     // Covariance should be large but not infinity
     assert!(
-        kf.P[0].is_finite(),
+        kf.covariance()[0].is_finite(),
         "Covariance should not overflow: {}",
-        kf.P[0]
+        kf.covariance()[0]
     );
-    assert!(kf.P[0] < 1e20, "Covariance too large: {}", kf.P[0]);
+    assert!(kf.covariance()[0] < 1e20, "Covariance too large: {}", kf.covariance()[0]);
 }
 
 // =============================================================================
@@ -411,61 +412,69 @@ fn test_kf_prevents_covariance_overflow() {
 #[test]
 fn test_kf_all_zero_matrices() {
     // Pathological case: all zero matrices except R
-    let mut kf = KalmanFilter::<f64>::new(2, 1);
-    kf.x = vec![1.0, 2.0];
-    kf.P = vec![0.0, 0.0, 0.0, 0.0];
-    kf.F = vec![0.0, 0.0, 0.0, 0.0]; // System collapses to origin
-    kf.Q = vec![0.0, 0.0, 0.0, 0.0];
-    kf.H = vec![0.0, 0.0]; // No observation
-    kf.R = vec![1.0]; // Only R is non-zero
+    let mut kf = KalmanFilter::<f64>::new(
+        2,
+        1,
+        &[1.0, 2.0],
+        &[0.0, 0.0, 0.0, 0.0],
+        &[0.0, 0.0, 0.0, 0.0], // System collapses to origin
+        &[0.0, 0.0, 0.0, 0.0],
+        &[0.0, 0.0], // No observation
+        &[1.0],      // Only R is non-zero
+    )
+    .unwrap();
 
-    kf.predict();
+    kf.predict().unwrap();
 
     // State should collapse to zero (F=0)
-    assert_eq!(kf.x[0], 0.0, "State should be zero with F=0");
-    assert_eq!(kf.x[1], 0.0, "State should be zero with F=0");
+    assert_eq!(kf.state()[0], 0.0, "State should be zero with F=0");
+    assert_eq!(kf.state()[1], 0.0, "State should be zero with F=0");
 
     // Update should fail or do nothing (H=0 means no information)
     let result = kf.update(&[5.0]);
     // Depending on implementation, this might fail or succeed with no change
     if result.is_ok() {
         // State should not change (no observable info)
-        assert_eq!(kf.x[0], 0.0);
-        assert_eq!(kf.x[1], 0.0);
+        assert_eq!(kf.state()[0], 0.0);
+        assert_eq!(kf.state()[1], 0.0);
     }
 }
 
 #[test]
 fn test_kf_identity_system_stability() {
     // Pure identity system should be stable
-    let mut kf = KalmanFilter::<f64>::new(3, 1);
-    kf.x = vec![1.0, 2.0, 3.0];
-    kf.P = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-    kf.F = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-    kf.Q = vec![0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1];
-    kf.H = vec![1.0, 0.0, 0.0];
-    kf.R = vec![0.5];
+    let mut kf = KalmanFilter::<f64>::new(
+        3,
+        1,
+        &[1.0, 2.0, 3.0],
+        &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        &[0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1],
+        &[1.0, 0.0, 0.0],
+        &[0.5],
+    )
+    .unwrap();
 
     // Run for many iterations
     for i in 0..100 {
-        kf.predict();
+        kf.predict().unwrap();
         kf.update(&[1.0]).unwrap();
 
         // Check stability (values shouldn't explode)
         for j in 0..3 {
             assert!(
-                kf.x[j].abs() < 1000.0,
+                kf.state()[j].abs() < 1000.0,
                 "State {} exploded at iteration {}: {}",
                 j,
                 i,
-                kf.x[j]
+                kf.state()[j]
             );
             assert!(
-                kf.P[j * 3 + j] < 1000.0,
+                kf.covariance()[j * 3 + j] < 1000.0,
                 "Covariance {} exploded at iteration {}: {}",
                 j,
                 i,
-                kf.P[j * 3 + j]
+                kf.covariance()[j * 3 + j]
             );
         }
     }

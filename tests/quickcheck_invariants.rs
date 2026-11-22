@@ -1,5 +1,5 @@
 // Property-based testing with QuickCheck for Kalman filter invariants
-use kalman_filters::filter::KalmanFilter;
+use kalman_filters::linear::LinearKalmanFilter as KalmanFilter;
 use quickcheck::{Arbitrary, Gen};
 use quickcheck_macros::quickcheck;
 
@@ -92,30 +92,38 @@ fn prop_covariance_positive_semidefinite(
         return true;
     }
 
-    let mut kf = KalmanFilter::<f64>::new(n, m);
-
-    // Set up filter with arbitrary values
-    kf.x = vec![0.0; n];
-    kf.P = initial_p.data[..n * n].to_vec();
-    kf.F = dynamics.data[..n * n].to_vec();
-    kf.Q = process_noise.data[..n * n].to_vec();
-    kf.R = measurement_noise.data[..m * m].to_vec();
-
     // Simple observation matrix
-    kf.H = vec![0.0; m * n];
+    let mut h = vec![0.0; m * n];
     for i in 0..m.min(n) {
-        kf.H[i * n + i] = 1.0;
+        h[i * n + i] = 1.0;
     }
+
+    // Set up filter with arbitrary values. Truncating the generated data does not
+    // always give a symmetric PSD matrix; such models are rejected at construction.
+    let Ok(mut kf) = KalmanFilter::<f64>::new(
+        n,
+        m,
+        &vec![0.0; n],
+        &initial_p.data[..n * n],
+        &dynamics.data[..n * n],
+        &process_noise.data[..n * n],
+        &h,
+        &measurement_noise.data[..m * m],
+    ) else {
+        return true;
+    };
 
     // Run filter for arbitrary number of steps
     let steps = (num_steps % 20) as usize + 1; // Limit to reasonable number
 
     for _ in 0..steps {
-        kf.predict();
+        if kf.predict().is_err() {
+            return false;
+        }
 
         // Check diagonal elements are non-negative
         for i in 0..n {
-            if kf.P[i * n + i] < -1e-10 {
+            if kf.covariance()[i * n + i] < -1e-10 {
                 return false;
             }
         }
@@ -123,7 +131,7 @@ fn prop_covariance_positive_semidefinite(
         // Check symmetry
         for i in 0..n {
             for j in i + 1..n {
-                if (kf.P[i * n + j] - kf.P[j * n + i]).abs() > 1e-8 {
+                if (kf.covariance()[i * n + j] - kf.covariance()[j * n + i]).abs() > 1e-8 {
                     return false;
                 }
             }
@@ -138,7 +146,7 @@ fn prop_covariance_positive_semidefinite(
 
         // Check again after update
         for i in 0..n {
-            if kf.P[i * n + i] < -1e-10 {
+            if kf.covariance()[i * n + i] < -1e-10 {
                 return false;
             }
         }
@@ -153,36 +161,36 @@ fn prop_dimension_preservation(n: u8, m: u8) -> bool {
     let n = (n % 5 + 1) as usize;
     let m = (m % 5 + 1) as usize;
 
-    let mut kf = KalmanFilter::<f64>::new(n, m);
-
     // Set up with valid matrices
-    kf.x = vec![0.0; n];
-    kf.P = vec![0.0; n * n];
-    kf.F = vec![0.0; n * n];
-    kf.H = vec![0.0; m * n];
-    kf.Q = vec![0.0; n * n];
-    kf.R = vec![0.0; m * m];
+    let x = vec![0.0; n];
+    let mut p = vec![0.0; n * n];
+    let mut f = vec![0.0; n * n];
+    let mut h = vec![0.0; m * n];
+    let mut q = vec![0.0; n * n];
+    let mut r = vec![0.0; m * m];
 
     // Make diagonal matrices
     for i in 0..n {
-        kf.P[i * n + i] = 1.0;
-        kf.F[i * n + i] = 1.0;
-        kf.Q[i * n + i] = 0.1;
+        p[i * n + i] = 1.0;
+        f[i * n + i] = 1.0;
+        q[i * n + i] = 0.1;
     }
     for i in 0..m {
-        kf.R[i * m + i] = 1.0;
+        r[i * m + i] = 1.0;
         if i < n {
-            kf.H[i * n + i] = 1.0;
+            h[i * n + i] = 1.0;
         }
     }
 
-    let initial_x_len = kf.x.len();
-    let initial_p_len = kf.P.len();
+    let mut kf = KalmanFilter::<f64>::new(n, m, &x, &p, &f, &q, &h, &r).unwrap();
 
-    kf.predict();
+    let initial_x_len = kf.state().len();
+    let initial_p_len = kf.covariance().len();
+
+    kf.predict().unwrap();
 
     // Dimensions should be preserved after predict
-    if kf.x.len() != initial_x_len || kf.P.len() != initial_p_len {
+    if kf.state().len() != initial_x_len || kf.covariance().len() != initial_p_len {
         return false;
     }
 
@@ -192,7 +200,7 @@ fn prop_dimension_preservation(n: u8, m: u8) -> bool {
     }
 
     // Dimensions should be preserved after update
-    kf.x.len() == initial_x_len && kf.P.len() == initial_p_len
+    kf.state().len() == initial_x_len && kf.covariance().len() == initial_p_len
 }
 
 // Property: KF and IF equivalence for random inputs
@@ -207,24 +215,7 @@ fn prop_kf_if_equivalence(
         return true;
     }
 
-    let mut kf = KalmanFilter::<f64>::new(n, 1);
-
-    // Initial state
-    let x0 = vec![0.0; n];
-    let p0 = initial_p.data[..n * n].to_vec();
-
-    // Setup KF
-    kf.x = x0.clone();
-    kf.P = p0.clone();
-    kf.F = dynamics.data[..n * n].to_vec();
-    kf.H = vec![0.0; n];
-    kf.H[0] = 1.0; // Observe first state
-    kf.Q = vec![0.0; n * n];
-    for i in 0..n {
-        kf.Q[i * n + i] = 0.01;
-    }
-    kf.R = vec![1.0];
-
+    // The removed KalmanFilter was configured here but never used; nothing to port.
     // TODO: Fix InformationFilter API to allow setting state in covariance form
     // Setup IF - need to invert P to get Y
     // For simplicity, skip this test if P is not invertible

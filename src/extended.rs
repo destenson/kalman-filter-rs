@@ -57,7 +57,6 @@
 //! ```
 #![allow(unused)]
 
-use crate::filter::KalmanFilter;
 use crate::logging::{
     check_numerical_stability, format_innovation, format_matrix, format_state,
     log_filter_dimensions, state_norm,

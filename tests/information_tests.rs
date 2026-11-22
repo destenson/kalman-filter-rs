@@ -1,7 +1,7 @@
 //! Comprehensive tests for Information Filter implementation
 #![allow(unused, non_snake_case)]
 
-use kalman_filters::filter::KalmanFilter;
+use kalman_filters::linear::LinearKalmanFilter as KalmanFilter;
 use kalman_filters::information::{
     DistributedInformationFilter, ExtendedInformationFilter, InformationFilter, InformationForm,
     InformationState, SparseInformationFilter,
@@ -19,15 +19,15 @@ const EPSILON: f64 = 1e-10;
 #[test]
 fn test_kf_if_equivalence() {
     // Create identical filters
-    let mut kf = KalmanFilter::<f64>::initialize(
+    let mut kf = KalmanFilter::<f64>::new(
         2,
         1,
-        vec![0.0, 0.0],
-        vec![1.0, 0.0, 0.0, 1.0],
-        vec![1.0, 0.1, 0.0, 1.0],
-        vec![0.01, 0.0, 0.0, 0.01],
-        vec![1.0, 0.0],
-        vec![0.1],
+        &[0.0, 0.0],
+        &[1.0, 0.0, 0.0, 1.0],
+        &[1.0, 0.1, 0.0, 1.0],
+        &[0.01, 0.0, 0.0, 0.01],
+        &[1.0, 0.0],
+        &[0.1],
     )
     .unwrap();
 
@@ -35,7 +35,7 @@ fn test_kf_if_equivalence() {
 
     // Perform identical operations
     for i in 0..5 {
-        kf.predict();
+        kf.predict().unwrap();
         kf.update(&[i as f64]).unwrap();
 
         inf.predict().unwrap();
@@ -352,15 +352,15 @@ fn test_consensus_algorithms() {
 #[test]
 fn test_form_conversion() {
     // Start with KF
-    let kf = KalmanFilter::<f64>::initialize(
+    let kf = KalmanFilter::<f64>::new(
         3,
         2,
-        vec![1.0, 2.0, 3.0],
-        vec![2.0, 0.5, 0.1, 0.5, 1.5, 0.2, 0.1, 0.2, 1.0],
-        vec![1.0; 9],
-        vec![0.01; 9],
-        vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-        vec![0.1, 0.0, 0.0, 0.1],
+        &[1.0, 2.0, 3.0],
+        &[2.0, 0.5, 0.1, 0.5, 1.5, 0.2, 0.1, 0.2, 1.0],
+        &[1.0; 9],
+        &[0.01; 9],
+        &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+        &[0.1, 0.0, 0.0, 0.1],
     )
     .unwrap();
 
@@ -372,10 +372,10 @@ fn test_form_conversion() {
 
     // Check equivalence
     for i in 0..3 {
-        assert!((kf.x[i] - kf2.x[i]).abs() < EPSILON);
+        assert!((kf.state()[i] - kf2.state()[i]).abs() < EPSILON);
     }
     for i in 0..9 {
-        assert!((kf.P[i] - kf2.P[i]).abs() < EPSILON);
+        assert!((kf.covariance()[i] - kf2.covariance()[i]).abs() < EPSILON);
     }
 }
 

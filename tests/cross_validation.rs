@@ -10,7 +10,7 @@
 //! - Welch & Bishop, "An Introduction to the Kalman Filter" (UNC-Chapel Hill, TR 95-041)
 
 use approx::assert_abs_diff_eq;
-use kalman_filters::filter::KalmanFilter;
+use kalman_filters::linear::LinearKalmanFilter as KalmanFilter;
 
 /// Test against analytical solution for static system
 /// This is Example 1 from Welch & Bishop
@@ -19,29 +19,24 @@ fn test_analytical_static_system() {
     // For a static system with no process noise and repeated measurements,
     // the Kalman filter converges to the weighted average
 
-    let mut kf = KalmanFilter::<f64>::new(1, 1);
-
-    kf.x = vec![0.0];
-    kf.P = vec![1000.0]; // Very uncertain initially
-    kf.F = vec![1.0]; // Static system
-    kf.H = vec![1.0]; // Direct observation
-    kf.Q = vec![0.0]; // No process noise
-    kf.R = vec![1.0]; // Measurement noise
+    // x0, P0 very uncertain, F static, Q none, H direct observation, R
+    let mut kf =
+        KalmanFilter::<f64>::new(1, 1, &[0.0], &[1000.0], &[1.0], &[0.0], &[1.0], &[1.0]).unwrap();
 
     // Repeated measurements around value 5.0
     let measurements = vec![5.0, 5.1, 4.9, 5.0, 5.05, 4.95];
 
     for &z in &measurements {
-        kf.predict();
+        kf.predict().unwrap();
         kf.update(&vec![z]).unwrap();
     }
 
     // After many measurements, should converge close to mean
-    assert_abs_diff_eq!(kf.x[0], 5.0, epsilon = 0.1);
+    assert_abs_diff_eq!(kf.state()[0], 5.0, epsilon = 0.1);
 
     // Uncertainty should decrease significantly
     assert!(
-        kf.P[0] < 1.0,
+        kf.covariance()[0] < 1.0,
         "Covariance should decrease with measurements"
     );
 }
@@ -53,25 +48,19 @@ fn test_steady_state_convergence() {
     // For time-invariant systems, the Kalman filter reaches a steady-state
     // where the covariance converges to a fixed value (algebraic Riccati equation)
 
-    let mut kf = KalmanFilter::<f64>::new(1, 1);
-
-    kf.x = vec![0.0];
-    kf.P = vec![1.0];
-    kf.F = vec![1.0];
-    kf.H = vec![1.0];
-    kf.Q = vec![0.1];
-    kf.R = vec![1.0];
+    let mut kf =
+        KalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.1], &[1.0], &[1.0]).unwrap();
 
     // Run until steady-state
     let mut prev_p = 0.0;
     for i in 0..1000 {
-        kf.predict();
+        kf.predict().unwrap();
         kf.update(&vec![0.0]).unwrap();
 
-        if i > 100 && (kf.P[0] - prev_p).abs() < 1e-10 {
+        if i > 100 && (kf.covariance()[0] - prev_p).abs() < 1e-10 {
             break;
         }
-        prev_p = kf.P[0];
+        prev_p = kf.covariance()[0];
     }
 
     // Analytical steady-state solution for this system
@@ -88,7 +77,7 @@ fn test_steady_state_convergence() {
     let s = (q + (q * q + 4.0f64 * q * r).sqrt()) / 2.0;
     let p_steady = s - q;
 
-    assert_abs_diff_eq!(kf.P[0], p_steady, epsilon = 1e-6);
+    assert_abs_diff_eq!(kf.covariance()[0], p_steady, epsilon = 1e-6);
 }
 
 /// Normalized Innovation Squared (NIS) consistency test
@@ -98,14 +87,8 @@ fn test_steady_state_convergence() {
 /// This test verifies innovations have proper statistics
 #[test]
 fn test_innovation_statistics() {
-    let mut kf = KalmanFilter::<f64>::new(1, 1);
-
-    kf.x = vec![0.0];
-    kf.P = vec![10.0];
-    kf.F = vec![1.0];
-    kf.H = vec![1.0];
-    kf.Q = vec![0.1];
-    kf.R = vec![1.0];
+    let mut kf =
+        KalmanFilter::<f64>::new(1, 1, &[0.0], &[10.0], &[1.0], &[0.1], &[1.0], &[1.0]).unwrap();
 
     // Measurements that vary (simulating real sensor data)
     let measurements = vec![
@@ -116,10 +99,10 @@ fn test_innovation_statistics() {
     let mut innovations = vec![];
 
     for &z in &measurements {
-        kf.predict();
+        kf.predict().unwrap();
 
         // Compute innovation (before update)
-        let innovation = z - kf.H[0] * kf.x[0];
+        let innovation = z - kf.state()[0]; // H = [1]
         innovations.push(innovation);
 
         kf.update(&vec![z]).unwrap();
@@ -138,27 +121,23 @@ fn test_innovation_statistics() {
 /// Test filter doesn't diverge with model mismatch
 #[test]
 fn test_robustness_to_model_error() {
-    let mut kf = KalmanFilter::<f64>::new(1, 1);
-
-    kf.x = vec![0.0];
-    kf.P = vec![1.0];
-    kf.F = vec![1.0]; // Model: system is static
-    kf.H = vec![1.0];
-    kf.Q = vec![0.1]; // Some process noise to prevent overconfidence
-    kf.R = vec![1.0];
+    // Model: system is static (F = 1), with some process noise (Q = 0.1) to prevent
+    // overconfidence.
+    let mut kf =
+        KalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.1], &[1.0], &[1.0]).unwrap();
 
     // True system: state grows linearly
     let mut true_state = 0.0;
     for _ in 0..100 {
         true_state += 0.1; // True dynamics
 
-        kf.predict();
+        kf.predict().unwrap();
         kf.update(&vec![true_state]).unwrap();
     }
 
     // Despite model mismatch, filter should track (with lag)
     // and not diverge to infinity
-    assert!(kf.x[0] < 100.0, "Filter diverged despite model error");
-    assert!(!kf.x[0].is_nan(), "Filter produced NaN");
-    assert!(kf.P[0] < 1000.0, "Covariance exploded");
+    assert!(kf.state()[0] < 100.0, "Filter diverged despite model error");
+    assert!(!kf.state()[0].is_nan(), "Filter produced NaN");
+    assert!(kf.covariance()[0] < 1000.0, "Covariance exploded");
 }

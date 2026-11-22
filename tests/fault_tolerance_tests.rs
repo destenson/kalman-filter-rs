@@ -3,7 +3,7 @@
 //! These tests verify that filters handle real-world failure scenarios gracefully,
 //! including sensor dropouts, outliers, network failures, and Byzantine faults.
 
-use kalman_filters::filter::KalmanFilter;
+use kalman_filters::linear::LinearKalmanFilter as KalmanFilter;
 use kalman_filters::information::{
     DistributedInformationFilter, InformationState,
     consensus::{AverageConsensus, ConsensusAlgorithm},
@@ -18,13 +18,17 @@ use std::collections::HashMap;
 #[test]
 fn test_kf_handles_measurement_dropout() {
     // Sensor intermittently drops measurements
-    let mut kf = KalmanFilter::<f64>::new(2, 1);
-    kf.x = vec![0.0, 1.0]; // Position 0, velocity 1
-    kf.P = vec![1.0, 0.0, 0.0, 1.0];
-    kf.F = vec![1.0, 0.1, 0.0, 1.0];
-    kf.Q = vec![0.01, 0.0, 0.0, 0.01];
-    kf.H = vec![1.0, 0.0];
-    kf.R = vec![0.1];
+    let mut kf = KalmanFilter::<f64>::new(
+        2,
+        1,
+        &[0.0, 1.0], // Position 0, velocity 1
+        &[1.0, 0.0, 0.0, 1.0],
+        &[1.0, 0.1, 0.0, 1.0],
+        &[0.01, 0.0, 0.0, 0.01],
+        &[1.0, 0.0],
+        &[0.1],
+    )
+    .unwrap();
 
     let mut position = 0.0;
     let velocity = 1.0;
@@ -32,7 +36,7 @@ fn test_kf_handles_measurement_dropout() {
     // Simulate with 50% measurement dropout
     for i in 0..50 {
         position += velocity * 0.1;
-        kf.predict();
+        kf.predict().unwrap();
 
         if i % 2 == 0 {
             // Measurement available
@@ -43,8 +47,8 @@ fn test_kf_handles_measurement_dropout() {
     }
 
     // With 50% dropout, filter may drift but shouldn't diverge wildly
-    let pos_error = (kf.x[0] - position).abs();
-    let vel_error = (kf.x[1] - velocity).abs();
+    let pos_error = (kf.state()[0] - position).abs();
+    let vel_error = (kf.state()[1] - velocity).abs();
 
     // More generous tolerances for 50% dropout
     assert!(
@@ -60,22 +64,18 @@ fn test_kf_handles_measurement_dropout() {
 
     // Uncertainty should be higher than with continuous measurements
     assert!(
-        kf.P[0] > 0.05,
+        kf.covariance()[0] > 0.05,
         "Covariance should reflect measurement gaps: {}",
-        kf.P[0]
+        kf.covariance()[0]
     );
 }
 
 #[test]
 fn test_kf_measurement_outlier_detection() {
     // Filter should be robust to occasional outliers
-    let mut kf = KalmanFilter::<f64>::new(1, 1);
-    kf.x = vec![5.0];
-    kf.P = vec![1.0];
-    kf.F = vec![1.0];
-    kf.Q = vec![0.01];
-    kf.H = vec![1.0];
-    kf.R = vec![0.1];
+    let r = [0.1];
+    let mut kf =
+        KalmanFilter::<f64>::new(1, 1, &[5.0], &[1.0], &[1.0], &[0.01], &[1.0], &r).unwrap();
 
     let true_value = 5.0;
     let measurements = vec![
@@ -85,11 +85,11 @@ fn test_kf_measurement_outlier_detection() {
     ];
 
     for (i, meas) in measurements.iter().enumerate() {
-        kf.predict();
+        kf.predict().unwrap();
 
         // Simple outlier rejection: check innovation
-        let innovation = meas - kf.x[0];
-        let innovation_cov = kf.P[0] + kf.R[0];
+        let innovation = meas - kf.state()[0];
+        let innovation_cov = kf.covariance()[0] + r[0];
         let mahalanobis = (innovation * innovation / innovation_cov).sqrt();
 
         if mahalanobis < 5.0 {
@@ -102,7 +102,7 @@ fn test_kf_measurement_outlier_detection() {
     }
 
     // Final estimate should be close to true value
-    let error = (kf.x[0] - true_value).abs();
+    let error = (kf.state()[0] - true_value).abs();
     assert!(
         error < 0.5,
         "Filter should reject outliers: error={}",
@@ -114,25 +114,29 @@ fn test_kf_measurement_outlier_detection() {
 fn test_kf_sensor_bias_estimation() {
     // Filter should eventually converge to the combined measurement (position + bias)
     // State: [combined_value] - simpler model
-    let mut kf = KalmanFilter::<f64>::new(1, 1);
-    kf.x = vec![0.0]; // Unknown initial value
-    kf.P = vec![10.0]; // Very uncertain
-    kf.F = vec![1.0]; // Constant value
-    kf.Q = vec![0.001]; // Very slow drift
-    kf.H = vec![1.0]; // Direct observation
-    kf.R = vec![0.1];
+    let mut kf = KalmanFilter::<f64>::new(
+        1,
+        1,
+        &[0.0],   // Unknown initial value
+        &[10.0],  // Very uncertain
+        &[1.0],   // Constant value
+        &[0.001], // Very slow drift
+        &[1.0],   // Direct observation
+        &[0.1],
+    )
+    .unwrap();
 
     let true_combined_value = 7.0; // position (5.0) + bias (2.0)
 
     // Feed measurements
     for _ in 0..100 {
-        kf.predict();
+        kf.predict().unwrap();
         let measurement = true_combined_value + 0.05 * (rand_deterministic() - 0.5);
         kf.update(&[measurement]).unwrap();
     }
 
     // Should converge to the true combined value
-    let error = (kf.x[0] - true_combined_value).abs();
+    let error = (kf.state()[0] - true_combined_value).abs();
 
     assert!(
         error < 0.5,

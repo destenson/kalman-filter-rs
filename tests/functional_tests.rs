@@ -144,16 +144,19 @@ mod kf_tests {
     /// Test: KF should exactly track a deterministic linear system with no noise
     #[test]
     fn test_perfect_tracking_no_noise() {
-        let mut kf = KalmanFilter::<f64>::new(2, 1);
-
         // Position-velocity model
         let dt = 0.1;
-        kf.x = vec![0.0, 1.0]; // Start at 0, velocity 1
-        kf.P = vec![0.001, 0.0, 0.0, 0.001]; // Very certain of initial state
-        kf.F = vec![1.0, dt, 0.0, 1.0];
-        kf.H = vec![1.0, 0.0];
-        kf.Q = vec![0.0, 0.0, 0.0, 0.0]; // No process noise
-        kf.R = vec![0.0001]; // Almost no measurement noise
+        let mut kf = KalmanFilter::<f64>::new(
+            2,
+            1,
+            &[0.0, 1.0],              // Start at 0, velocity 1
+            &[0.001, 0.0, 0.0, 0.001], // Very certain of initial state
+            &[1.0, dt, 0.0, 1.0],
+            &[0.0, 0.0, 0.0, 0.0], // No process noise
+            &[1.0, 0.0],
+            &[0.0001], // Almost no measurement noise
+        )
+        .unwrap();
 
         // Simulate true trajectory
         let mut true_pos = 0.0;
@@ -162,12 +165,12 @@ mod kf_tests {
         for i in 1..=50 {
             true_pos += true_vel * dt;
 
-            kf.predict();
+            kf.predict().unwrap();
             kf.update(&vec![true_pos]).unwrap();
 
             // Position estimate should be nearly exact
-            let pos_error = (kf.x[0] - true_pos).abs();
-            let vel_error = (kf.x[1] - true_vel).abs();
+            let pos_error = (kf.state()[0] - true_pos).abs();
+            let vel_error = (kf.state()[1] - true_vel).abs();
 
             assert!(
                 pos_error < 0.01,
@@ -188,34 +191,26 @@ mod kf_tests {
     #[test]
     fn test_uncertainty_weighting() {
         // Test 1: High measurement noise -> trust prior more
-        let mut kf1 = KalmanFilter::<f64>::new(1, 1);
-        kf1.x = vec![0.0];
-        kf1.P = vec![1.0];
-        kf1.F = vec![1.0];
-        kf1.H = vec![1.0];
-        kf1.Q = vec![0.0];
-        kf1.R = vec![100.0]; // High measurement noise
+        // High measurement noise
+        let mut kf1 =
+            KalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[100.0]).unwrap();
 
-        kf1.predict();
+        kf1.predict().unwrap();
         kf1.update(&vec![10.0]).unwrap();
 
         // Test 2: Low measurement noise -> trust measurement more
-        let mut kf2 = KalmanFilter::<f64>::new(1, 1);
-        kf2.x = vec![0.0];
-        kf2.P = vec![1.0];
-        kf2.F = vec![1.0];
-        kf2.H = vec![1.0];
-        kf2.Q = vec![0.0];
-        kf2.R = vec![0.01]; // Low measurement noise
+        // Low measurement noise
+        let mut kf2 =
+            KalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[0.01]).unwrap();
 
-        kf2.predict();
+        kf2.predict().unwrap();
         kf2.update(&vec![10.0]).unwrap();
 
         // kf2 should be much closer to measurement (10.0) than kf1
         assert!(
-            kf2.x[0] > kf1.x[0],
+            kf2.x[0] > kf1.state()[0],
             "Low R filter should trust measurement more: kf1={}, kf2={}",
-            kf1.x[0],
+            kf1.state()[0],
             kf2.x[0]
         );
         assert!(
@@ -224,22 +219,17 @@ mod kf_tests {
             kf2.x[0]
         );
         assert!(
-            kf1.x[0] < 2.0,
+            kf1.state()[0] < 2.0,
             "High R filter should stay near prior: {}",
-            kf1.x[0]
+            kf1.state()[0]
         );
     }
 
     /// Test: Innovation sequence should be zero-mean and bounded for well-tuned filter
     #[test]
     fn test_innovation_statistics() {
-        let mut kf = KalmanFilter::<f64>::new(1, 1);
-        kf.x = vec![5.0];
-        kf.P = vec![1.0];
-        kf.F = vec![1.0];
-        kf.H = vec![1.0];
-        kf.Q = vec![0.01];
-        kf.R = vec![0.5];
+        let mut kf =
+            KalmanFilter::<f64>::new(1, 1, &[5.0], &[1.0], &[1.0], &[0.01], &[1.0], &[0.5]).unwrap();
 
         // Generate measurements with known noise
         let true_value = 5.0;
@@ -250,11 +240,11 @@ mod kf_tests {
         let mut innovations = Vec::new();
 
         for noise in &noise_values {
-            kf.predict();
+            kf.predict().unwrap();
             let measurement = true_value + noise;
 
             // Innovation = measurement - predicted measurement
-            let innovation = measurement - kf.x[0];
+            let innovation = measurement - kf.state()[0];
             innovations.push(innovation);
 
             kf.update(&vec![measurement]).unwrap();
@@ -282,22 +272,26 @@ mod kf_tests {
     /// Test: Covariance should reach steady-state for time-invariant system
     #[test]
     fn test_covariance_steady_state() {
-        let mut kf = KalmanFilter::<f64>::new(2, 1);
-        kf.x = vec![0.0, 0.0];
-        kf.P = vec![100.0, 0.0, 0.0, 100.0]; // Start very uncertain
-        kf.F = vec![1.0, 0.1, 0.0, 1.0];
-        kf.H = vec![1.0, 0.0];
-        kf.Q = vec![0.1, 0.0, 0.0, 0.1];
-        kf.R = vec![1.0];
+        let mut kf = KalmanFilter::<f64>::new(
+            2,
+            1,
+            &[0.0, 0.0],
+            &[100.0, 0.0, 0.0, 100.0], // Start very uncertain
+            &[1.0, 0.1, 0.0, 1.0],
+            &[0.1, 0.0, 0.0, 0.1],
+            &[1.0, 0.0],
+            &[1.0],
+        )
+        .unwrap();
 
         let mut prev_trace = f64::MAX;
         let mut converged = false;
 
         for i in 0..500 {
-            kf.predict();
+            kf.predict().unwrap();
             kf.update(&vec![0.0]).unwrap();
 
-            let trace = kf.P[0] + kf.P[3];
+            let trace = kf.covariance()[0] + kf.covariance()[3];
 
             if i > 50 && (trace - prev_trace).abs() < 1e-8 {
                 converged = true;
@@ -313,51 +307,54 @@ mod kf_tests {
         );
 
         // Steady-state covariance should be positive definite and bounded
-        assert!(kf.P[0] > 0.0 && kf.P[0] < 10.0);
-        assert!(kf.P[3] > 0.0 && kf.P[3] < 10.0);
+        assert!(kf.covariance()[0] > 0.0 && kf.covariance()[0] < 10.0);
+        assert!(kf.covariance()[3] > 0.0 && kf.covariance()[3] < 10.0);
     }
 
     /// Test: Unobservable states should maintain/grow uncertainty
     #[test]
     fn test_observability_effect() {
-        let mut kf = KalmanFilter::<f64>::new(3, 1);
-
         // State: [x, y, z], observe only x
-        kf.x = vec![0.0, 5.0, 10.0];
-        kf.P = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        kf.F = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        kf.H = vec![1.0, 0.0, 0.0]; // Only observe x
-        kf.Q = vec![0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.01];
-        kf.R = vec![0.1];
+        let mut kf = KalmanFilter::<f64>::new(
+            3,
+            1,
+            &[0.0, 5.0, 10.0],
+            &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            &[0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.01],
+            &[1.0, 0.0, 0.0], // Only observe x
+            &[0.1],
+        )
+        .unwrap();
 
-        let initial_p_x = kf.P[0];
-        let initial_p_y = kf.P[4];
-        let initial_p_z = kf.P[8];
+        let initial_p_x = kf.covariance()[0];
+        let initial_p_y = kf.covariance()[4];
+        let initial_p_z = kf.covariance()[8];
 
         for _ in 0..50 {
-            kf.predict();
+            kf.predict().unwrap();
             kf.update(&vec![0.0]).unwrap();
         }
 
         // x (observed) should have decreased uncertainty
         assert!(
-            kf.P[0] < initial_p_x,
+            kf.covariance()[0] < initial_p_x,
             "Observable state uncertainty should decrease: {} >= {}",
-            kf.P[0],
+            kf.covariance()[0],
             initial_p_x
         );
 
         // y and z (unobserved) should have increased uncertainty due to Q
         assert!(
-            kf.P[4] > initial_p_y,
+            kf.covariance()[4] > initial_p_y,
             "Unobservable state y uncertainty should grow: {} <= {}",
-            kf.P[4],
+            kf.covariance()[4],
             initial_p_y
         );
         assert!(
-            kf.P[8] > initial_p_z,
+            kf.covariance()[8] > initial_p_z,
             "Unobservable state z uncertainty should grow: {} <= {}",
-            kf.P[8],
+            kf.covariance()[8],
             initial_p_z
         );
     }
@@ -365,28 +362,31 @@ mod kf_tests {
     /// Test: Filter should handle measurement gaps gracefully
     #[test]
     fn test_measurement_gaps() {
-        let mut kf = KalmanFilter::<f64>::new(2, 1);
         let dt = 0.1;
-
-        kf.x = vec![0.0, 1.0]; // Moving at velocity 1
-        kf.P = vec![0.1, 0.0, 0.0, 0.1];
-        kf.F = vec![1.0, dt, 0.0, 1.0];
-        kf.H = vec![1.0, 0.0];
-        kf.Q = vec![0.001, 0.0, 0.0, 0.001];
-        kf.R = vec![0.1];
+        let mut kf = KalmanFilter::<f64>::new(
+            2,
+            1,
+            &[0.0, 1.0], // Moving at velocity 1
+            &[0.1, 0.0, 0.0, 0.1],
+            &[1.0, dt, 0.0, 1.0],
+            &[0.001, 0.0, 0.0, 0.001],
+            &[1.0, 0.0],
+            &[0.1],
+        )
+        .unwrap();
 
         // Normal operation for 10 steps
         for i in 1..=10 {
-            kf.predict();
+            kf.predict().unwrap();
             kf.update(&vec![i as f64 * dt]).unwrap();
         }
-        let p_before_gap = kf.P[0];
+        let p_before_gap = kf.covariance()[0];
 
         // Gap: predict without update for 10 steps
         for _ in 0..10 {
-            kf.predict();
+            kf.predict().unwrap();
         }
-        let p_after_gap = kf.P[0];
+        let p_after_gap = kf.covariance()[0];
 
         // Uncertainty should grow during gap
         assert!(
@@ -398,10 +398,10 @@ mod kf_tests {
 
         // Resume measurements - uncertainty should decrease
         for i in 21..=30 {
-            kf.predict();
+            kf.predict().unwrap();
             kf.update(&vec![i as f64 * dt]).unwrap();
         }
-        let p_after_resume = kf.P[0];
+        let p_after_resume = kf.covariance()[0];
 
         assert!(
             p_after_resume < p_after_gap,
@@ -1052,13 +1052,17 @@ mod cross_validation {
         let r = vec![0.1];
 
         // Standard KF
-        let mut kf = KalmanFilter::<f64>::new(2, 1);
-        kf.x = init_state.clone();
-        kf.P = init_cov.clone();
-        kf.F = vec![1.0, dt, 0.0, 1.0];
-        kf.Q = q.clone();
-        kf.H = vec![1.0, 0.0];
-        kf.R = r.clone();
+        let mut kf = KalmanFilter::<f64>::new(
+            2,
+            1,
+            &init_state,
+            &init_cov,
+            &[1.0, dt, 0.0, 1.0],
+            &q,
+            &[1.0, 0.0],
+            &r,
+        )
+        .unwrap();
 
         // EKF
         let mut ekf = ExtendedKalmanFilterBuilder::new(LinearSystem)
@@ -1084,7 +1088,7 @@ mod cross_validation {
         let measurements = vec![0.1, 0.2, 0.3, 0.4, 0.5];
 
         for z in measurements {
-            kf.predict();
+            kf.predict().unwrap();
             ekf.predict();
             ukf.predict().unwrap();
 

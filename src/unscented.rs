@@ -49,7 +49,6 @@
 //! ```
 #![allow(unused)]
 
-use crate::filter::KalmanFilter;
 use crate::logging::{
     check_numerical_stability, format_innovation, format_matrix, format_state,
     log_filter_dimensions, state_norm,
@@ -505,7 +504,7 @@ where
         }
 
         // Compute Kalman gain K = Pxz * S^-1
-        let S_inv = KalmanFilter::<T>::invert_matrix(&S, m)?;
+        let S_inv = crate::matrix::invert(&S, m)?;
         let mut K = vec![T::zero(); n * m];
         for i in 0..n {
             for j in 0..m {

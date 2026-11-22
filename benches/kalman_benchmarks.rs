@@ -1,12 +1,12 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use kalman_filters::{
-    CubatureKalmanFilter, EnsembleKalmanFilter, ExtendedKalmanFilter, KalmanFilterBuilder,
-    NonlinearSystem, ParticleFilter, UnscentedKalmanFilter, information::InformationFilter,
+    CubatureKalmanFilter, EnsembleKalmanFilter, ExtendedKalmanFilter, NonlinearSystem,
+    ParticleFilter, UnscentedKalmanFilter, information::InformationFilter,
 };
 use std::hint::black_box;
 use std::time::Duration;
 
-use kalman_filters::{KalmanFilterTrait, UnifiedKalmanFilter};
+use kalman_filters::linear::LinearKalmanFilter;
 
 // ============================================================================
 // CORE OPERATIONS BENCHMARKS
@@ -31,7 +31,7 @@ fn bench_kalman_filter_operations(c: &mut Criterion) {
         // Benchmark predict step
         group.bench_with_input(BenchmarkId::new("predict", dim), &dim, |b, _| {
             b.iter(|| {
-                black_box(kf.predict());
+                black_box(kf.predict()).unwrap();
             });
         });
 
@@ -48,7 +48,7 @@ fn bench_kalman_filter_operations(c: &mut Criterion) {
             &dim,
             |b, _| {
                 b.iter(|| {
-                    kf.predict();
+                    kf.predict().unwrap();
                     black_box(kf.update(black_box(&measurement)).unwrap());
                 });
             },
@@ -102,7 +102,7 @@ fn bench_filter_variants(c: &mut Criterion) {
     let mut kf = create_test_kalman_filter(state_dim, measurement_dim);
     group.bench_function("kalman_filters", |b| {
         b.iter(|| {
-            kf.predict();
+            kf.predict().unwrap();
             black_box(kf.update(black_box(&measurement)).unwrap());
         });
     });
@@ -263,7 +263,7 @@ fn bench_dimension_scaling(c: &mut Criterion) {
             &dim,
             |b, _| {
                 b.iter(|| {
-                    black_box(kf.predict());
+                    black_box(kf.predict()).unwrap();
                 });
             },
         );
@@ -463,7 +463,7 @@ fn bench_memory_allocations(c: &mut Criterion) {
         let mut kf_predict = create_test_kalman_filter(dim, dim / 2);
         group.bench_with_input(BenchmarkId::new("predict_allocations", dim), &dim, |b, _| {
             b.iter(|| {
-                black_box(kf_predict.predict());
+                black_box(kf_predict.predict()).unwrap();
             });
         });
 
@@ -498,7 +498,7 @@ fn bench_memory_stability(c: &mut Criterion) {
             let measurement = vec![1.0; measurement_dim];
 
             for _ in 0..10000 {
-                kf.predict();
+                kf.predict().unwrap();
                 black_box(kf.update(black_box(&measurement)).unwrap());
             }
         });
@@ -649,7 +649,7 @@ fn bench_real_world_scenarios(c: &mut Criterion) {
 
     group.bench_function("imu_fusion_6dof", |b| {
         b.iter(|| {
-            imu_filter.predict();
+            imu_filter.predict().unwrap();
             black_box(imu_filter.update(black_box(&imu_measurement)).unwrap());
         });
     });
@@ -660,7 +660,7 @@ fn bench_real_world_scenarios(c: &mut Criterion) {
 
     group.bench_function("gps_tracking_4d", |b| {
         b.iter(|| {
-            gps_filter.predict();
+            gps_filter.predict().unwrap();
             black_box(gps_filter.update(black_box(&gps_measurement)).unwrap());
         });
     });
@@ -671,7 +671,7 @@ fn bench_real_world_scenarios(c: &mut Criterion) {
 
     group.bench_function("radar_tracking_6d", |b| {
         b.iter(|| {
-            radar_filter.predict();
+            radar_filter.predict().unwrap();
             black_box(radar_filter.update(black_box(&radar_measurement)).unwrap());
         });
     });
@@ -703,7 +703,7 @@ fn bench_precision_comparison(c: &mut Criterion) {
     let mut kf_f32 = create_test_kalman_filter_f32(state_dim, measurement_dim);
     group.bench_function("f32_precision", |b| {
         b.iter(|| {
-            kf_f32.predict();
+            kf_f32.predict().unwrap();
             black_box(kf_f32.update(black_box(&measurement_f32)).unwrap());
         });
     });
@@ -712,7 +712,7 @@ fn bench_precision_comparison(c: &mut Criterion) {
     let mut kf_f64 = create_test_kalman_filter(state_dim, measurement_dim);
     group.bench_function("f64_precision", |b| {
         b.iter(|| {
-            kf_f64.predict();
+            kf_f64.predict().unwrap();
             black_box(kf_f64.update(black_box(&measurement_f64)).unwrap());
         });
     });
@@ -727,31 +727,35 @@ fn bench_precision_comparison(c: &mut Criterion) {
 fn create_test_kalman_filter(
     state_dim: usize,
     measurement_dim: usize,
-) -> UnifiedKalmanFilter<f64> {
-    KalmanFilterBuilder::new(state_dim, measurement_dim)
-        .initial_state(vec![0.0; state_dim])
-        .initial_covariance(create_identity_matrix(state_dim))
-        .transition_matrix(create_identity_matrix(state_dim))
-        .process_noise(create_scaled_identity_matrix(state_dim, 0.01))
-        .observation_matrix(create_observation_matrix(measurement_dim, state_dim))
-        .measurement_noise(create_scaled_identity_matrix(measurement_dim, 0.1))
-        .build()
-        .unwrap()
+) -> LinearKalmanFilter<f64> {
+    LinearKalmanFilter::new(
+        state_dim,
+        measurement_dim,
+        &vec![0.0; state_dim],
+        &create_identity_matrix(state_dim),
+        &create_identity_matrix(state_dim),
+        &create_scaled_identity_matrix(state_dim, 0.01),
+        &create_observation_matrix(measurement_dim, state_dim),
+        &create_scaled_identity_matrix(measurement_dim, 0.1),
+    )
+    .unwrap()
 }
 
 fn create_test_kalman_filter_f32(
     state_dim: usize,
     measurement_dim: usize,
-) -> UnifiedKalmanFilter<f32> {
-    KalmanFilterBuilder::new(state_dim, measurement_dim)
-        .initial_state(vec![0.0f32; state_dim])
-        .initial_covariance(create_identity_matrix_f32(state_dim))
-        .transition_matrix(create_identity_matrix_f32(state_dim))
-        .process_noise(create_scaled_identity_matrix_f32(state_dim, 0.01))
-        .observation_matrix(create_observation_matrix_f32(measurement_dim, state_dim))
-        .measurement_noise(create_scaled_identity_matrix_f32(measurement_dim, 0.1))
-        .build()
-        .unwrap()
+) -> LinearKalmanFilter<f32> {
+    LinearKalmanFilter::new(
+        state_dim,
+        measurement_dim,
+        &vec![0.0f32; state_dim],
+        &create_identity_matrix_f32(state_dim),
+        &create_identity_matrix_f32(state_dim),
+        &create_scaled_identity_matrix_f32(state_dim, 0.01),
+        &create_observation_matrix_f32(measurement_dim, state_dim),
+        &create_scaled_identity_matrix_f32(measurement_dim, 0.1),
+    )
+    .unwrap()
 }
 
 fn create_identity_matrix(size: usize) -> Vec<f64> {

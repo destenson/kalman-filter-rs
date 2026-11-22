@@ -1,568 +1,291 @@
-//! Core Kalman filter implementation
-#![allow(unused)]
+//! The linear Kalman filter.
+//!
+//! Two layers:
+//!
+//! * **Core** (this module's private items): validated, immutable values — [`Model`]
+//!   (F, Q, H, R) and [`Estimate`] (x, P) — and the pure step functions [`predict`],
+//!   [`update`] and [`correct`]. A step reads a model and a prior estimate and writes
+//!   the posterior into a separate `out` estimate, or returns an error. It never
+//!   touches the prior, logs nothing and allocates nothing; the scratch it needs is
+//!   passed in as a [`Workspace`] whose contents mean nothing between calls.
+//! * **Shell** ([`linear::LinearKalmanFilter`]): owns one model, the current estimate,
+//!   a spare estimate and a workspace. It runs a step into the spare and swaps it in
+//!   only if the step succeeded, so a failed step leaves the filter unchanged by
+//!   construction. Logging lives here, around the math.
 
-use crate::logging::{
-    check_numerical_stability, format_innovation, format_matrix, format_state,
-    log_filter_dimensions, state_norm,
-};
-use crate::matrix::{DefaultBackend, MatrixDecomposition, MatrixOps};
-use crate::types::{KalmanError, KalmanResult, KalmanScalar};
-use crate::validation::{regularize_matrix, validate_covariance, validate_measurement_noise};
-use log::{debug, error, info, trace, warn};
-use num_traits::{One, Zero};
+use crate::error::{KalmanError, KalmanResult};
+use crate::matrix;
+use crate::types::KalmanScalar;
+use crate::validation;
+use num_traits::Float;
 
-#[cfg(feature = "nalgebra")]
-use nalgebra::{RealField, SMatrix, SVector};
+// ---------------------------------------------------------------------------
+// Core: values
+// ---------------------------------------------------------------------------
 
-/// Linear Kalman Filter with dynamic dimensions
+/// A validated linear model: x' = F x + w, z = H x + v, w ~ N(0, Q), v ~ N(0, R).
 ///
-/// Implements the standard Kalman filter equations:
-/// - Predict: x = F * x, P = F * P * F^T + Q
-/// - Update: y = z - H * x, S = H * P * H^T + R, K = P * H^T * S^-1
-///           x = x + K * y, P = (I - K * H) * P
-///
-/// Where:
-/// - x: State vector
-/// - P: State covariance matrix
-/// - F: State transition matrix
-/// - Q: Process noise covariance
-/// - H: Observation matrix
-/// - R: Measurement noise covariance
-/// - z: Measurement vector
-pub struct KalmanFilter<T>
-where
-    T: KalmanScalar,
-{
-    /// State dimension
-    pub state_dim: usize,
-    /// Measurement dimension
-    pub measurement_dim: usize,
-    /// State vector (N x 1)
-    pub x: Vec<T>,
-    /// State covariance matrix (N x N) - row major
-    pub P: Vec<T>,
-    /// State transition matrix (N x N) - row major
-    pub F: Vec<T>,
-    /// Process noise covariance (N x N) - row major
-    pub Q: Vec<T>,
-    /// Observation matrix (M x N) - row major
-    pub H: Vec<T>,
-    /// Measurement noise covariance (M x M) - row major
-    pub R: Vec<T>,
+/// Invariants (established by [`Model::new`], immutable afterwards): n, m ≥ 1; all
+/// matrices have the right length and finite entries; Q and R are symmetric PSD.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Model<T> {
+    n: usize,
+    m: usize,
+    f: Vec<T>,
+    q: Vec<T>,
+    h: Vec<T>,
+    r: Vec<T>,
 }
 
-impl<T> KalmanFilter<T>
-where
-    T: KalmanScalar,
-{
-    /// Create a new Kalman filter with given dimensions
-    pub fn new(state_dim: usize, measurement_dim: usize) -> Self {
-        let n = state_dim;
-        let m = measurement_dim;
-
-        Self {
-            state_dim: n,
-            measurement_dim: m,
-            x: vec![T::zero(); n],
-            P: vec![T::zero(); n * n],
-            F: vec![T::zero(); n * n],
-            Q: vec![T::zero(); n * n],
-            H: vec![T::zero(); m * n],
-            R: vec![T::zero(); m * m],
-        }
+impl<T: KalmanScalar> Model<T> {
+    /// Validates and copies the model matrices (row-major: f, q n×n; h m×n; r m×m).
+    pub(crate) fn new(n: usize, m: usize, f: &[T], q: &[T], h: &[T], r: &[T]) -> KalmanResult<Self> {
+        validation::dimensions(n, m)?;
+        validation::matrix("f", f, n, n)?;
+        validation::matrix("q", q, n, n)?;
+        validation::matrix("h", h, m, n)?;
+        validation::matrix("r", r, m, m)?;
+        validation::covariance(q, n, KalmanError::InvalidNoiseCovariance)?;
+        validation::covariance(r, m, KalmanError::InvalidNoiseCovariance)?;
+        Ok(Self { n, m, f: f.to_vec(), q: q.to_vec(), h: h.to_vec(), r: r.to_vec() })
     }
 
-    /// Initialize the filter with matrices
-    pub fn initialize(
-        state_dim: usize,
-        measurement_dim: usize,
-        initial_state: Vec<T>,
-        initial_covariance: Vec<T>,
-        transition_matrix: Vec<T>,
-        process_noise: Vec<T>,
-        observation_matrix: Vec<T>,
-        measurement_noise: Vec<T>,
-    ) -> KalmanResult<Self> {
-        let n = state_dim;
-        let m = measurement_dim;
+    pub(crate) fn state_dim(&self) -> usize {
+        self.n
+    }
+    pub(crate) fn measurement_dim(&self) -> usize {
+        self.m
+    }
+    pub(crate) fn f(&self) -> &[T] {
+        &self.f
+    }
+    pub(crate) fn q(&self) -> &[T] {
+        &self.q
+    }
+    pub(crate) fn h(&self) -> &[T] {
+        &self.h
+    }
+    pub(crate) fn r(&self) -> &[T] {
+        &self.r
+    }
+}
 
-        log_filter_dimensions(n, m, None);
+/// A Gaussian state estimate: mean x (n) and covariance P (n×n, row-major).
+///
+/// Invariant: finite, and P symmetric PSD (checked at construction, preserved by the
+/// step functions, which only ever produce finite symmetric Joseph-form covariances).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Estimate<T> {
+    x: Vec<T>,
+    p: Vec<T>,
+}
 
-        // Validate dimensions
-        if initial_state.len() != n {
-            error!(
-                "Initial state dimension mismatch: expected {}x1, got {}x1",
-                n,
-                initial_state.len()
-            );
-            return Err(KalmanError::DimensionMismatch {
-                expected: (n, 1),
-                actual: (initial_state.len(), 1),
-            });
-        }
-        if initial_covariance.len() != n * n {
-            error!(
-                "Initial covariance dimension mismatch: expected {}x{}, got len={}",
-                n,
-                n,
-                initial_covariance.len()
-            );
-            return Err(KalmanError::DimensionMismatch {
-                expected: (n, n),
-                actual: (initial_covariance.len() / n, n),
-            });
-        }
-        if transition_matrix.len() != n * n {
-            return Err(KalmanError::DimensionMismatch {
-                expected: (n, n),
-                actual: (transition_matrix.len() / n, n),
-            });
-        }
-        if process_noise.len() != n * n {
-            return Err(KalmanError::DimensionMismatch {
-                expected: (n, n),
-                actual: (process_noise.len() / n, n),
-            });
-        }
-        if observation_matrix.len() != m * n {
-            return Err(KalmanError::DimensionMismatch {
-                expected: (m, n),
-                actual: (observation_matrix.len() / n, n),
-            });
-        }
-        if measurement_noise.len() != m * m {
-            return Err(KalmanError::DimensionMismatch {
-                expected: (m, m),
-                actual: (measurement_noise.len() / m, m),
-            });
-        }
-
-        // Validate initial covariance
-        if let Err(e) = validate_covariance(&initial_covariance, n) {
-            warn!(
-                "Initial covariance validation failed: {:?}, attempting regularization",
-                e
-            );
-            // Don't regularize here, just warn - user should provide valid covariance
-        }
-
-        // Validate measurement noise
-        if let Err(e) = validate_measurement_noise(&measurement_noise, m) {
-            error!("Measurement noise validation failed: {:?}", e);
-            return Err(e);
-        }
-
-        // Check numerical stability of initial covariance
-        check_numerical_stability(&initial_covariance, n, "Initial covariance");
-
-        if log::log_enabled!(log::Level::Trace) {
-            trace!(
-                "Kalman filter initialized: {}",
-                format_state(&initial_state, "initial_state")
-            );
-            trace!(
-                "Initial covariance: {}",
-                format_matrix(&initial_covariance, n, n, "P0")
-            );
-            trace!(
-                "Process noise: {}",
-                format_matrix(&process_noise, n, n, "Q")
-            );
-        }
-
-        Ok(Self {
-            state_dim: n,
-            measurement_dim: m,
-            x: initial_state,
-            P: initial_covariance,
-            F: transition_matrix,
-            Q: process_noise,
-            H: observation_matrix,
-            R: measurement_noise,
-        })
+impl<T: KalmanScalar> Estimate<T> {
+    /// Validates and copies an initial estimate for an n-dimensional state.
+    pub(crate) fn new(n: usize, x: &[T], p: &[T]) -> KalmanResult<Self> {
+        validation::matrix("x0", x, n, 1)?;
+        validation::matrix("p0", p, n, n)?;
+        validation::covariance(p, n, KalmanError::InvalidCovariance)?;
+        Ok(Self { x: x.to_vec(), p: p.to_vec() })
     }
 
-    /// Predict step: propagate state and covariance forward
-    pub fn predict(&mut self) {
-        let n = self.state_dim;
-
-        if log::log_enabled!(log::Level::Trace) {
-            trace!("Predict step: state_norm={:.6}", state_norm(&self.x));
-            trace!("Before predict: {}", format_state(&self.x, "x"));
-        }
-
-        #[cfg(feature = "prometheus-metrics")]
-        let _timer = crate::metrics::MetricsTimer::start();
-
-        // x = F * x (using optimized matrix-vector multiplication)
-        let mut new_x = vec![T::zero(); n];
-        DefaultBackend::matvec(&self.F, &self.x, &mut new_x, n, n);
-        self.x = new_x;
-
-        // P = F * P * F^T + Q
-        // First compute F * P
-        let mut fp = vec![T::zero(); n * n];
-        DefaultBackend::matmul(&self.F, &self.P, &mut fp, n, n, n);
-
-        // Then compute (F * P) * F^T
-        let mut fpf_t = vec![T::zero(); n * n];
-        DefaultBackend::matmul_transpose(&fp, &self.F, &mut fpf_t, n, n, n);
-
-        // Add Q: P = F * P * F^T + Q
-        DefaultBackend::add_inplace(&mut fpf_t, &self.Q, n * n);
-        self.P = fpf_t;
-
-        check_numerical_stability(&self.P, n, "Predicted covariance");
-
-        #[cfg(feature = "prometheus-metrics")]
-        {
-            _timer.finish_predict("kf");
-            crate::metrics::record_prediction("kf");
-            crate::metrics::set_state_dimension("kf", n);
-
-            // Calculate and record covariance trace
-            let trace: f64 = (0..n)
-                .map(|i| KalmanScalar::to_f64(&self.P[i * n + i]))
-                .sum();
-            crate::metrics::set_covariance_trace("kf", trace);
-        }
-
-        if log::log_enabled!(log::Level::Trace) {
-            trace!("Predict complete: state_norm={:.6}", state_norm(&self.x));
-        }
-    }
-
-    /// Update step: incorporate measurement to correct state estimate
-    pub fn update(&mut self, measurement: &[T]) -> KalmanResult<()> {
-        let n = self.state_dim;
-        let m = self.measurement_dim;
-
-        if log::log_enabled!(log::Level::Trace) {
-            trace!(
-                "Update step: measurement_norm={:.6}",
-                state_norm(measurement)
-            );
-        }
-
-        #[cfg(feature = "prometheus-metrics")]
-        let _timer = crate::metrics::MetricsTimer::start();
-
-        if measurement.len() != m {
-            error!(
-                "Measurement dimension mismatch: expected {}, got {}",
-                m,
-                measurement.len()
-            );
-            #[cfg(feature = "prometheus-metrics")]
-            crate::metrics::record_error("kf", "dimension_mismatch");
-            return Err(KalmanError::DimensionMismatch {
-                expected: (m, 1),
-                actual: (measurement.len(), 1),
-            });
-        }
-
-        // Innovation: y = z - H * x (using optimized matrix-vector multiplication)
-        let mut hx = vec![T::zero(); m];
-        DefaultBackend::matvec(&self.H, &self.x, &mut hx, m, n);
-        let mut y = measurement.to_vec();
-        for i in 0..m {
-            y[i] = y[i] - hx[i];
-        }
-
-        if log::log_enabled!(log::Level::Trace) {
-            trace!("Innovation: {}", format_innovation(&y));
-        }
-
-        // Calculate innovation norm for metrics
-        #[cfg(feature = "prometheus-metrics")]
-        let innovation_norm = {
-            let mut norm_sq = T::zero();
-            for i in 0..m {
-                norm_sq = norm_sq + y[i] * y[i];
-            }
-            KalmanScalar::to_f64(&norm_sq.sqrt())
-        };
-
-        // Innovation covariance: S = H * P * H^T + R
-        // First compute H * P
-        let mut hp = vec![T::zero(); m * n];
-        DefaultBackend::matmul(&self.H, &self.P, &mut hp, m, n, n);
-
-        // Then compute S = (H * P) * H^T + R
-        let mut s = vec![T::zero(); m * m];
-        DefaultBackend::matmul_transpose(&hp, &self.H, &mut s, m, n, m);
-        DefaultBackend::add_inplace(&mut s, &self.R, m * m);
-
-        // Invert S (using optimized matrix inversion)
-        trace!("Computing innovation covariance inverse");
-        let mut s_inv = vec![T::zero(); m * m];
-        if let Err(e) = DefaultBackend::invert(&s, &mut s_inv, m) {
-            error!("Failed to invert innovation covariance: {:?}", e);
-            check_numerical_stability(&s, m, "Innovation covariance (singular)");
-            #[cfg(feature = "prometheus-metrics")]
-            crate::metrics::record_error("kf", "singular_matrix");
-            return Err(e);
-        }
-
-        // Kalman gain: K = P * H^T * S^-1
-        // First compute P * H^T
-        let mut ph_t = vec![T::zero(); n * m];
-        for i in 0..n {
-            for j in 0..m {
-                for k in 0..n {
-                    ph_t[i * m + j] = ph_t[i * m + j] + self.P[i * n + k] * self.H[j * n + k];
-                }
-            }
-        }
-
-        // Then compute K = (P * H^T) * S^-1
-        let mut k = vec![T::zero(); n * m];
-        DefaultBackend::matmul(&ph_t, &s_inv, &mut k, n, m, m);
-
-        // State update: x = x + K * y
-        let mut ky = vec![T::zero(); n];
-        DefaultBackend::matvec(&k, &y, &mut ky, n, m);
-        for i in 0..n {
-            self.x[i] = self.x[i] + ky[i];
-        }
-
-        // Covariance update: P = (I - K * H) * P
-        // First compute K * H
-        let mut kh = vec![T::zero(); n * n];
-        DefaultBackend::matmul(&k, &self.H, &mut kh, n, m, n);
-
-        // Compute I - K * H
-        let mut i_kh = vec![T::zero(); n * n];
-        for i in 0..n {
-            for j in 0..n {
-                i_kh[i * n + j] = if i == j { T::one() } else { T::zero() } - kh[i * n + j];
-            }
-        }
-
-        // Finally compute P = (I - K * H) * P
-        let mut new_p = vec![T::zero(); n * n];
-        DefaultBackend::matmul(&i_kh, &self.P, &mut new_p, n, n, n);
-
-        // Ensure symmetry (using optimized symmetrize operation)
-        DefaultBackend::symmetrize(&mut new_p, n);
-
-        self.P = new_p;
-
-        check_numerical_stability(&self.P, n, "Updated covariance");
-
-        if log::log_enabled!(log::Level::Trace) {
-            trace!("Update complete: state_norm={:.6}", state_norm(&self.x));
-        }
-
-        #[cfg(feature = "prometheus-metrics")]
-        {
-            _timer.finish_update("kf");
-            crate::metrics::record_update("kf");
-            crate::metrics::set_innovation_norm("kf", innovation_norm);
-
-            // Calculate and record covariance trace
-            let trace: f64 = (0..n)
-                .map(|i| KalmanScalar::to_f64(&self.P[i * n + i]))
-                .sum();
-            crate::metrics::set_covariance_trace("kf", trace);
-        }
-
-        Ok(())
-    }
-
-    /// Get current state estimate
-    pub fn state(&self) -> &[T] {
+    pub(crate) fn x(&self) -> &[T] {
         &self.x
     }
-
-    /// Get current state covariance
-    pub fn covariance(&self) -> &[T] {
-        &self.P
-    }
-
-    /// Simple matrix inversion using Gauss-Jordan elimination
-    pub(crate) fn invert_matrix(matrix: &[T], size: usize) -> KalmanResult<Vec<T>> {
-        #[cfg(feature = "prometheus-metrics")]
-        let _timer = crate::metrics::MetricsTimer::start();
-
-        let mut a = matrix.to_vec();
-        let mut inv = vec![T::zero(); size * size];
-
-        // Initialize inverse as identity matrix
-        for i in 0..size {
-            inv[i * size + i] = T::one();
-        }
-
-        // Gauss-Jordan elimination
-        for i in 0..size {
-            // Find pivot
-            let mut pivot = a[i * size + i];
-            if pivot.abs() < <T as KalmanScalar>::epsilon() {
-                // Find a non-zero element in the column
-                for j in i + 1..size {
-                    if a[j * size + i].abs() > <T as KalmanScalar>::epsilon() {
-                        // Swap rows
-                        for k in 0..size {
-                            a.swap(i * size + k, j * size + k);
-                            inv.swap(i * size + k, j * size + k);
-                        }
-                        pivot = a[i * size + i];
-                        break;
-                    }
-                }
-            }
-
-            if pivot.abs() < <T as KalmanScalar>::epsilon() {
-                warn!(
-                    "Matrix inversion failed: pivot {:.6e} at position ({}, {})",
-                    KalmanScalar::to_f64(&pivot),
-                    i,
-                    i
-                );
-                return Err(KalmanError::SingularMatrix);
-            }
-
-            // Scale row
-            for j in 0..size {
-                a[i * size + j] = a[i * size + j] / pivot;
-                inv[i * size + j] = inv[i * size + j] / pivot;
-            }
-
-            // Eliminate column
-            for j in 0..size {
-                if i != j {
-                    let factor = a[j * size + i];
-                    for k in 0..size {
-                        a[j * size + k] = a[j * size + k] - factor * a[i * size + k];
-                        inv[j * size + k] = inv[j * size + k] - factor * inv[i * size + k];
-                    }
-                }
-            }
-        }
-
-        #[cfg(feature = "prometheus-metrics")]
-        _timer.finish_matrix_inversion();
-
-        Ok(inv)
+    pub(crate) fn p(&self) -> &[T] {
+        &self.p
     }
 }
 
-/// Optimized Kalman filter implementation using static matrices from nalgebra
-///
-/// This provides compile-time dimension checking and better performance
-/// for filters with known dimensions at compile time.
-///
-/// Type parameters:
-/// - `T`: Scalar type (f32 or f64)
-/// - `M`: Measurement dimension
-/// - `N`: State dimension
-#[cfg(feature = "nalgebra")]
-pub struct StaticKalmanFilter<T, const M: usize, const N: usize>
-where
-    T: KalmanScalar + RealField,
-{
-    /// State vector (N x 1)
-    pub x: SVector<T, N>,
-    /// State covariance matrix (N x N)
-    pub P: SMatrix<T, N, N>,
-    /// State transition matrix (N x N)
-    pub F: SMatrix<T, N, N>,
-    /// Process noise covariance (N x N)
-    pub Q: SMatrix<T, N, N>,
-    /// Observation matrix (M x N)
-    pub H: SMatrix<T, M, N>,
-    /// Measurement noise covariance (M x M)
-    pub R: SMatrix<T, M, M>,
+/// Scratch buffers for one (n, m) pair, so the step functions need not allocate.
+/// Holds no information between calls.
+#[derive(Debug, Clone)]
+pub(crate) struct Workspace<T> {
+    fp: Vec<T>,  // n×n  F·P
+    a: Vec<T>,   // n×n  I − K·H
+    ap: Vec<T>,  // n×n  (I − K·H)·P
+    pht: Vec<T>, // n×m  P·Hᵀ
+    k: Vec<T>,   // n×m  gain
+    kr: Vec<T>,  // n×m  K·R
+    s: Vec<T>,   // m×m  innovation covariance
+    l: Vec<T>,   // m×m  Cholesky factor of S
+    y: Vec<T>,   // m    innovation
 }
 
-#[cfg(feature = "nalgebra")]
-impl<T, const M: usize, const N: usize> StaticKalmanFilter<T, M, N>
-where
-    T: KalmanScalar + RealField,
-{
-    /// Create a new Kalman filter with given parameters
-    pub fn new(
-        initial_state: SVector<T, N>,
-        initial_covariance: SMatrix<T, N, N>,
-        transition_matrix: SMatrix<T, N, N>,
-        process_noise: SMatrix<T, N, N>,
-        observation_matrix: SMatrix<T, M, N>,
-        measurement_noise: SMatrix<T, M, M>,
-    ) -> Self {
+impl<T: KalmanScalar> Workspace<T> {
+    pub(crate) fn new(n: usize, m: usize) -> Self {
+        let zeros = |len| vec![T::zero(); len];
         Self {
-            x: initial_state,
-            P: initial_covariance,
-            F: transition_matrix,
-            Q: process_noise,
-            H: observation_matrix,
-            R: measurement_noise,
+            fp: zeros(n * n),
+            a: zeros(n * n),
+            ap: zeros(n * n),
+            pht: zeros(n * m),
+            k: zeros(n * m),
+            kr: zeros(n * m),
+            s: zeros(m * m),
+            l: zeros(m * m),
+            y: zeros(m),
         }
-    }
-
-    /// Predict step: propagate state and covariance forward
-    pub fn predict(&mut self) {
-        // x = F * x
-        self.x = &self.F * &self.x;
-
-        // P = F * P * F^T + Q
-        self.P = &self.F * &self.P * self.F.transpose() + &self.Q;
-    }
-
-    /// Update step: incorporate measurement to correct state estimate
-    pub fn update(&mut self, measurement: &SVector<T, M>) -> KalmanResult<()> {
-        // Innovation: y = z - H * x
-        let y = measurement - &self.H * &self.x;
-
-        // Innovation covariance: S = H * P * H^T + R
-        let S = &self.H * &self.P * self.H.transpose() + &self.R;
-
-        // Check if S is invertible
-        let S_inv = S.try_inverse().ok_or(KalmanError::SingularMatrix)?;
-
-        // Kalman gain: K = P * H^T * S^-1
-        let K = &self.P * self.H.transpose() * S_inv;
-
-        // State update: x = x + K * y
-        self.x = &self.x + &K * y;
-
-        // Covariance update: P = (I - K * H) * P
-        let I = SMatrix::<T, N, N>::identity();
-        self.P = (I - &K * &self.H) * &self.P;
-
-        // Ensure symmetry and positive semi-definiteness
-        self.P = (&self.P + self.P.transpose()) * <T as KalmanScalar>::from_f64(0.5);
-
-        Ok(())
-    }
-
-    /// Get current state estimate
-    pub fn state(&self) -> &SVector<T, N> {
-        &self.x
-    }
-
-    /// Get current state covariance
-    pub fn covariance(&self) -> &SMatrix<T, N, N> {
-        &self.P
     }
 }
 
-/// Contract adapter for the new linear-filter interface defined in SPEC.md.
+// ---------------------------------------------------------------------------
+// Core: step functions
+// ---------------------------------------------------------------------------
+//
+// Contract shared by all steps: `prior` and `out` have the model's state dimension,
+// `ws` was made for the model's (n, m). On `Ok`, `out` holds a finite posterior with a
+// symmetric covariance. On `Err`, `out` holds garbage and must be discarded.
+
+/// Time update: x' = F x, P' = F P Fᵀ + Q.
 ///
-/// This is a thin mapping of the SPEC.md interface onto the *current*
-/// implementation (`KalmanFilter<T>`). It deliberately fixes nothing: the
-/// `spec_change_*` tests in `tests/spec_linear_kf.rs` are expected to fail on
-/// it. Tournament candidates replace this module.
+/// Errors: `FilterDivergence` if the result overflows to a non-finite value.
+pub(crate) fn predict<T: KalmanScalar>(
+    model: &Model<T>,
+    prior: &Estimate<T>,
+    ws: &mut Workspace<T>,
+    out: &mut Estimate<T>,
+) -> KalmanResult<()> {
+    let n = model.n;
+    matrix::mul_vec(&model.f, &prior.x, &mut out.x, n, n);
+    matrix::mul(&model.f, &prior.p, &mut ws.fp, n, n, n);
+    matrix::mul_bt(&ws.fp, &model.f, &mut out.p, n, n, n);
+    for (p, &q) in out.p.iter_mut().zip(&model.q) {
+        *p = *p + q;
+    }
+    matrix::symmetrize(&mut out.p, n);
+    require_finite(out, "predict overflowed to a non-finite estimate")
+}
+
+/// Measurement update with the model's H and R.
+///
+/// Errors: `DimensionMismatch` if `z.len() != m`; `InvalidInput` if `z` is not
+/// finite; otherwise those of [`correct`].
+pub(crate) fn update<T: KalmanScalar>(
+    model: &Model<T>,
+    prior: &Estimate<T>,
+    z: &[T],
+    ws: &mut Workspace<T>,
+    out: &mut Estimate<T>,
+) -> KalmanResult<()> {
+    let (n, m) = (model.n, model.m);
+    if z.len() != m {
+        return Err(KalmanError::DimensionMismatch { expected: (m, 1), actual: (z.len(), 1) });
+    }
+    validation::finite("z", z)?;
+    let mut y = core::mem::take(&mut ws.y);
+    matrix::mul_vec(&model.h, &prior.x, &mut y, m, n);
+    for (yi, &zi) in y.iter_mut().zip(z) {
+        *yi = zi - *yi;
+    }
+    let result = correct(prior, &model.h, &model.r, &y, ws, out);
+    ws.y = y;
+    result
+}
+
+/// Corrects `prior` with innovation `y` (= z − predicted measurement) through the
+/// linearization `h` (m×n) with noise `r` (m×m). Shared by every filter whose update is
+/// linear or linearized.
+///
+///   S = H P Hᵀ + R           solved through its Cholesky factor, never inverted
+///   K = P Hᵀ S⁻¹             row i of K solves S kᵢ = (P Hᵀ)ᵢ
+///   x' = x + K y
+///   P' = (I − K H) P (I − K H)ᵀ + K R Kᵀ     (Joseph form: PSD by construction)
+///
+/// Errors: `SingularMatrix` if S is singular relative to its own diagonal
+/// (scale- and unit-invariant); `FilterDivergence` if the result is non-finite.
+pub(crate) fn correct<T: KalmanScalar>(
+    prior: &Estimate<T>,
+    h: &[T],
+    r: &[T],
+    y: &[T],
+    ws: &mut Workspace<T>,
+    out: &mut Estimate<T>,
+) -> KalmanResult<()> {
+    let (n, m) = (prior.x.len(), y.len());
+    if !y.iter().all(|v| v.is_finite()) {
+        return Err(divergence("innovation overflowed to a non-finite value"));
+    }
+
+    // S = H (P Hᵀ) + R
+    matrix::mul_bt(&prior.p, h, &mut ws.pht, n, n, m);
+    matrix::mul(h, &ws.pht, &mut ws.s, m, n, m);
+    for (s, &ri) in ws.s.iter_mut().zip(r) {
+        *s = *s + ri;
+    }
+    matrix::cholesky(&ws.s, &mut ws.l, m, matrix::relative_tolerance(m))?;
+
+    // K = P Hᵀ S⁻¹, one row at a time (S is symmetric).
+    ws.k.copy_from_slice(&ws.pht);
+    for row in ws.k.chunks_exact_mut(m) {
+        matrix::cholesky_solve(&ws.l, m, row);
+    }
+
+    // x' = x + K y
+    matrix::mul_vec(&ws.k, y, &mut out.x, n, m);
+    for (xo, &xi) in out.x.iter_mut().zip(&prior.x) {
+        *xo = *xo + xi;
+    }
+
+    // P' = A P Aᵀ + K R Kᵀ, A = I − K H
+    matrix::mul(&ws.k, h, &mut ws.a, n, m, n);
+    for (idx, a) in ws.a.iter_mut().enumerate() {
+        let identity = if idx % (n + 1) == 0 { T::one() } else { T::zero() };
+        *a = identity - *a;
+    }
+    matrix::mul(&ws.a, &prior.p, &mut ws.ap, n, n, n);
+    matrix::mul_bt(&ws.ap, &ws.a, &mut out.p, n, n, n);
+    matrix::mul(&ws.k, r, &mut ws.kr, n, m, m);
+    matrix::add_mul_bt(&ws.kr, &ws.k, &mut out.p, n, m, n);
+    matrix::symmetrize(&mut out.p, n);
+
+    require_finite(out, "update produced a non-finite estimate")
+}
+
+fn require_finite<T: Float>(e: &Estimate<T>, what: &'static str) -> KalmanResult<()> {
+    if e.x.iter().chain(&e.p).all(|v| v.is_finite()) { Ok(()) } else { Err(divergence(what)) }
+}
+
+fn divergence(what: &str) -> KalmanError {
+    KalmanError::FilterDivergence(what.into())
+}
+
+// ---------------------------------------------------------------------------
+// Shell
+// ---------------------------------------------------------------------------
+
+/// The public linear Kalman filter (`kalman_filters::linear`).
 pub mod linear {
-    use super::KalmanFilter;
-    use crate::types::{KalmanResult, KalmanScalar};
+    use super::{Estimate, Model, Workspace};
+    use crate::error::KalmanResult;
+    use crate::types::KalmanScalar;
 
-    /// Linear Kalman filter (SPEC.md "Public interface").
+    /// A linear Kalman filter with dimensions fixed at construction.
+    ///
+    /// Construction validates everything once; afterwards the model is immutable and
+    /// the estimate changes only through [`predict`](Self::predict) and
+    /// [`update`](Self::update), each of which either succeeds or leaves the filter
+    /// exactly as it was. After construction neither step allocates.
+    #[derive(Debug, Clone)]
     pub struct LinearKalmanFilter<T: KalmanScalar> {
-        inner: KalmanFilter<T>,
+        model: Model<T>,
+        estimate: Estimate<T>,
+        spare: Estimate<T>,
+        ws: Workspace<T>,
     }
 
     impl<T: KalmanScalar> LinearKalmanFilter<T> {
-        /// Construct a filter. All matrices are row-major slices.
+        /// Builds a filter from dense row-major slices: `x0` n, `p0` n×n, `f` n×n,
+        /// `q` n×n, `h` m×n, `r` m×m.
+        ///
+        /// # Errors
+        /// * `InvalidInput` — a zero dimension, or a NaN/±∞ in any input;
+        /// * `DimensionMismatch` — a slice of the wrong length (including dimension
+        ///   products that overflow `usize`);
+        /// * `InvalidCovariance` — `p0` is not symmetric positive semi-definite;
+        /// * `InvalidNoiseCovariance` — `q` or `r` is not symmetric PSD.
+        ///
+        /// All PSD and symmetry tolerances are relative to each matrix's own scale.
         #[allow(clippy::too_many_arguments)]
         pub fn new(
             state_dim: usize,
@@ -574,592 +297,155 @@ pub mod linear {
             h: &[T],
             r: &[T],
         ) -> KalmanResult<Self> {
-            let inner = KalmanFilter::initialize(
-                state_dim,
-                measurement_dim,
-                x0.to_vec(),
-                p0.to_vec(),
-                f.to_vec(),
-                q.to_vec(),
-                h.to_vec(),
-                r.to_vec(),
-            )?;
-            Ok(Self { inner })
+            let model = Model::new(state_dim, measurement_dim, f, q, h, r)?;
+            let estimate = Estimate::new(state_dim, x0, p0)?;
+            Ok(Self {
+                spare: estimate.clone(),
+                ws: Workspace::new(state_dim, measurement_dim),
+                model,
+                estimate,
+            })
         }
 
         /// State dimension n.
         pub fn state_dim(&self) -> usize {
-            self.inner.state_dim
+            self.model.state_dim()
         }
 
         /// Measurement dimension m.
         pub fn measurement_dim(&self) -> usize {
-            self.inner.measurement_dim
+            self.model.measurement_dim()
         }
 
-        /// Time update.
+        /// Time update: x ← F x, P ← F P Fᵀ + Q.
+        ///
+        /// # Errors
+        /// `FilterDivergence` if the result would be non-finite; the filter is unchanged.
         pub fn predict(&mut self) -> KalmanResult<()> {
-            self.inner.predict();
-            Ok(())
+            let result = super::predict(&self.model, &self.estimate, &mut self.ws, &mut self.spare);
+            self.commit("predict", result)
         }
 
-        /// Measurement update.
+        /// Measurement update with measurement `z` (length m), Joseph form.
+        ///
+        /// # Errors
+        /// `DimensionMismatch` (wrong length), `InvalidInput` (non-finite `z`),
+        /// `SingularMatrix` (innovation covariance numerically singular),
+        /// `FilterDivergence` (non-finite result). On any error the filter is unchanged.
         pub fn update(&mut self, z: &[T]) -> KalmanResult<()> {
-            self.inner.update(z)
+            let result = super::update(&self.model, &self.estimate, z, &mut self.ws, &mut self.spare);
+            self.commit("update", result)
         }
 
-        /// Current state estimate (length n).
+        /// State estimate x (length n).
         pub fn state(&self) -> &[T] {
-            self.inner.state()
+            self.estimate.x()
         }
 
-        /// Current state covariance, n×n row-major.
+        /// State covariance P (n×n, row-major).
         pub fn covariance(&self) -> &[T] {
-            self.inner.covariance()
+            self.estimate.p()
+        }
+
+        /// The model matrices, for code that converts this filter to another form.
+        pub(crate) fn model(&self) -> &Model<T> {
+            &self.model
+        }
+
+        /// Adopts a successful step's result; reports (and logs) a failed one.
+        fn commit(&mut self, step: &str, result: KalmanResult<()>) -> KalmanResult<()> {
+            match result {
+                Ok(()) => {
+                    core::mem::swap(&mut self.estimate, &mut self.spare);
+                    Ok(())
+                }
+                Err(e) => {
+                    log::debug!("linear Kalman filter {step} rejected: {e}");
+                    Err(e)
+                }
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    //! The core is tested directly: values in, values out.
     use super::*;
 
-    #[test]
-    fn test_kalman_filter_1d() {
-        // Simple 1D constant position model
-        let mut kf = KalmanFilter::<f64>::initialize(
-            1,
-            1,
-            vec![0.0],   // initial state
-            vec![1.0],   // initial covariance
-            vec![1.0],   // F
-            vec![0.001], // Q
-            vec![1.0],   // H
-            vec![0.1],   // R
-        )
-        .unwrap();
+    fn model_1d(q: f64, r: f64) -> Model<f64> {
+        Model::new(1, 1, &[1.0], &[q], &[1.0], &[r]).unwrap()
+    }
 
-        // Predict
-        kf.predict();
-        assert!((kf.state()[0] - 0.0).abs() < 1e-10);
-
-        // Update with measurement
-        kf.update(&[1.0]).unwrap();
-
-        // State should have moved toward measurement
-        assert!(kf.state()[0] > 0.0);
-        assert!(kf.state()[0] < 1.0);
+    fn step_update(model: &Model<f64>, prior: &Estimate<f64>, z: &[f64]) -> KalmanResult<Estimate<f64>> {
+        let mut ws = Workspace::new(model.state_dim(), model.measurement_dim());
+        let mut out = prior.clone();
+        update(model, prior, z, &mut ws, &mut out).map(|()| out)
     }
 
     #[test]
-    fn test_kalman_filter_2d() {
-        // 2D position-velocity model
-        // State: [position, velocity]
-        let mut kf = KalmanFilter::<f64>::initialize(
-            2,
-            1,
-            vec![0.0, 0.0], // initial state
-            vec![
-                1.0, 0.0, // initial covariance
-                0.0, 1.0,
-            ],
-            vec![
-                1.0, 1.0, // F (dt = 1.0)
-                0.0, 1.0,
-            ],
-            vec![
-                0.001, 0.0, // Q
-                0.0, 0.001,
-            ],
-            vec![1.0, 0.0], // H (observe position only)
-            vec![0.1],      // R
-        )
-        .unwrap();
-
-        // Simulate multiple steps
-        for i in 1..=5 {
-            kf.predict();
-            kf.update(&[i as f64]).unwrap();
-        }
-
-        // After 5 steps with constant velocity, position should be around 5
-        assert!((kf.state()[0] - 5.0).abs() < 1.0);
-        // Velocity should be around 1
-        assert!((kf.state()[1] - 1.0).abs() < 0.5);
+    fn predict_is_f_x_and_f_p_ft_plus_q() {
+        let model = Model::new(2, 1, &[1.0, 0.1, 0.0, 1.0], &[0.01, 0.0, 0.0, 0.02], &[1.0, 0.0], &[0.1]).unwrap();
+        let prior = Estimate::new(2, &[1.0, 2.0], &[2.0, 0.5, 0.5, 1.0]).unwrap();
+        let mut out = prior.clone();
+        predict(&model, &prior, &mut Workspace::new(2, 1), &mut out).unwrap();
+        assert!(out.x().iter().zip([1.2, 2.0]).all(|(a, b)| (a - b).abs() < 1e-12));
+        assert!(out.p().iter().zip([2.12, 0.6, 0.6, 1.02]).all(|(a, b)| (a - b).abs() < 1e-12));
     }
 
     #[test]
-    fn test_matrix_inversion() {
-        // Test 2x2 matrix inversion
-        let matrix = vec![4.0, 7.0, 2.0, 6.0];
-        let inv = KalmanFilter::<f64>::invert_matrix(&matrix, 2).unwrap();
-
-        // Verify A * A^-1 = I
-        let mut product = vec![0.0; 4];
-        for i in 0..2 {
-            for j in 0..2 {
-                for k in 0..2 {
-                    product[i * 2 + j] += matrix[i * 2 + k] * inv[k * 2 + j];
-                }
-            }
-        }
-
-        // Check if product is identity
-        assert!((product[0] - 1.0).abs() < 1e-10);
-        assert!((product[1] - 0.0).abs() < 1e-10);
-        assert!((product[2] - 0.0).abs() < 1e-10);
-        assert!((product[3] - 1.0).abs() < 1e-10);
-    }
-
-    #[cfg(feature = "nalgebra")]
-    #[test]
-    fn test_static_kalman_filter_1d() {
-        // Simple 1D constant position model
-        let x = SVector::<f64, 1>::from([0.0]);
-        let P = SMatrix::<f64, 1, 1>::from([[1.0]]);
-        let F = SMatrix::<f64, 1, 1>::from([[1.0]]);
-        let Q = SMatrix::<f64, 1, 1>::from([[0.001]]);
-        let H = SMatrix::<f64, 1, 1>::from([[1.0]]);
-        let R = SMatrix::<f64, 1, 1>::from([[0.1]]);
-
-        let mut kf = StaticKalmanFilter::new(x, P, F, Q, H, R);
-
-        // Predict
-        kf.predict();
-        assert!((kf.state()[0] - 0.0).abs() < 1e-10);
-
-        // Update with measurement
-        let z = SVector::<f64, 1>::from([1.0]);
-        kf.update(&z).unwrap();
-
-        // State should have moved toward measurement
-        assert!(kf.state()[0] > 0.0);
-        assert!(kf.state()[0] < 1.0);
+    fn scalar_update_matches_closed_form_and_leaves_prior_alone() {
+        let prior = Estimate::new(1, &[0.0], &[1.0]).unwrap();
+        let post = step_update(&model_1d(0.0, 0.25), &prior, &[2.0]).unwrap();
+        assert!((post.x()[0] - 1.6).abs() < 1e-12);
+        assert!((post.p()[0] - 0.2).abs() < 1e-12);
+        assert_eq!(prior, Estimate::new(1, &[0.0], &[1.0]).unwrap());
     }
 
     #[test]
-    fn test_dimension_validation() {
-        // Test invalid dimensions are caught
-        let result = KalmanFilter::<f64>::initialize(
-            2,
-            1,
-            vec![0.0, 0.0], // state
-            vec![1.0],      // P wrong size (should be 2x2)
-            vec![1.0, 0.0, 0.0, 1.0],
-            vec![0.1, 0.0, 0.0, 0.1],
-            vec![1.0, 0.0],
-            vec![0.1],
-        );
-        assert!(result.is_err());
+    fn joseph_form_keeps_covariance_psd_where_the_simple_form_does_not() {
+        // K = P/(P+R) with P = 1e8, R = 1e-8: the simple form (1−K)P loses all digits;
+        // Joseph's (1−K)²P + K²R stays ≈ R.
+        let prior = Estimate::new(1, &[0.0], &[1e8]).unwrap();
+        let post = step_update(&model_1d(0.0, 1e-8), &prior, &[1.0]).unwrap();
+        let p = post.p()[0];
+        assert!(p > 0.0 && (p - 1e-8).abs() < 1e-12, "P = {p:e}");
     }
 
     #[test]
-    fn test_singular_matrix_detection() {
-        // Test that singular matrix is detected
-        let singular = vec![1.0, 2.0, 2.0, 4.0]; // Singular 2x2 matrix
-        let result = KalmanFilter::<f64>::invert_matrix(&singular, 2);
-        assert!(result.is_err());
-        match result {
-            Err(KalmanError::SingularMatrix) => (),
-            _ => panic!("Expected SingularMatrix error"),
-        }
+    fn singular_innovation_covariance_is_an_error_value() {
+        let model = Model::new(2, 2, &[1.0, 0.0, 0.0, 1.0], &[0.0; 4], &[1.0, 0.0, 0.0, 1.0], &[1.0; 4]).unwrap();
+        let prior = Estimate::new(2, &[0.0, 0.0], &[0.0; 4]).unwrap();
+        assert!(matches!(step_update(&model, &prior, &[1.0, 2.0]), Err(KalmanError::SingularMatrix)));
     }
 
     #[test]
-    fn test_predict_update_cycle() {
-        let mut kf = KalmanFilter::<f64>::new(2, 1);
-
-        // Initialize with identity matrices
-        kf.x = vec![0.0, 0.0];
-        kf.P = vec![1.0, 0.0, 0.0, 1.0];
-        kf.F = vec![1.0, 0.1, 0.0, 1.0]; // Simple motion model
-        kf.Q = vec![0.01, 0.0, 0.0, 0.01];
-        kf.H = vec![1.0, 0.0]; // Observe first state
-        kf.R = vec![0.1];
-
-        // Store initial covariance trace
-        let initial_trace = kf.P[0] + kf.P[3];
-
-        // Predict increases uncertainty
-        kf.predict();
-        let predict_trace = kf.P[0] + kf.P[3];
-        assert!(predict_trace > initial_trace);
-
-        // Update reduces uncertainty
-        let result = kf.update(&vec![0.5]);
-        assert!(result.is_ok());
-        let update_trace = kf.P[0] + kf.P[3];
-        assert!(update_trace < predict_trace);
+    fn bad_measurements_are_rejected() {
+        let prior = Estimate::new(1, &[0.0], &[1.0]).unwrap();
+        let model = model_1d(0.0, 1.0);
+        assert!(matches!(step_update(&model, &prior, &[]), Err(KalmanError::DimensionMismatch { .. })));
+        assert!(matches!(step_update(&model, &prior, &[f64::NAN]), Err(KalmanError::InvalidInput("z"))));
+        let far = Estimate::new(1, &[-1e308], &[1.0]).unwrap();
+        assert!(matches!(step_update(&model, &far, &[1e308]), Err(KalmanError::FilterDivergence(_))));
     }
 
     #[test]
-    fn test_multi_dimensional_state_estimation() {
-        // Test 3D position estimation with partial observability
-        // State: [x, y, z], but we only observe x and y
-        let mut kf = KalmanFilter::<f64>::new(3, 2);
-
-        kf.x = vec![0.0, 0.0, 0.0];
-        kf.P = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        kf.F = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        kf.Q = vec![0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.01];
-        // Observe only x and y
-        kf.H = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
-        kf.R = vec![0.1, 0.0, 0.0, 0.1];
-
-        // True state: x=5, y=3, z=7
-        for _ in 0..50 {
-            kf.predict();
-            kf.update(&vec![5.0, 3.0]).unwrap();
-        }
-
-        // Observable states should converge
-        assert!(
-            (kf.x[0] - 5.0).abs() < 0.5,
-            "x should converge. Got: {}",
-            kf.x[0]
-        );
-        assert!(
-            (kf.x[1] - 3.0).abs() < 0.5,
-            "y should converge. Got: {}",
-            kf.x[1]
-        );
-
-        // Unobservable state (z) should stay near initial with growing uncertainty
-        // z uncertainty should be larger than x,y uncertainty
-        let p_z = kf.P[8]; // P[2,2]
-        let p_x = kf.P[0]; // P[0,0]
-        assert!(
-            p_z > p_x,
-            "Unobserved state should have higher uncertainty. P_z: {}, P_x: {}",
-            p_z,
-            p_x
-        );
+    fn construction_validates_every_input() {
+        let ok = |q: &[f64], r: &[f64]| Model::new(1, 1, &[1.0], q, &[1.0], r);
+        assert!(ok(&[0.0], &[1e-300]).is_ok());
+        assert!(matches!(ok(&[-1.0], &[1.0]), Err(KalmanError::InvalidNoiseCovariance)));
+        assert!(matches!(ok(&[1.0], &[-1.0]), Err(KalmanError::InvalidNoiseCovariance)));
+        assert!(matches!(ok(&[f64::NAN], &[1.0]), Err(KalmanError::InvalidInput("q"))));
+        assert!(matches!(Estimate::new(1, &[0.0], &[-1.0]), Err(KalmanError::InvalidCovariance)));
+        assert!(matches!(Estimate::new(2, &[0.0], &[1.0]), Err(KalmanError::DimensionMismatch { .. })));
     }
 
     #[test]
-    fn test_process_noise_effect_on_tracking() {
-        // Higher process noise should allow faster adaptation to changes
-        let true_values = vec![0.0, 0.0, 0.0, 5.0, 5.0, 5.0, 5.0, 5.0]; // Jump at t=3
-
-        // Low process noise - slow to adapt
-        let mut kf_low_q = KalmanFilter::<f64>::new(1, 1);
-        kf_low_q.x = vec![0.0];
-        kf_low_q.P = vec![1.0];
-        kf_low_q.F = vec![1.0];
-        kf_low_q.Q = vec![0.001]; // Low process noise
-        kf_low_q.H = vec![1.0];
-        kf_low_q.R = vec![0.1];
-
-        // High process noise - adapts faster
-        let mut kf_high_q = KalmanFilter::<f64>::new(1, 1);
-        kf_high_q.x = vec![0.0];
-        kf_high_q.P = vec![1.0];
-        kf_high_q.F = vec![1.0];
-        kf_high_q.Q = vec![1.0]; // High process noise
-        kf_high_q.H = vec![1.0];
-        kf_high_q.R = vec![0.1];
-
-        for z in &true_values {
-            kf_low_q.predict();
-            kf_low_q.update(&vec![*z]).unwrap();
-
-            kf_high_q.predict();
-            kf_high_q.update(&vec![*z]).unwrap();
-        }
-
-        // After the jump, high Q filter should be closer to 5.0
-        let error_low = (kf_low_q.x[0] - 5.0).abs();
-        let error_high = (kf_high_q.x[0] - 5.0).abs();
-
-        assert!(
-            error_high < error_low,
-            "High Q should adapt faster. Low Q error: {}, High Q error: {}",
-            error_low,
-            error_high
-        );
-    }
-
-    // Test curation (SPEC.md): formerly `test_measurement_outlier_robustness`;
-    // it asserts the filter is NOT robust to outliers, so the name was inverted.
-    #[test]
-    fn test_measurement_outlier_pulls_estimate() {
-        // Standard KF is not robust to outliers - this test documents that behavior
-        // (A robust filter would need different handling)
-        let mut kf = KalmanFilter::<f64>::new(1, 1);
-        kf.x = vec![0.0];
-        kf.P = vec![0.1]; // Low uncertainty - we're confident
-        kf.F = vec![1.0];
-        kf.Q = vec![0.001];
-        kf.H = vec![1.0];
-        kf.R = vec![0.1];
-
-        // Normal measurements
-        for _ in 0..20 {
-            kf.predict();
-            kf.update(&vec![0.0]).unwrap();
-        }
-
-        let state_before_outlier = kf.x[0];
-
-        // Single outlier
-        kf.predict();
-        kf.update(&vec![100.0]).unwrap(); // Massive outlier
-
-        // KF will be pulled toward outlier (this is expected, not desired)
-        let state_after_outlier = kf.x[0];
-        assert!(
-            state_after_outlier > state_before_outlier + 1.0,
-            "KF should be affected by outlier. Before: {}, After: {}",
-            state_before_outlier,
-            state_after_outlier
-        );
-    }
-
-    #[test]
-    fn test_covariance_symmetry_maintained() {
-        // Covariance matrix must remain symmetric through all operations
-        let mut kf = KalmanFilter::<f64>::new(3, 2);
-
-        kf.x = vec![1.0, 2.0, 3.0];
-        kf.P = vec![1.0, 0.1, 0.2, 0.1, 2.0, 0.3, 0.2, 0.3, 3.0];
-        kf.F = vec![1.0, 0.1, 0.0, 0.0, 1.0, 0.1, 0.0, 0.0, 1.0];
-        kf.Q = vec![0.1, 0.01, 0.0, 0.01, 0.1, 0.01, 0.0, 0.01, 0.1];
-        kf.H = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
-        kf.R = vec![0.5, 0.0, 0.0, 0.5];
-
-        for _ in 0..20 {
-            kf.predict();
-            kf.update(&vec![1.0, 2.0]).unwrap();
-
-            // Check symmetry: P[i,j] == P[j,i]
-            let eps = 1e-10;
-            assert!(
-                (kf.P[1] - kf.P[3]).abs() < eps,
-                "P[0,1] != P[1,0]: {} vs {}",
-                kf.P[1],
-                kf.P[3]
-            );
-            assert!(
-                (kf.P[2] - kf.P[6]).abs() < eps,
-                "P[0,2] != P[2,0]: {} vs {}",
-                kf.P[2],
-                kf.P[6]
-            );
-            assert!(
-                (kf.P[5] - kf.P[7]).abs() < eps,
-                "P[1,2] != P[2,1]: {} vs {}",
-                kf.P[5],
-                kf.P[7]
-            );
-        }
-    }
-
-    #[test]
-    fn test_convergence() {
-        // Test that filter converges to true value with repeated measurements
-        let mut kf = KalmanFilter::<f64>::new(1, 1);
-        kf.x = vec![0.0];
-        kf.P = vec![100.0]; // High initial uncertainty
-        kf.F = vec![1.0];
-        kf.Q = vec![0.001];
-        kf.H = vec![1.0];
-        kf.R = vec![1.0];
-
-        let true_value = 5.0;
-
-        // Feed repeated measurements
-        for _ in 0..50 {
-            kf.predict();
-            kf.update(&vec![true_value]).unwrap();
-        }
-
-        // Should converge close to true value
-        assert!((kf.x[0] - true_value).abs() < 0.1);
-        // Uncertainty should be low
-        assert!(kf.P[0] < 1.0);
-    }
-
-    #[test]
-    fn test_kalman_gain_bounds() {
-        // Test that Kalman gain is bounded between 0 and 1 for scalar case
-        // K = P * H^T / (H * P * H^T + R)
-        // When R >> P: K -> 0 (trust prediction)
-        // When P >> R: K -> 1 (trust measurement)
-
-        // High measurement noise - should trust prediction
-        let mut kf_high_r = KalmanFilter::<f64>::new(1, 1);
-        kf_high_r.x = vec![0.0];
-        kf_high_r.P = vec![1.0];
-        kf_high_r.F = vec![1.0];
-        kf_high_r.Q = vec![0.0];
-        kf_high_r.H = vec![1.0];
-        kf_high_r.R = vec![100.0]; // Very high measurement noise
-
-        kf_high_r.predict();
-        let state_before = kf_high_r.x[0];
-        kf_high_r.update(&vec![10.0]).unwrap();
-
-        // Should barely move toward measurement
-        let movement = (kf_high_r.x[0] - state_before).abs();
-        assert!(
-            movement < 0.5,
-            "With high R, state should barely change. Moved: {}",
-            movement
-        );
-
-        // Low measurement noise - should trust measurement
-        let mut kf_low_r = KalmanFilter::<f64>::new(1, 1);
-        kf_low_r.x = vec![0.0];
-        kf_low_r.P = vec![100.0]; // High uncertainty in state
-        kf_low_r.F = vec![1.0];
-        kf_low_r.Q = vec![0.0];
-        kf_low_r.H = vec![1.0];
-        kf_low_r.R = vec![0.01]; // Very low measurement noise
-
-        kf_low_r.predict();
-        kf_low_r.update(&vec![10.0]).unwrap();
-
-        // Should move almost entirely to measurement
-        assert!(
-            (kf_low_r.x[0] - 10.0).abs() < 0.5,
-            "With low R, state should jump to measurement. Got: {}",
-            kf_low_r.x[0]
-        );
-    }
-
-    #[test]
-    fn test_innovation_sequence_properties() {
-        // The innovation (measurement residual) should have specific statistical properties
-        // For a well-tuned filter, innovations should be zero-mean and consistent with S
-
-        let mut kf = KalmanFilter::<f64>::new(1, 1);
-        kf.x = vec![5.0]; // True state is 5
-        kf.P = vec![1.0];
-        kf.F = vec![1.0];
-        kf.Q = vec![0.01];
-        kf.H = vec![1.0];
-        kf.R = vec![0.5];
-
-        // Simulate with measurements around true value
-        let measurements = vec![5.1, 4.9, 5.2, 4.8, 5.0, 5.1, 4.9, 5.0, 5.1, 4.9];
-        let mut innovations = Vec::new();
-
-        for z in &measurements {
-            kf.predict();
-            // Innovation = z - H*x (before update)
-            let innovation = z - kf.x[0];
-            innovations.push(innovation);
-            kf.update(&vec![*z]).unwrap();
-        }
-
-        // Mean of innovations should be close to zero
-        let mean: f64 = innovations.iter().sum::<f64>() / innovations.len() as f64;
-        assert!(
-            mean.abs() < 0.2,
-            "Innovation mean should be near zero. Got: {}",
-            mean
-        );
-
-        // Innovations should be bounded (no outliers for consistent measurements)
-        for (i, innov) in innovations.iter().enumerate() {
-            assert!(innov.abs() < 1.0, "Innovation {} too large: {}", i, innov);
-        }
-    }
-
-    #[test]
-    fn test_steady_state_gain_convergence() {
-        // For time-invariant systems, Kalman gain should converge to steady-state
-        let mut kf = KalmanFilter::<f64>::new(1, 1);
-        kf.x = vec![0.0];
-        kf.P = vec![10.0]; // Start with high uncertainty
-        kf.F = vec![1.0];
-        kf.Q = vec![0.1];
-        kf.H = vec![1.0];
-        kf.R = vec![1.0];
-
-        let mut prev_p = kf.P[0];
-        let mut converged = false;
-
-        for i in 0..100 {
-            kf.predict();
-            kf.update(&vec![0.0]).unwrap();
-
-            let p_change = (kf.P[0] - prev_p).abs();
-            if p_change < 1e-6 && i > 10 {
-                converged = true;
-                break;
-            }
-            prev_p = kf.P[0];
-        }
-
-        assert!(
-            converged,
-            "Covariance should converge to steady-state. Final P: {}",
-            kf.P[0]
-        );
-
-        // Steady-state covariance should satisfy algebraic Riccati equation
-        // For scalar: P_ss = (sqrt(Q*R) + Q) / (1 + sqrt(Q/R)) approximately
-        // More importantly, it should be bounded by Q and R
-        assert!(kf.P[0] > 0.0, "Steady-state P must be positive");
-        assert!(
-            kf.P[0] < 10.0,
-            "Steady-state P should be much less than initial"
-        );
-    }
-
-    #[test]
-    fn test_filter_recovers_from_bad_initialization() {
-        // Filter should eventually recover even with very wrong initial state
-        let true_value = 100.0;
-
-        let mut kf = KalmanFilter::<f64>::new(1, 1);
-        kf.x = vec![-1000.0]; // Wildly wrong initial estimate
-        kf.P = vec![1.0]; // But claiming high confidence (worst case)
-        kf.F = vec![1.0];
-        kf.Q = vec![1.0]; // Process noise allows adaptation
-        kf.H = vec![1.0];
-        kf.R = vec![1.0];
-
-        // Feed consistent measurements
-        for _ in 0..200 {
-            kf.predict();
-            kf.update(&vec![true_value]).unwrap();
-        }
-
-        // Should have recovered
-        let error = (kf.x[0] - true_value).abs();
-        assert!(
-            error < 5.0,
-            "Filter should recover from bad init. Error: {}, State: {}",
-            error,
-            kf.x[0]
-        );
-    }
-
-    // Test curation (SPEC.md): formerly `test_joseph_form`. The name lied: the
-    // implementation uses the simple form P = (I - KH)P, and these assertions
-    // (P > 0, P shrinks) hold for the simple form too, so the test could not
-    // fail. Joseph-form-level stability is now specified by
-    // tests/spec_linear_kf.rs::spec_change_covariance_stays_psd_ill_conditioned_*.
-    #[test]
-    fn test_scalar_update_shrinks_covariance() {
-        let mut kf = KalmanFilter::<f64>::new(1, 1);
-        kf.x = vec![0.0];
-        kf.P = vec![1.0];
-        kf.F = vec![1.0];
-        kf.Q = vec![0.1];
-        kf.H = vec![1.0];
-        kf.R = vec![1.0];
-
-        kf.predict();
-        let p_before = kf.P[0];
-
-        kf.update(&vec![1.0]).unwrap();
-
-        // Covariance should remain positive
-        assert!(kf.P[0] > 0.0);
-        // Covariance should decrease after update
-        assert!(kf.P[0] < p_before);
+    fn shell_commits_only_successful_steps() {
+        let mut kf = linear::LinearKalmanFilter::<f32>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[1.0]).unwrap();
+        assert!(kf.update(&[f32::NAN]).is_err());
+        assert_eq!((kf.state(), kf.covariance()), (&[0.0f32][..], &[1.0f32][..]));
+        kf.update(&[2.0]).unwrap();
+        assert_eq!((kf.state(), kf.covariance()), (&[1.0f32][..], &[0.5f32][..]));
     }
 }

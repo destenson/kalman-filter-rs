@@ -222,7 +222,7 @@ impl<T: KalmanScalar> SparseInformationFilter<T> {
 
         // Efficient sparse update using CSR format
         // Step 1: Compute R^-1 (typically small and dense)
-        let R_inv = crate::filter::KalmanFilter::<T>::invert_matrix(R, m)?;
+        let R_inv = crate::matrix::invert(R, m)?;
 
         // Step 2: Compute H^T·R^-1·z using sparse operations
         let Ht = H.transpose();
