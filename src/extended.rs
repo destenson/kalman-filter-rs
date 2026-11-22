@@ -57,12 +57,11 @@
 //! ```
 #![allow(unused)]
 
-use crate::filter::KalmanFilter;
 use crate::logging::{
     check_numerical_stability, format_innovation, format_matrix, format_state,
     log_filter_dimensions, state_norm,
 };
-use crate::matrix::{DefaultBackend, MatrixDecomposition, MatrixOps};
+use crate::matrix as DefaultBackend;
 use crate::types::{JacobianStrategy, KalmanError, KalmanResult, KalmanScalar, NonlinearSystem};
 use log::{debug, error, info, trace, warn};
 use num_traits::{One, Zero};
@@ -355,12 +354,14 @@ where
 
         // Invert S (using optimized matrix inversion)
         trace!("EKF: Computing innovation covariance inverse");
-        let mut s_inv = vec![T::zero(); m * m];
-        if let Err(e) = DefaultBackend::invert(&s, &mut s_inv, m) {
+        let s_inv = match DefaultBackend::invert_matrix(&s, m) {
+            Ok(s_inv) => s_inv,
+            Err(e) => {
             error!("EKF: Failed to invert innovation covariance: {:?}", e);
             check_numerical_stability(&s, m, "EKF innovation covariance (singular)");
             return Err(e);
-        }
+            }
+        };
 
         // Kalman gain: K = P * H^T * S^-1
         // First compute P * H^T

@@ -1,311 +1,92 @@
-// Input validation and numerical stability utilities
-use crate::types::{KalmanError, KalmanResult, KalmanScalar};
+//! Construction-time checks on covariance matrices.
+//!
+//! The PSD test is invariant under any diagonal rescaling `A → D A D` (a change
+//! of units per component): the matrix is first scaled to unit diagonal (a
+//! correlation matrix), and every tolerance is relative to that unit scale.
+
+use crate::matrix::cholesky_in_place;
 use num_traits::Float;
 
-/// Minimum acceptable condition number for matrix operations
-const MIN_CONDITION_NUMBER: f64 = 1e-12;
+/// Relative tolerance used for symmetry and definiteness: `16 · n · ε`.
+fn rel_tol<T: Float>(n: usize) -> T {
+    T::epsilon() * T::from(16 * n).unwrap_or_else(T::max_value)
+}
 
-/// Regularization factor for near-singular matrices
-const REGULARIZATION_EPSILON: f64 = 1e-10;
-
-/// Validate that a covariance matrix is suitable for Kalman filter operations
-pub fn validate_covariance<T: KalmanScalar>(P: &[T], n: usize) -> KalmanResult<()> {
-    if P.len() != n * n {
-        return Err(KalmanError::DimensionMismatch {
-            expected: (n, n),
-            actual: (P.len(), 1),
-        });
+/// Is the `n × n` row-major matrix `a` finite, symmetric and positive
+/// semi-definite (singular allowed)? `work` must hold `n · n` elements; it is
+/// overwritten.
+///
+/// 1. Entries finite; diagonal ≥ 0.
+/// 2. Symmetry: `|a_ij − a_ji| ≤ tol · √(a_ii a_jj)`. A zero diagonal forces
+///    its row and column to be exactly zero (otherwise A cannot be PSD).
+/// 3. `C = D⁻¹ A D⁻¹` with `D = diag(√a_ii)` has unit diagonal; `C + tol·I`
+///    must admit a Cholesky factorisation. This accepts every PSD matrix
+///    (λ_min(C + tol·I) ≥ tol exceeds the rounding error of the factorisation)
+///    and rejects any matrix with λ_min(C) < −tol.
+pub(crate) fn is_psd<T: Float>(a: &[T], n: usize, work: &mut [T]) -> bool {
+    if a.len() != n * n || work.len() != n * n || !crate::matrix::all_finite(a) {
+        return false;
     }
-
-    // Check diagonal elements are positive
-    for i in 0..n {
-        let diag = P[i * n + i];
-        if diag < T::zero() {
-            return Err(KalmanError::InvalidCovariance);
-        }
-        if diag < T::from_f64(MIN_CONDITION_NUMBER) {
-            return Err(KalmanError::InvalidCovariance);
-        }
+    let tol = rel_tol::<T>(n);
+    let half = T::from(0.5).unwrap_or_else(T::zero);
+    let diag = |i: usize| a[i * n + i];
+    if (0..n).any(|i| diag(i) < T::zero()) {
+        return false;
     }
-
-    // Check symmetry
     for i in 0..n {
-        for j in i + 1..n {
-            let diff = (P[i * n + j] - P[j * n + i]).abs();
-            if diff > T::from_f64(1e-10) {
-                return Err(KalmanError::InvalidCovariance);
+        for j in 0..=i {
+            let (aij, aji) = (a[i * n + j], a[j * n + i]);
+            let (di, dj) = (diag(i).sqrt(), diag(j).sqrt());
+            if di == T::zero() || dj == T::zero() {
+                // PSD forces the whole row/column of a zero variance to vanish.
+                if aij != T::zero() || aji != T::zero() {
+                    return false;
+                }
+                // The component is decoupled; give it a unit pivot.
+                work[i * n + j] = if i == j { T::one() } else { T::zero() };
+                continue;
             }
+            // Divide stepwise so neither tiny nor huge variances under/overflow.
+            let (cij, cji) = (aij / di / dj, aji / di / dj);
+            let asym = (cij - cji).abs();
+            if asym.is_nan() || asym > tol {
+                return false;
+            }
+            work[i * n + j] = (cij + cji) * half + if i == j { tol } else { T::zero() };
         }
     }
-
-    Ok(())
-}
-
-/// Validate measurement noise matrix
-pub fn validate_measurement_noise<T: KalmanScalar>(R: &[T], m: usize) -> KalmanResult<()> {
-    if R.len() != m * m {
-        return Err(KalmanError::DimensionMismatch {
-            expected: (m, m),
-            actual: (R.len(), 1),
-        });
-    }
-
-    // Check diagonal elements are positive (measurement noise must be > 0)
-    for i in 0..m {
-        let diag = R[i * m + i];
-        if diag <= T::zero() {
-            return Err(KalmanError::InvalidNoiseCovariance);
-        }
-        if diag < T::from_f64(MIN_CONDITION_NUMBER) {
-            return Err(KalmanError::InvalidNoiseCovariance);
-        }
-    }
-
-    Ok(())
-}
-
-/// Regularize a nearly singular matrix by adding small values to diagonal
-pub fn regularize_matrix<T: KalmanScalar>(matrix: &mut [T], n: usize) {
-    let epsilon = T::from_f64(REGULARIZATION_EPSILON);
-    for i in 0..n {
-        matrix[i * n + i] = matrix[i * n + i] + epsilon;
-    }
-}
-
-/// Check if a value is numerically stable (not NaN or Inf)
-pub fn is_numerically_stable<T: KalmanScalar + Float>(value: T) -> bool {
-    !value.is_nan() && !value.is_infinite()
-}
-
-/// Validate state vector for numerical stability
-pub fn validate_state<T: KalmanScalar + Float>(state: &[T]) -> KalmanResult<()> {
-    for (i, &val) in state.iter().enumerate() {
-        if !is_numerically_stable(val) {
-            return Err(KalmanError::FilterDivergence(format!(
-                "State element {} is NaN or Inf",
-                i
-            )));
-        }
-    }
-    Ok(())
-}
-
-/// Compute condition number estimate (ratio of largest to smallest diagonal)
-/// This is a simplified estimate - full condition number requires eigenvalues
-pub fn estimate_condition_number<T: KalmanScalar>(matrix: &[T], n: usize) -> T {
-    let mut min_diag = matrix[0];
-    let mut max_diag = matrix[0];
-
-    for i in 1..n {
-        let diag = matrix[i * n + i];
-        if diag < min_diag {
-            min_diag = diag;
-        }
-        if diag > max_diag {
-            max_diag = diag;
-        }
-    }
-
-    if min_diag > T::zero() {
-        max_diag / min_diag
-    } else {
-        T::infinity()
-    }
+    // Only the lower triangle (just written) is read by the factorisation.
+    // Pivot test `d > 0`: the tolerance is already in the diagonal shift.
+    cholesky_in_place(work, n, T::zero()).is_ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_validate_covariance_valid() {
-        let p = vec![1.0, 0.0, 0.0, 1.0];
-        assert!(validate_covariance(&p, 2).is_ok());
+    fn psd(a: &[f64], n: usize) -> bool {
+        is_psd(a, n, &mut vec![0.0; n * n])
     }
 
     #[test]
-    fn test_validate_covariance_negative_diagonal() {
-        let p = vec![-1.0, 0.0, 0.0, 1.0];
-        assert!(validate_covariance(&p, 2).is_err());
-    }
-
-    #[test]
-    fn test_validate_covariance_not_symmetric() {
-        let p = vec![1.0, 2.0, 3.0, 1.0];
-        assert!(validate_covariance(&p, 2).is_err());
-    }
-
-    #[test]
-    fn test_regularize_matrix() {
-        let mut p = vec![0.0, 0.0, 0.0, 0.0];
-        regularize_matrix(&mut p, 2);
-        assert!(p[0] > 0.0);
-        assert!(p[3] > 0.0);
-    }
-
-    #[test]
-    fn test_condition_number() {
-        let p = vec![1.0, 0.0, 0.0, 100.0];
-        let cond = estimate_condition_number(&p, 2);
-        assert!((cond - 100.0).abs() < 1e-10);
-    }
-
-    // =========================================================================
-    // Additional tests for previously untested functions
-    // =========================================================================
-
-    #[test]
-    fn test_validate_measurement_noise_valid() {
-        let r = vec![1.0, 0.0, 0.0, 1.0];
-        assert!(validate_measurement_noise(&r, 2).is_ok());
-    }
-
-    #[test]
-    fn test_validate_measurement_noise_zero_diagonal() {
-        // Measurement noise MUST be strictly positive
-        let r = vec![0.0, 0.0, 0.0, 1.0];
-        assert!(validate_measurement_noise(&r, 2).is_err());
-    }
-
-    #[test]
-    fn test_validate_measurement_noise_negative_diagonal() {
-        let r = vec![-1.0, 0.0, 0.0, 1.0];
-        assert!(validate_measurement_noise(&r, 2).is_err());
-    }
-
-    #[test]
-    fn test_validate_measurement_noise_near_zero() {
-        // Very small values below MIN_CONDITION_NUMBER should fail
-        let r = vec![1e-15, 0.0, 0.0, 1.0];
-        assert!(validate_measurement_noise(&r, 2).is_err());
-    }
-
-    #[test]
-    fn test_validate_measurement_noise_dimension_mismatch() {
-        let r = vec![1.0]; // 1x1 but claiming 2x2
-        assert!(validate_measurement_noise(&r, 2).is_err());
-    }
-
-    #[test]
-    fn test_is_numerically_stable_valid() {
-        assert!(is_numerically_stable(1.0_f64));
-        assert!(is_numerically_stable(0.0_f64));
-        assert!(is_numerically_stable(-1e100_f64));
-        assert!(is_numerically_stable(1e-100_f64));
-    }
-
-    #[test]
-    fn test_is_numerically_stable_nan() {
-        assert!(!is_numerically_stable(f64::NAN));
-    }
-
-    #[test]
-    fn test_is_numerically_stable_infinity() {
-        assert!(!is_numerically_stable(f64::INFINITY));
-        assert!(!is_numerically_stable(f64::NEG_INFINITY));
-    }
-
-    #[test]
-    fn test_validate_state_valid() {
-        let state = vec![1.0, 2.0, 3.0];
-        assert!(validate_state(&state).is_ok());
-    }
-
-    #[test]
-    fn test_validate_state_nan() {
-        let state = vec![1.0, f64::NAN, 3.0];
-        let result = validate_state(&state);
-        assert!(result.is_err());
-        // Check the error message mentions the correct index
-        if let Err(KalmanError::FilterDivergence(msg)) = result {
-            assert!(msg.contains("1"), "Error should mention element index 1");
+    fn accepts_psd_at_any_scale_including_singular() {
+        for s in [1e-300, 1e-14, 1.0, 1e14, 1e300] {
+            assert!(psd(&[s, 0.0, 0.0, s], 2));
+            assert!(psd(&[s, s, s, s], 2), "rank-deficient at {s:e}");
+            assert!(psd(&[s, 0.0, 0.0, 1e-13 * s], 2));
         }
+        assert!(psd(&[0.0; 4], 2));
+        assert!(psd(&[1.0, 0.0, 0.0, 0.0], 2));
     }
 
     #[test]
-    fn test_validate_state_infinity() {
-        let state = vec![f64::INFINITY, 2.0];
-        assert!(validate_state(&state).is_err());
-    }
-
-    #[test]
-    fn test_validate_state_empty() {
-        let state: Vec<f64> = vec![];
-        assert!(validate_state(&state).is_ok()); // Empty is technically valid
-    }
-
-    #[test]
-    fn test_validate_covariance_dimension_mismatch() {
-        let p = vec![1.0, 0.0, 0.0]; // 3 elements but claiming 2x2
-        assert!(validate_covariance(&p, 2).is_err());
-    }
-
-    #[test]
-    fn test_validate_covariance_near_zero_diagonal() {
-        // Very small positive values below threshold should fail
-        let p = vec![1e-15, 0.0, 0.0, 1.0];
-        assert!(validate_covariance(&p, 2).is_err());
-    }
-
-    #[test]
-    fn test_validate_covariance_nearly_symmetric() {
-        // Asymmetry within tolerance should pass
-        let p = vec![1.0, 0.5 + 1e-12, 0.5, 1.0];
-        assert!(validate_covariance(&p, 2).is_ok());
-    }
-
-    #[test]
-    fn test_regularize_matrix_adds_to_diagonal_only() {
-        let mut p = vec![1.0, 2.0, 3.0, 4.0];
-        let orig_offdiag_01 = p[1];
-        let orig_offdiag_10 = p[2];
-        regularize_matrix(&mut p, 2);
-
-        // Diagonal should increase
-        assert!(p[0] > 1.0);
-        assert!(p[3] > 4.0);
-        // Off-diagonal should be unchanged
-        assert_eq!(p[1], orig_offdiag_01);
-        assert_eq!(p[2], orig_offdiag_10);
-    }
-
-    #[test]
-    fn test_condition_number_identity() {
-        let identity = vec![1.0, 0.0, 0.0, 1.0];
-        let cond = estimate_condition_number(&identity, 2);
-        assert!(
-            (cond - 1.0).abs() < 1e-10,
-            "Identity matrix has condition number 1"
-        );
-    }
-
-    #[test]
-    fn test_condition_number_ill_conditioned() {
-        // Large condition number indicates ill-conditioning
-        let p = vec![1.0, 0.0, 0.0, 1e-10];
-        let cond = estimate_condition_number(&p, 2);
-        assert!(cond > 1e9, "Should detect ill-conditioned matrix");
-    }
-
-    #[test]
-    fn test_condition_number_zero_diagonal() {
-        // Zero on diagonal should give infinity (or very large number)
-        let p = vec![1.0, 0.0, 0.0, 0.0];
-        let cond = estimate_condition_number(&p, 2);
-        assert!(
-            cond > 1e10,
-            "Zero diagonal should give huge condition number"
-        );
-    }
-
-    #[test]
-    fn test_condition_number_3x3() {
-        // Test with larger matrix
-        let p = vec![10.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.1];
-        let cond = estimate_condition_number(&p, 3);
-        assert!(
-            (cond - 100.0).abs() < 1e-10,
-            "Condition number should be 10/0.1 = 100"
-        );
+    fn rejects_asymmetric_indefinite_and_non_finite() {
+        assert!(!psd(&[1.0, 0.5, 0.0, 1.0], 2));
+        assert!(!psd(&[1.0, 2.0, 2.0, 1.0], 2));
+        assert!(!psd(&[-1.0, 0.0, 0.0, 1.0], 2));
+        assert!(!psd(&[0.0, 1.0, 1.0, 1.0], 2));
+        assert!(!psd(&[f64::NAN, 0.0, 0.0, 1.0], 2));
+        assert!(!psd(&[1e300, 1e300, 1e300, 1e-300], 2));
+        assert!(!is_psd(&[1.0f32, 1.001, 1.001, 1.0], 2, &mut [0.0; 4]));
     }
 }

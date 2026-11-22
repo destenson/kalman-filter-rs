@@ -15,6 +15,15 @@ pub enum KalmanError {
     },
     /// Singular matrix (not invertible)
     SingularMatrix,
+    /// A dimension is zero, or a product of dimensions overflows `usize`
+    InvalidDimension {
+        /// Requested state dimension n
+        state_dim: usize,
+        /// Requested measurement dimension m
+        measurement_dim: usize,
+    },
+    /// An input (model matrix, initial state or measurement) contains NaN or ±∞
+    NonFiniteInput,
     /// Invalid covariance matrix (not positive semi-definite)
     InvalidCovariance,
     /// Invalid noise covariance
@@ -38,6 +47,11 @@ impl fmt::Display for KalmanError {
                 )
             }
             KalmanError::SingularMatrix => write!(f, "Matrix is singular and cannot be inverted"),
+            KalmanError::InvalidDimension { state_dim, measurement_dim } => write!(
+                f,
+                "Invalid dimensions: state_dim={state_dim}, measurement_dim={measurement_dim}"
+            ),
+            KalmanError::NonFiniteInput => write!(f, "Input contains NaN or infinite values"),
             KalmanError::InvalidCovariance => {
                 write!(f, "Covariance matrix must be positive semi-definite")
             }
@@ -124,7 +138,7 @@ mod tests {
     #[test]
     fn test_result_type() {
         let result: KalmanResult<i32> = Ok(42);
-        assert_eq!(result.unwrap(), 42);
+        assert!(matches!(result, Ok(42)));
 
         let result: KalmanResult<i32> = Err(KalmanError::SingularMatrix);
         assert!(result.is_err());

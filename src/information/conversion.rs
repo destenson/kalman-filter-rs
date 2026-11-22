@@ -1,6 +1,6 @@
 //! Conversion utilities between Kalman Filter and Information Filter forms
 
-use crate::filter::KalmanFilter;
+use crate::filter::LinearKalmanFilter as KalmanFilter;
 use crate::information::{InformationFilter, InformationForm, InformationState};
 use crate::types::{KalmanError, KalmanResult, KalmanScalar};
 use log::{debug, info, trace, warn};
@@ -10,8 +10,8 @@ use num_traits::Zero;
 pub fn kalman_to_information<T: KalmanScalar>(
     kf: &KalmanFilter<T>,
 ) -> KalmanResult<InformationFilter<T>> {
-    let n = kf.state_dim;
-    let m = kf.measurement_dim;
+    let n = kf.state_dim();
+    let m = kf.measurement_dim();
 
     debug!(
         "Converting Kalman Filter to Information Filter: state_dim={}, measurement_dim={}",
@@ -19,7 +19,7 @@ pub fn kalman_to_information<T: KalmanScalar>(
     );
 
     // Convert state and covariance to information form
-    let info_state = InformationState::from_state_covariance(&kf.x, &kf.P)?;
+    let info_state = InformationState::from_state_covariance(kf.state(), kf.covariance())?;
     trace!("KF->IF conversion: information state created");
 
     InformationFilter::initialize(
@@ -27,10 +27,10 @@ pub fn kalman_to_information<T: KalmanScalar>(
         m,
         info_state.Y,
         info_state.y,
-        kf.F.clone(),
-        kf.Q.clone(),
-        kf.H.clone(),
-        kf.R.clone(),
+        kf.transition().to_vec(),
+        kf.process_noise().to_vec(),
+        kf.observation().to_vec(),
+        kf.measurement_noise().to_vec(),
     )
 }
 
@@ -51,16 +51,7 @@ pub fn information_to_kalman<T: KalmanScalar>(
     let covariance = inf.state.recover_covariance()?;
     trace!("IF->KF conversion: state and covariance recovered");
 
-    KalmanFilter::initialize(
-        n,
-        m,
-        state,
-        covariance,
-        inf.F.clone(),
-        inf.Q.clone(),
-        inf.H.clone(),
-        inf.R.clone(),
-    )
+    KalmanFilter::new(n, m, &state, &covariance, &inf.F, &inf.Q, &inf.H, &inf.R)
 }
 
 /// Hybrid filter that can switch between forms based on sparsity
@@ -97,15 +88,15 @@ impl<T: KalmanScalar> HybridFilter<T> {
             "Creating HybridFilter: state_dim={}, measurement_dim={}, sparsity_threshold={:.2}",
             state_dim, measurement_dim, sparsity_threshold
         );
-        let kf = KalmanFilter::initialize(
+        let kf = KalmanFilter::new(
             state_dim,
             measurement_dim,
-            initial_state,
-            initial_covariance,
-            F,
-            Q,
-            H,
-            R,
+            &initial_state,
+            &initial_covariance,
+            &F,
+            &Q,
+            &H,
+            &R,
         )?;
 
         Ok(Self {
@@ -197,7 +188,7 @@ impl<T: KalmanScalar> HybridFilter<T> {
         match self.current_form {
             FilterForm::Covariance => {
                 if let Some(kf) = &mut self.kf {
-                    kf.predict();
+                    kf.predict()?;
                 }
             }
             FilterForm::Information => {
@@ -232,7 +223,7 @@ impl<T: KalmanScalar> HybridFilter<T> {
         match self.current_form {
             FilterForm::Covariance => {
                 if let Some(kf) = &self.kf {
-                    Ok(kf.x.clone())
+                    Ok(kf.state().to_vec())
                 } else {
                     warn!("HybridFilter: no active filter");
                     Err(KalmanError::FilterDivergence(
@@ -258,7 +249,7 @@ impl<T: KalmanScalar> HybridFilter<T> {
         match self.current_form {
             FilterForm::Covariance => {
                 if let Some(kf) = &self.kf {
-                    Ok(kf.P.clone())
+                    Ok(kf.covariance().to_vec())
                 } else {
                     warn!("HybridFilter: no active filter");
                     Err(KalmanError::FilterDivergence(
@@ -287,15 +278,15 @@ mod tests {
     #[test]
     fn test_kalman_information_equivalence() {
         // Create identical filters in both forms
-        let mut kf = KalmanFilter::<f64>::initialize(
+        let mut kf = KalmanFilter::<f64>::new(
             2,
             1,
-            vec![0.0, 0.0],
-            vec![1.0, 0.0, 0.0, 1.0],
-            vec![1.0, 0.1, 0.0, 1.0],
-            vec![0.01, 0.0, 0.0, 0.01],
-            vec![1.0, 0.0],
-            vec![0.1],
+            &[0.0, 0.0],
+            &[1.0, 0.0, 0.0, 1.0],
+            &[1.0, 0.1, 0.0, 1.0],
+            &[0.01, 0.0, 0.0, 0.01],
+            &[1.0, 0.0],
+            &[0.1],
         )
         .unwrap();
 

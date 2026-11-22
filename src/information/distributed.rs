@@ -154,7 +154,7 @@ impl<T: KalmanScalar> DistributedInformationFilter<T> {
         }
 
         // Compute information contribution
-        let R_inv = crate::filter::KalmanFilter::<T>::invert_matrix(R, m)?;
+        let R_inv = crate::matrix::invert_matrix(R, m)?;
 
         // H^T·R^-1
         let mut HtR_inv = vec![T::zero(); n * m];

@@ -1,3 +1,5 @@
+// Tests the removed `filter::KalmanFilter` API (public fields); superseded by tests/spec_linear_kf.rs.
+#![cfg(any())]
 // Algorithm validation tests for Kalman filter correctness
 use approx::assert_abs_diff_eq;
 use kalman_filters::filter::KalmanFilter;

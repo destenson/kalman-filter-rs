@@ -30,7 +30,7 @@ use rand::SeedableRng;
 use rand_distr::{Distribution, Normal};
 
 #[cfg(not(feature = "nalgebra"))]
-use kalman_filters::{KalmanFilter, KalmanFilterBuilder};
+use kalman_filters::linear::LinearKalmanFilter;
 
 #[cfg(feature = "nalgebra")]
 use kalman_filters::StaticKalmanFilter;
@@ -238,17 +238,14 @@ fn main() {
     ];
 
     // Build Kalman filter (we'll switch observation matrices as needed)
-    let mut kf = KalmanFilter::<f64>::initialize(
-        6,
-        2, // 6 states, 2 measurements (will adjust for each sensor)
-        x0,
-        p0,
-        f,
-        q,
-        h_gps.clone(), // Start with GPS
-        r_gps.clone(),
-    )
-    .expect("Failed to build Kalman filter");
+    // The measurement model is fixed per filter, so switching sensors rebuilds
+    // the filter from the current estimate (see `switch_sensor`).
+    let mut kf = LinearKalmanFilter::<f64>::new(6, 2, &x0, &p0, &f, &q, &h_gps, &r_gps)
+        .expect("Failed to build Kalman filter");
+    let switch_sensor = |kf: &LinearKalmanFilter<f64>, m: usize, h: &[f64], r: &[f64]| {
+        LinearKalmanFilter::new(6, m, kf.state(), kf.covariance(), &f, &q, h, r)
+            .expect("Failed to switch sensor model")
+    };
 
     // Simulation parameters
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
@@ -289,9 +286,7 @@ fn main() {
                 let gps_y = true_y + gps_noise_dist.sample(&mut rng);
 
                 // Update observation model for GPS
-                kf.measurement_dim = 2;
-                kf.H = h_gps.clone();
-                kf.R = r_gps.clone();
+                kf = switch_sensor(&kf, 2, &h_gps, &r_gps);
 
                 kf.update(&[gps_x, gps_y]).expect("GPS update failed");
 
@@ -310,9 +305,7 @@ fn main() {
                 let radar_vy = true_vy + radar_noise_dist.sample(&mut rng) * 1.5;
 
                 // Update observation model for Radar
-                kf.measurement_dim = 4;
-                kf.H = h_radar.clone();
-                kf.R = r_radar.clone();
+                kf = switch_sensor(&kf, 4, &h_radar, &r_radar);
 
                 kf.update(&[radar_x, radar_y, radar_vx, radar_vy])
                     .expect("Radar update failed");
@@ -327,9 +320,7 @@ fn main() {
                 let imu_ay = true_ay + imu_noise_dist.sample(&mut rng);
 
                 // Update observation model for IMU
-                kf.measurement_dim = 2;
-                kf.H = h_imu.clone();
-                kf.R = r_imu.clone();
+                kf = switch_sensor(&kf, 2, &h_imu, &r_imu);
 
                 kf.update(&[imu_ax, imu_ay]).expect("IMU update failed");
             }

@@ -1,12 +1,12 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use kalman_filters::{
-    CubatureKalmanFilter, EnsembleKalmanFilter, ExtendedKalmanFilter, KalmanFilterBuilder,
-    NonlinearSystem, ParticleFilter, UnscentedKalmanFilter, information::InformationFilter,
+    CubatureKalmanFilter, EnsembleKalmanFilter, ExtendedKalmanFilter, NonlinearSystem,
+    ParticleFilter, UnscentedKalmanFilter, information::InformationFilter,
 };
 use std::hint::black_box;
 use std::time::Duration;
 
-use kalman_filters::{KalmanFilterTrait, UnifiedKalmanFilter};
+use kalman_filters::linear::LinearKalmanFilter;
 
 // ============================================================================
 // CORE OPERATIONS BENCHMARKS
@@ -727,31 +727,35 @@ fn bench_precision_comparison(c: &mut Criterion) {
 fn create_test_kalman_filter(
     state_dim: usize,
     measurement_dim: usize,
-) -> UnifiedKalmanFilter<f64> {
-    KalmanFilterBuilder::new(state_dim, measurement_dim)
-        .initial_state(vec![0.0; state_dim])
-        .initial_covariance(create_identity_matrix(state_dim))
-        .transition_matrix(create_identity_matrix(state_dim))
-        .process_noise(create_scaled_identity_matrix(state_dim, 0.01))
-        .observation_matrix(create_observation_matrix(measurement_dim, state_dim))
-        .measurement_noise(create_scaled_identity_matrix(measurement_dim, 0.1))
-        .build()
-        .unwrap()
+) -> LinearKalmanFilter<f64> {
+    LinearKalmanFilter::new(
+        state_dim,
+        measurement_dim,
+        &vec![0.0; state_dim],
+        &create_identity_matrix(state_dim),
+        &create_identity_matrix(state_dim),
+        &create_scaled_identity_matrix(state_dim, 0.01),
+        &create_observation_matrix(measurement_dim, state_dim),
+        &create_scaled_identity_matrix(measurement_dim, 0.1),
+    )
+    .unwrap()
 }
 
 fn create_test_kalman_filter_f32(
     state_dim: usize,
     measurement_dim: usize,
-) -> UnifiedKalmanFilter<f32> {
-    KalmanFilterBuilder::new(state_dim, measurement_dim)
-        .initial_state(vec![0.0f32; state_dim])
-        .initial_covariance(create_identity_matrix_f32(state_dim))
-        .transition_matrix(create_identity_matrix_f32(state_dim))
-        .process_noise(create_scaled_identity_matrix_f32(state_dim, 0.01))
-        .observation_matrix(create_observation_matrix_f32(measurement_dim, state_dim))
-        .measurement_noise(create_scaled_identity_matrix_f32(measurement_dim, 0.1))
-        .build()
-        .unwrap()
+) -> LinearKalmanFilter<f32> {
+    LinearKalmanFilter::new(
+        state_dim,
+        measurement_dim,
+        &vec![0.0f32; state_dim],
+        &create_identity_matrix_f32(state_dim),
+        &create_identity_matrix_f32(state_dim),
+        &create_scaled_identity_matrix_f32(state_dim, 0.01),
+        &create_observation_matrix_f32(measurement_dim, state_dim),
+        &create_scaled_identity_matrix_f32(measurement_dim, 0.1),
+    )
+    .unwrap()
 }
 
 fn create_identity_matrix(size: usize) -> Vec<f64> {

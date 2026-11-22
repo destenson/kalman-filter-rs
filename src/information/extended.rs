@@ -1,6 +1,6 @@
 //! Extended Information Filter (EIF) for nonlinear systems
 
-use crate::filter::KalmanFilter;
+use crate::matrix::invert_matrix;
 use crate::information::{InformationForm, InformationState};
 use crate::types::{JacobianStrategy, KalmanError, KalmanResult, KalmanScalar, NonlinearSystem};
 use num_traits::{One, Zero};
@@ -151,7 +151,7 @@ where
         }
 
         // Y_k|k-1 = P_pred^-1
-        let Y_pred = KalmanFilter::<T>::invert_matrix(&P_pred, n)?;
+        let Y_pred = invert_matrix(&P_pred, n)?;
 
         // Step 5: Compute predicted information vector
         // y_k|k-1 = Y_k|k-1·x_pred
@@ -201,7 +201,7 @@ where
         // δy = H^T·R^-1·(z - h(x) + H·x)
 
         // Compute R^-1
-        let R_inv = KalmanFilter::<T>::invert_matrix(&self.R, m)?;
+        let R_inv = invert_matrix(&self.R, m)?;
 
         // Compute H·x
         let mut Hx = vec![T::zero(); m];

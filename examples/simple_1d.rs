@@ -32,7 +32,7 @@ use rand::SeedableRng;
 use rand_distr::{Distribution, Uniform};
 
 #[cfg(not(feature = "nalgebra"))]
-use kalman_filters::{KalmanFilter, KalmanFilterBuilder, KalmanFilterTrait};
+use kalman_filters::linear::LinearKalmanFilter;
 
 #[cfg(feature = "nalgebra")]
 use kalman_filters::StaticKalmanFilter;
@@ -136,14 +136,7 @@ fn main() {
     let r = vec![args.meas_noise];
 
     // Build the Kalman filter
-    let mut kf = KalmanFilterBuilder::<f64>::new(2, 1)
-        .initial_state(x0)
-        .initial_covariance(p0)
-        .transition_matrix(f)
-        .process_noise(q)
-        .observation_matrix(h)
-        .measurement_noise(r)
-        .build()
+    let mut kf = LinearKalmanFilter::<f64>::new(2, 1, &x0, &p0, &f, &q, &h, &r)
         .expect("Failed to build Kalman filter");
 
     println!("Configuration:");

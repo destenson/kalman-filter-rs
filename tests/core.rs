@@ -1,3 +1,5 @@
+// Tests the removed `filter::KalmanFilter` API (public fields); superseded by tests/spec_linear_kf.rs.
+#![cfg(any())]
 #![allow(non_snake_case)]
 
 //! Unit tests for core Kalman filter functions
