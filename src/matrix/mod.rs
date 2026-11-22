@@ -10,6 +10,7 @@
 //! loops are free of bounds checks.
 
 use crate::error::{KalmanError, KalmanResult};
+use crate::types::KalmanScalar;
 use num_traits::Float;
 
 /// Rows of a row-major matrix with `cols` columns. `cols == 0` yields no rows
@@ -22,6 +23,13 @@ fn rows<T>(a: &[T], cols: usize) -> core::slice::ChunksExact<'_, T> {
 #[inline]
 fn rows_mut<T>(a: &mut [T], cols: usize) -> core::slice::ChunksExactMut<'_, T> {
     a.chunks_exact_mut(cols.max(1))
+}
+
+/// The crate's one relative tolerance: `64 · k · ε`, a small multiple of the
+/// rounding error of a length-`k` inner product or factorisation.
+/// (Machine ε: `KalmanScalar::epsilon` is an unrelated absolute threshold.)
+pub(crate) fn rel_tol<T: KalmanScalar>(k: usize) -> T {
+    <T as Float>::epsilon() * T::from_usize(k.saturating_mul(64))
 }
 
 #[inline]
@@ -41,28 +49,12 @@ pub(crate) fn all_finite<T: Float>(a: &[T]) -> bool {
     a.iter().all(|v| v.is_finite())
 }
 
-/// `y = A x`, A is `rows × cols`.
-pub(crate) fn matvec<T: Float>(a: &[T], x: &[T], y: &mut [T], _rows: usize, cols: usize) {
-    for (yi, row) in y.iter_mut().zip(rows(a, cols)) {
-        *yi = dot(row, x);
-    }
-}
-
 /// `C = A B`, A is `m × k`, B is `k × n`. Row-axpy order: streams rows of B.
 pub(crate) fn matmul<T: Float>(a: &[T], b: &[T], c: &mut [T], _m: usize, k: usize, n: usize) {
     for (c_row, a_row) in rows_mut(c, n).zip(rows(a, k)) {
         c_row.fill(T::zero());
         for (&aik, b_row) in a_row.iter().zip(rows(b, n)) {
             axpy(aik, b_row, c_row);
-        }
-    }
-}
-
-/// `C = A Bᵀ`, A is `m × k`, B is `n × k`. Every entry is a dot of two rows.
-pub(crate) fn matmul_transpose<T: Float>(a: &[T], b: &[T], c: &mut [T], _m: usize, k: usize, n: usize) {
-    for (c_row, a_row) in rows_mut(c, n).zip(rows(a, k)) {
-        for (cij, b_row) in c_row.iter_mut().zip(rows(b, k)) {
-            *cij = dot(a_row, b_row);
         }
     }
 }
@@ -79,8 +71,7 @@ pub(crate) fn matmul_transpose_upper<T: Float>(a: &[T], b: &[T], c: &mut [T], n:
 
 /// Upper triangle of `C += Aᵀ B`, A and B are `k × n`, C is `n × n`
 /// (a sum of k outer products of matching rows).
-pub(crate) fn add_transpose_matmul_upper<T: Float>(a: &[T], b: &[T], c: &mut [T], n: usize, k: usize) {
-    let _ = k;
+pub(crate) fn add_transpose_matmul_upper<T: Float>(a: &[T], b: &[T], c: &mut [T], n: usize) {
     for (a_row, b_row) in rows(a, n).zip(rows(b, n)) {
         for (i, (c_row, &a_ji)) in rows_mut(c, n).zip(a_row).enumerate() {
             axpy(a_ji, &b_row[i..], &mut c_row[i..]);
@@ -102,20 +93,6 @@ pub(crate) fn mirror_upper<T: Copy>(c: &mut [T], n: usize) {
 pub(crate) fn add_inplace<T: Float>(a: &mut [T], b: &[T], size: usize) {
     for (ai, &bi) in a.iter_mut().zip(b).take(size) {
         *ai = *ai + bi;
-    }
-}
-
-/// `A = (A + Aᵀ) / 2`
-pub(crate) fn symmetrize<T: Float>(a: &mut [T], n: usize) {
-    let half = T::from(0.5).unwrap_or_else(T::zero);
-    for i in 1..n {
-        let (head, tail) = a.split_at_mut(i * n);
-        for (j, aij) in tail[..i].iter_mut().enumerate() {
-            let aji = &mut head[j * n + i];
-            let avg = (*aij + *aji) * half;
-            *aij = avg;
-            *aji = avg;
-        }
     }
 }
 
@@ -180,6 +157,38 @@ pub(crate) fn cholesky_solve_rows<T: Float>(l: &[T], x: &mut [T], m: usize, n: u
         }
         let l_jj = l[j * m + j];
         row_j.iter_mut().for_each(|v| *v = *v / l_jj);
+    }
+}
+
+// Transitional: nonlinear filters only; delete when rebuilt.
+
+/// `y = A x`, A is `rows × cols`.
+pub(crate) fn matvec<T: Float>(a: &[T], x: &[T], y: &mut [T], _rows: usize, cols: usize) {
+    for (yi, row) in y.iter_mut().zip(rows(a, cols)) {
+        *yi = dot(row, x);
+    }
+}
+
+/// `C = A Bᵀ`, A is `m × k`, B is `n × k`. Every entry is a dot of two rows.
+pub(crate) fn matmul_transpose<T: Float>(a: &[T], b: &[T], c: &mut [T], _m: usize, k: usize, n: usize) {
+    for (c_row, a_row) in rows_mut(c, n).zip(rows(a, k)) {
+        for (cij, b_row) in c_row.iter_mut().zip(rows(b, k)) {
+            *cij = dot(a_row, b_row);
+        }
+    }
+}
+
+/// `A = (A + Aᵀ) / 2`, halving before adding so finite entries cannot overflow.
+pub(crate) fn symmetrize<T: Float>(a: &mut [T], n: usize) {
+    let half = T::one() / (T::one() + T::one());
+    for i in 1..n {
+        let (head, tail) = a.split_at_mut(i * n);
+        for (j, aij) in tail[..i].iter_mut().enumerate() {
+            let aji = &mut head[j * n + i];
+            let avg = *aij * half + *aji * half;
+            *aij = avg;
+            *aji = avg;
+        }
     }
 }
 
@@ -255,7 +264,7 @@ mod tests {
         assert_eq!(u, c);
         // Aᵀ A for A = 2×2 [[1,2],[3,4]] = [[10,14],[14,20]]
         let mut s = [0.0; 4];
-        add_transpose_matmul_upper(&[1.0, 2.0, 3.0, 4.0], &[1.0, 2.0, 3.0, 4.0], &mut s, 2, 2);
+        add_transpose_matmul_upper(&[1.0, 2.0, 3.0, 4.0], &[1.0, 2.0, 3.0, 4.0], &mut s, 2);
         mirror_upper(&mut s, 2);
         assert_eq!(s, [10.0, 14.0, 14.0, 20.0]);
     }

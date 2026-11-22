@@ -728,7 +728,7 @@ fn create_test_kalman_filter(
     state_dim: usize,
     measurement_dim: usize,
 ) -> LinearKalmanFilter<f64> {
-    LinearKalmanFilter::new(
+    LinearKalmanFilter::try_new(
         state_dim,
         measurement_dim,
         &vec![0.0; state_dim],
@@ -745,7 +745,7 @@ fn create_test_kalman_filter_f32(
     state_dim: usize,
     measurement_dim: usize,
 ) -> LinearKalmanFilter<f32> {
-    LinearKalmanFilter::new(
+    LinearKalmanFilter::try_new(
         state_dim,
         measurement_dim,
         &vec![0.0f32; state_dim],

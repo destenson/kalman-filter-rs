@@ -29,13 +29,7 @@ use clap::Parser;
 use rand::SeedableRng;
 use rand_distr::{Distribution, Normal};
 
-#[cfg(not(feature = "nalgebra"))]
 use kalman_filters::linear::LinearKalmanFilter;
-
-#[cfg(feature = "nalgebra")]
-use kalman_filters::StaticKalmanFilter;
-#[cfg(feature = "nalgebra")]
-use nalgebra::{SMatrix, SVector};
 
 /// Multi-sensor fusion Kalman filter example
 ///
@@ -112,7 +106,6 @@ struct Args {
     print_interval: usize,
 }
 
-#[cfg(not(feature = "nalgebra"))]
 fn main() {
     let args = Args::parse();
 
@@ -240,10 +233,10 @@ fn main() {
     // Build Kalman filter (we'll switch observation matrices as needed)
     // The measurement model is fixed per filter, so switching sensors rebuilds
     // the filter from the current estimate (see `switch_sensor`).
-    let mut kf = LinearKalmanFilter::<f64>::new(6, 2, &x0, &p0, &f, &q, &h_gps, &r_gps)
+    let mut kf = LinearKalmanFilter::<f64>::try_new(6, 2, &x0, &p0, &f, &q, &h_gps, &r_gps)
         .expect("Failed to build Kalman filter");
     let switch_sensor = |kf: &LinearKalmanFilter<f64>, m: usize, h: &[f64], r: &[f64]| {
-        LinearKalmanFilter::new(6, m, kf.state(), kf.covariance(), &f, &q, h, r)
+        LinearKalmanFilter::try_new(6, m, kf.state(), kf.covariance(), &f, &q, h, r)
             .expect("Failed to switch sensor model")
     };
 
@@ -347,148 +340,4 @@ fn main() {
 
     println!("\nSensor fusion successfully combined GPS, Radar, and IMU measurements");
     println!("to provide optimal state estimation with different sensor characteristics.");
-}
-
-#[cfg(feature = "nalgebra")]
-fn main() {
-    let args = Args::parse();
-
-    println!("Multi-Sensor Fusion Example (nalgebra-based)");
-    println!("=============================================");
-    println!("Fusing GPS, IMU, and Radar measurements\n");
-
-    // Set up random seed
-    let seed = args.seed.unwrap_or_else(|| {
-        let seed_value = rand::random::<u64>();
-        println!("Using random seed: {} (use --seed {} to reproduce)\n", seed_value, seed_value);
-        seed_value
-    });
-    if args.seed.is_some() {
-        println!("Using seed: {}\n", seed);
-    }
-
-    let dt = args.dt;
-
-    // State transition matrix (constant acceleration model)
-    let F = SMatrix::<f64, 6, 6>::from_row_slice(&[
-        1.0,
-        0.0,
-        dt,
-        0.0,
-        dt * dt / 2.0,
-        0.0, // x
-        0.0,
-        1.0,
-        0.0,
-        dt,
-        0.0,
-        dt * dt / 2.0, // y
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-        dt,
-        0.0, // vx
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-        dt, // vy
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0, // ax
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0, // ay
-    ]);
-
-    // Initial state from arguments
-    let x0 = SVector::<f64, 6>::from([args.x0, args.y0, args.vx0, args.vy0, args.ax0, args.ay0]);
-
-    // Initial covariance
-    let P0 = SMatrix::<f64, 6, 6>::identity();
-
-    // Process noise
-    let q_acc = args.q_acc;
-    let mut Q = SMatrix::<f64, 6, 6>::zeros();
-    Q[(0, 0)] = dt.powi(4) / 4.0 * q_acc;
-    Q[(1, 1)] = dt.powi(4) / 4.0 * q_acc;
-    Q[(2, 2)] = dt.powi(2) * q_acc;
-    Q[(3, 3)] = dt.powi(2) * q_acc;
-    Q[(4, 4)] = q_acc;
-    Q[(5, 5)] = q_acc;
-
-    // For nalgebra version, we'll create separate filters for each sensor type
-    // since we can't dynamically change dimensions
-
-    // GPS Kalman Filter (2 measurements)
-    let H_gps = SMatrix::<f64, 2, 6>::from_row_slice(&[
-        1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-    ]);
-    let gps_var = args.gps_noise * args.gps_noise;
-    let R_gps = SMatrix::<f64, 2, 2>::from_row_slice(&[gps_var, 0.0, 0.0, gps_var]);
-
-    let mut kf = StaticKalmanFilter::new(x0, P0, F, Q, H_gps, R_gps);
-
-    // Simulation parameters
-    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-    let gps_noise_dist = Normal::new(0.0, args.gps_noise).unwrap();
-
-    // True trajectory
-    let omega = args.omega;
-    let radius = args.radius;
-
-    println!("Time | True X | True Y | GPS X  | GPS Y  | Est. X | Est. Y | Est. Vx| Est. Vy");
-    println!("-----|--------|--------|--------|--------|--------|--------|--------|--------");
-
-    for step in 0..args.steps {
-        let t = step as f64 * dt;
-
-        // True state
-        let true_x = radius * t.cos() * 0.1;
-        let true_y = radius * t.sin() * 0.1;
-
-        // Predict
-        kf.predict();
-
-        // GPS measurement
-        let gps_x = true_x + gps_noise_dist.sample(&mut rng);
-        let gps_y = true_y + gps_noise_dist.sample(&mut rng);
-        let measurement = SVector::<f64, 2>::from([gps_x, gps_y]);
-
-        // Update
-        kf.update(&measurement).expect("Update failed");
-
-        // Print results
-        if step % args.print_interval == 0 {
-            let state = kf.state();
-            println!(
-                "{:4.1} | {:6.2} | {:6.2} | {:6.2} | {:6.2} | {:6.2} | {:6.2} | {:6.2} | {:6.2}",
-                t, true_x, true_y, gps_x, gps_y, state[0], state[1], state[2], state[3]
-            );
-        }
-    }
-
-    println!("\nFinal state covariance (diagonal elements):");
-    let P = kf.covariance();
-    println!("X position variance:   {:.6}", P[(0, 0)]);
-    println!("Y position variance:   {:.6}", P[(1, 1)]);
-    println!("X velocity variance:   {:.6}", P[(2, 2)]);
-    println!("Y velocity variance:   {:.6}", P[(3, 3)]);
-    println!("X acceleration variance: {:.6}", P[(4, 4)]);
-    println!("Y acceleration variance: {:.6}", P[(5, 5)]);
-
-    println!(
-        "\nNote: nalgebra version simplified to GPS-only due to static dimension constraints."
-    );
-    println!(
-        "Full multi-sensor fusion would require separate filter instances or dynamic matrices."
-    );
 }

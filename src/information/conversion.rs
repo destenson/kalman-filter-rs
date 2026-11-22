@@ -51,7 +51,7 @@ pub fn information_to_kalman<T: KalmanScalar>(
     let covariance = inf.state.recover_covariance()?;
     trace!("IF->KF conversion: state and covariance recovered");
 
-    KalmanFilter::new(n, m, &state, &covariance, &inf.F, &inf.Q, &inf.H, &inf.R)
+    KalmanFilter::try_new(n, m, &state, &covariance, &inf.F, &inf.Q, &inf.H, &inf.R)
 }
 
 /// Hybrid filter that can switch between forms based on sparsity
@@ -88,7 +88,7 @@ impl<T: KalmanScalar> HybridFilter<T> {
             "Creating HybridFilter: state_dim={}, measurement_dim={}, sparsity_threshold={:.2}",
             state_dim, measurement_dim, sparsity_threshold
         );
-        let kf = KalmanFilter::new(
+        let kf = KalmanFilter::try_new(
             state_dim,
             measurement_dim,
             &initial_state,
@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn test_kalman_information_equivalence() {
         // Create identical filters in both forms
-        let mut kf = KalmanFilter::<f64>::new(
+        let mut kf = KalmanFilter::<f64>::try_new(
             2,
             1,
             &[0.0, 0.0],

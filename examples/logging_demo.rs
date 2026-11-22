@@ -130,7 +130,7 @@ fn demo_linear_kf(cycles: usize) {
 
     // Create a simple 1D Kalman filter using the builder
     let mut kf =
-        LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.001], &[1.0], &[0.1])
+        LinearKalmanFilter::<f64>::try_new(1, 1, &[0.0], &[1.0], &[1.0], &[0.001], &[1.0], &[0.1])
             .unwrap();
 
     info!("Running {} predict/update cycles", cycles);
@@ -195,7 +195,7 @@ fn demo_numerical_issues(seed: Option<u64>) {
     }
 
     // Create a filter with near-singular covariance
-    let mut kf = LinearKalmanFilter::<f64>::new(
+    let mut kf = LinearKalmanFilter::<f64>::try_new(
         2,
         1,
         &[0.0, 0.0],
@@ -216,7 +216,7 @@ fn demo_numerical_issues(seed: Option<u64>) {
     let _ = kf.update(&[1.0]);
 
     // Create a filter that will have a singular innovation covariance
-    let mut bad_kf = LinearKalmanFilter::<f64>::new(
+    let mut bad_kf = LinearKalmanFilter::<f64>::try_new(
         2,
         2,
         &[0.0, 0.0],

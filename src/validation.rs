@@ -4,13 +4,8 @@
 //! of units per component): the matrix is first scaled to unit diagonal (a
 //! correlation matrix), and every tolerance is relative to that unit scale.
 
-use crate::matrix::cholesky_in_place;
-use num_traits::Float;
-
-/// Relative tolerance used for symmetry and definiteness: `16 · n · ε`.
-fn rel_tol<T: Float>(n: usize) -> T {
-    T::epsilon() * T::from(16 * n).unwrap_or_else(T::max_value)
-}
+use crate::matrix::{cholesky_in_place, rel_tol};
+use crate::types::KalmanScalar;
 
 /// Is the `n × n` row-major matrix `a` finite, symmetric and positive
 /// semi-definite (singular allowed)? `work` must hold `n · n` elements; it is
@@ -23,12 +18,12 @@ fn rel_tol<T: Float>(n: usize) -> T {
 ///    must admit a Cholesky factorisation. This accepts every PSD matrix
 ///    (λ_min(C + tol·I) ≥ tol exceeds the rounding error of the factorisation)
 ///    and rejects any matrix with λ_min(C) < −tol.
-pub(crate) fn is_psd<T: Float>(a: &[T], n: usize, work: &mut [T]) -> bool {
+pub(crate) fn is_psd<T: KalmanScalar>(a: &[T], n: usize, work: &mut [T]) -> bool {
     if a.len() != n * n || work.len() != n * n || !crate::matrix::all_finite(a) {
         return false;
     }
     let tol = rel_tol::<T>(n);
-    let half = T::from(0.5).unwrap_or_else(T::zero);
+    let half = T::one() / (T::one() + T::one());
     let diag = |i: usize| a[i * n + i];
     if (0..n).any(|i| diag(i) < T::zero()) {
         return false;
@@ -57,6 +52,25 @@ pub(crate) fn is_psd<T: Float>(a: &[T], n: usize, work: &mut [T]) -> bool {
     }
     // Only the lower triangle (just written) is read by the factorisation.
     // Pivot test `d > 0`: the tolerance is already in the diagonal shift.
+    cholesky_in_place(work, n, T::zero()).is_ok()
+}
+
+/// Acceptance test for a *computed* covariance (SPEC B11/B21): is the exactly
+/// symmetric, finite `n × n` matrix `p` PSD up to `λ_min ≥ −τ · max_i p_ii`
+/// (hence `≥ −τ · λ_max`), with `τ = ε^¾`? τ is 6e-6 (f32) / 2e-12 (f64), inside
+/// the spec's 1e-5 / 1e-9, and far above the factorisation's own rounding.
+/// Unlike [`is_psd`] this does not rescale per component: the criterion is
+/// relative to λ_max by definition. `work` (n·n) is overwritten.
+pub(crate) fn psd_to_working_precision<T: KalmanScalar>(p: &[T], n: usize, work: &mut [T]) -> bool {
+    let max_var = (0..n).fold(T::zero(), |acc, i| acc.max(p[i * n + i]));
+    // The `min_positive_value` floor keeps P = 0 (a valid covariance) factorable.
+    let eps = <T as num_traits::Float>::epsilon();
+    let eps = <T as num_traits::Float>::epsilon();
+    let shift = eps.sqrt() * eps.sqrt().sqrt() * max_var + T::min_positive_value();
+    work.copy_from_slice(p);
+    for i in 0..n {
+        work[i * n + i] = work[i * n + i] + shift;
+    }
     cholesky_in_place(work, n, T::zero()).is_ok()
 }
 

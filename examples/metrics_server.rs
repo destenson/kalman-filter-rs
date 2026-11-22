@@ -119,7 +119,7 @@ fn main() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         let noise_dist = Normal::new(0.0, meas_noise_std).unwrap();
         // Create a simple 2D position-velocity Kalman filter
-        let mut kf = LinearKalmanFilter::new(
+        let mut kf = LinearKalmanFilter::try_new(
             2,
             1,
             &[0.0, 0.0],

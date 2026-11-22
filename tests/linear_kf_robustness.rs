@@ -85,7 +85,7 @@ macro_rules! robustness {
                 let h = rng.mat(m, n);
                 let r_rank = 1 + (rng.next() * m as f64) as usize;
                 let r = random_psd(&mut rng, m, r_rank, 3.0);
-                let Ok(mut kf) = LinearKalmanFilter::<$t>::new(n, m, &c(&[0.0; 6][..n]), &c(&p0), &c(&f), &c(&q), &c(&h), &c(&r))
+                let Ok(mut kf) = LinearKalmanFilter::<$t>::try_new(n, m, &c(&[0.0; 6][..n]), &c(&p0), &c(&f), &c(&q), &c(&h), &c(&r))
                 else {
                     continue; // a rounding-indefinite random input is a legitimate rejection
                 };

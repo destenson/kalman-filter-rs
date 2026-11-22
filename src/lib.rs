@@ -7,11 +7,11 @@
 //!
 //! ## Features
 //!
-//! - Linear Kalman filter with predict and update steps
+//! - Linear Kalman filter (`kalman_filters::linear`): Joseph-form update,
+//!   Cholesky solve with S, no heap allocation per step
 //! - Dynamic dimension support without external dependencies
 //! - Support for both f32 and f64 precision
-//! - Extended Kalman Filter (EKF) support (future)
-//! - Unscented Kalman Filter (UKF) support (future)
+//! - Extended, unscented, cubature, information, ensemble and particle filters
 //!
 //! ## Example
 //!
@@ -19,23 +19,24 @@
 //! use kalman_filters::linear::LinearKalmanFilter;
 //!
 //! // n = 1 state, m = 1 measurement; matrices are row-major slices:
-//! //                                        x0      P0     F      Q        H      R
-//! let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.001], &[1.0], &[0.1])
-//!     .unwrap();
+//! //                                             x0      P0     F      Q        H      R
+//! let mut kf = LinearKalmanFilter::<f64>::try_new(1, 1, &[0.0], &[1.0], &[1.0], &[0.001], &[1.0], &[0.1])?;
 //!
-//! kf.predict().unwrap();
-//! kf.update(&[1.0]).unwrap();
+//! kf.predict()?;
+//! kf.update(&[1.0])?;
 //! assert!(kf.state()[0] > 0.0);
+//! # Ok::<(), kalman_filters::KalmanError>(())
 //! ```
 
 #![allow(unused, non_snake_case)] // DO NOT CHANGE
 
+mod builder;
 pub mod builders;
 pub mod ensemble;
 /// Error types and result definitions for the Kalman filter library
 pub mod error;
 pub mod extended;
-pub mod filter;
+mod filter;
 pub mod information;
 pub mod logging;
 pub(crate) mod matrix;
@@ -60,7 +61,6 @@ pub use extended::ExtendedKalmanFilter;
 
 /// The linear Kalman filter (see SPEC.md).
 pub use filter::linear;
-pub use filter::LinearKalmanFilter;
 
 pub use information::filter::InformationFilter;
 pub use particle::{Particle, ParticleFilter, ResamplingStrategy};

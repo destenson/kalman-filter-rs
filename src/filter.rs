@@ -1,6 +1,6 @@
 //! The linear Kalman filter.
 //!
-//! All storage is allocated once in [`LinearKalmanFilter::new`]: the model
+//! All storage is allocated once in [`LinearKalmanFilter::try_new`]: the model
 //! (F, Q, H, R), the estimate (x, P) and a fixed workspace sized for n and m.
 //! `predict` and `update` only write into the workspace; when every check has
 //! passed, the candidate estimate is committed by swapping two boxed slices
@@ -18,14 +18,15 @@
 use crate::error::{KalmanError, KalmanResult};
 use crate::matrix::{
     CholeskyError, add_inplace, add_transpose_matmul_upper, all_finite, axpy, cholesky_in_place,
-    cholesky_solve_rows, dot, matmul, matmul_transpose_upper, mirror_upper, symmetrize,
+    cholesky_solve_rows, dot, matmul, matmul_transpose_upper, mirror_upper, rel_tol,
 };
 use crate::types::KalmanScalar;
-use crate::validation::is_psd;
+use crate::validation::{is_psd, psd_to_working_precision};
 
 /// The public module named by the specification: `kalman_filters::linear`.
 pub mod linear {
     pub use super::LinearKalmanFilter;
+    pub use crate::builder::{Covariance, LinearKalmanFilterBuilder};
 }
 
 /// Linear Kalman filter for `x_{k+1} = F x_k + w`, `z_k = H x_k + v`,
@@ -60,52 +61,88 @@ struct Workspace<T> {
 }
 
 impl<T: KalmanScalar> Workspace<T> {
-    fn new(n: usize, m: usize, nn: usize, mn: usize, mm: usize) -> Self {
+    /// `n·n`, `m·n` and `m·m` are known not to overflow: they are the lengths
+    /// of validated input slices.
+    fn new(n: usize, m: usize) -> Self {
         let z = |len: usize| vec![T::zero(); len].into_boxed_slice();
+        let (nn, mn, mm) = (n * n, m * n, m * m);
         Self { x: z(n), p: z(nn), a: z(nn), ap: z(nn), y: z(m), s: z(mm), kt: z(mn), rkt: z(mn) }
     }
-}
-
-/// Pivot tolerance for factoring S, relative to each diagonal entry:
-/// `64 · m · ε`, a small multiple of the Cholesky rounding error.
-fn singular_tol<T: KalmanScalar>(m: usize) -> T {
-    <T as num_traits::Float>::epsilon() * T::from_usize(64 * m)
-}
-
-/// Cheap O(n²) necessary conditions for a symmetric PSD matrix: every variance
-/// is ≥ 0 and every correlation satisfies |p_ij| ≤ √(p_ii p_jj) up to rounding.
-/// Catches the gross failures of finite precision (negative variances,
-/// impossible correlations) without an O(n³) factorisation per step.
-fn variances_consistent<T: KalmanScalar>(p: &[T], n: usize) -> bool {
-    let slack = T::one() + <T as num_traits::Float>::epsilon() * T::from_usize(64 * n);
-    let sd = |i: usize| p[i * n + i].sqrt();
-    (0..n).all(|i| p[i * n + i] >= T::zero())
-        && (0..n).all(|i| (0..i).all(|j| p[i * n + j].abs() <= sd(i) * sd(j) * slack))
 }
 
 fn diverged(what: &str) -> KalmanError {
     KalmanError::FilterDivergence(format!("{what} is not finite"))
 }
 
-/// `Ok(len)` if `slice` holds exactly `rows × cols` elements.
-fn check_len<T>(slice: &[T], rows: usize, cols: usize, len: usize) -> KalmanResult<()> {
-    if slice.len() == len {
-        Ok(())
-    } else {
-        Err(KalmanError::DimensionMismatch { expected: (rows, cols), actual: (slice.len(), 1) })
+/// `ZeroDimension` unless both dimensions are positive.
+pub(crate) fn check_dims(n: usize, m: usize) -> KalmanResult<()> {
+    if n == 0 || m == 0 { Err(KalmanError::ZeroDimension) } else { Ok(()) }
+}
+
+/// `Ok` if `data` holds exactly `rows × cols` elements. An overflowing product
+/// can never equal a real slice length, so it is a `DimensionMismatch` too.
+pub(crate) fn check_len<T>(data: &[T], rows: usize, cols: usize) -> KalmanResult<()> {
+    match rows.checked_mul(cols) {
+        Some(len) if len == data.len() => Ok(()),
+        _ => Err(KalmanError::DimensionMismatch { expected: (rows, cols), actual: (data.len(), 1) }),
     }
 }
 
 impl<T: KalmanScalar> LinearKalmanFilter<T> {
-    /// The single validated constructor. Slices are row-major:
-    /// `x0`: n, `p0`: n×n, `f`: n×n, `q`: n×n, `h`: m×n, `r`: m×m.
+    /// The one validated constructor; every other construction path ends here.
+    /// Slices are row-major: `x0`: n, `p0`: n×n, `f`: n×n, `q`: n×n, `h`: m×n,
+    /// `r`: m×m.
     ///
-    /// Errors: `InvalidDimension` (zero or overflowing dimensions),
-    /// `DimensionMismatch` (wrong slice length), `NonFiniteInput` (x0, F, H),
-    /// `InvalidCovariance` (p0 not finite symmetric PSD),
-    /// `InvalidNoiseCovariance` (q or r not finite symmetric PSD).
+    /// Errors, checked in this order (one cause, one variant):
+    /// `ZeroDimension` (n or m is 0), `DimensionMismatch` (wrong slice length,
+    /// including an overflowing `rows × cols`), `NonFiniteInput` (NaN/±∞ in
+    /// any input), `InvalidCovariance` (p0 not symmetric PSD),
+    /// `InvalidNoiseCovariance` (q or r not symmetric PSD).
     /// Singular PSD matrices are accepted; all tolerances are relative to the
     /// matrix's own diagonal, so validity does not depend on units.
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_new(
+        state_dim: usize,
+        measurement_dim: usize,
+        x0: &[T],
+        p0: &[T],
+        f: &[T],
+        q: &[T],
+        h: &[T],
+        r: &[T],
+    ) -> KalmanResult<Self> {
+        let (n, m) = (state_dim, measurement_dim);
+        check_dims(n, m)?;
+        let inputs = [(x0, n, 1), (p0, n, n), (f, n, n), (q, n, n), (h, m, n), (r, m, m)];
+        for (data, rows, cols) in inputs {
+            check_len(data, rows, cols)?;
+        }
+        if !inputs.iter().all(|(data, _, _)| all_finite(data)) {
+            return Err(KalmanError::NonFiniteInput);
+        }
+
+        // Validation borrows workspace buffers as scratch: no extra allocation.
+        let mut ws = Workspace::new(n, m);
+        if !is_psd(p0, n, &mut ws.p) {
+            return Err(KalmanError::InvalidCovariance);
+        }
+        if !is_psd(q, n, &mut ws.p) || !is_psd(r, m, &mut ws.s) {
+            return Err(KalmanError::InvalidNoiseCovariance);
+        }
+        // Symmetric within tolerance; store exactly symmetric (no arithmetic).
+        let mut p: Box<[T]> = p0.into();
+        let mut q: Box<[T]> = q.into();
+        let mut r: Box<[T]> = r.into();
+        mirror_upper(&mut p, n);
+        mirror_upper(&mut q, n);
+        mirror_upper(&mut r, m);
+
+        Ok(Self { n, m, x: x0.into(), p, f: f.into(), q, h: h.into(), r, ws })
+    }
+
+    /// Temporary alias of [`try_new`](Self::try_new), kept only so the frozen
+    /// spec tests compile; it will be removed.
+    #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         state_dim: usize,
@@ -117,39 +154,7 @@ impl<T: KalmanScalar> LinearKalmanFilter<T> {
         h: &[T],
         r: &[T],
     ) -> KalmanResult<Self> {
-        let (n, m) = (state_dim, measurement_dim);
-        let bad_dims = KalmanError::InvalidDimension { state_dim: n, measurement_dim: m };
-        if n == 0 || m == 0 {
-            return Err(bad_dims);
-        }
-        let (Some(nn), Some(mn), Some(mm)) = (n.checked_mul(n), m.checked_mul(n), m.checked_mul(m))
-        else {
-            return Err(bad_dims);
-        };
-        check_len(x0, n, 1, n)?;
-        check_len(p0, n, n, nn)?;
-        check_len(f, n, n, nn)?;
-        check_len(q, n, n, nn)?;
-        check_len(h, m, n, mn)?;
-        check_len(r, m, m, mm)?;
-        if !(all_finite(x0) && all_finite(f) && all_finite(h)) {
-            return Err(KalmanError::NonFiniteInput);
-        }
-
-        // Validation borrows workspace buffers as scratch: no extra allocation.
-        let mut ws = Workspace::new(n, m, nn, mn, mm);
-        if !is_psd(p0, n, &mut ws.p) {
-            return Err(KalmanError::InvalidCovariance);
-        }
-        if !is_psd(q, n, &mut ws.p) || !is_psd(r, m, &mut ws.s) {
-            return Err(KalmanError::InvalidNoiseCovariance);
-        }
-        let mut q: Box<[T]> = q.into();
-        let mut r: Box<[T]> = r.into();
-        symmetrize(&mut q, n);
-        symmetrize(&mut r, m);
-
-        Ok(Self { n, m, x: x0.into(), p: p0.into(), f: f.into(), q, h: h.into(), r, ws })
+        Self::try_new(state_dim, measurement_dim, x0, p0, f, q, h, r)
     }
 
     pub fn state_dim(&self) -> usize {
@@ -171,27 +176,28 @@ impl<T: KalmanScalar> LinearKalmanFilter<T> {
     }
 
     /// State transition matrix F (n×n).
-    pub fn transition(&self) -> &[T] {
+    pub(crate) fn transition(&self) -> &[T] {
         &self.f
     }
 
-    /// Process noise covariance Q (n×n), as stored (symmetrized).
-    pub fn process_noise(&self) -> &[T] {
+    /// Process noise covariance Q (n×n), as stored (exactly symmetric).
+    pub(crate) fn process_noise(&self) -> &[T] {
         &self.q
     }
 
     /// Observation matrix H (m×n).
-    pub fn observation(&self) -> &[T] {
+    pub(crate) fn observation(&self) -> &[T] {
         &self.h
     }
 
-    /// Measurement noise covariance R (m×m), as stored (symmetrized).
-    pub fn measurement_noise(&self) -> &[T] {
+    /// Measurement noise covariance R (m×m), as stored (exactly symmetric).
+    pub(crate) fn measurement_noise(&self) -> &[T] {
         &self.r
     }
 
-    /// `x ← F x`, `P ← F P Fᵀ + Q`. On a non-finite result returns
-    /// `FilterDivergence` and leaves the filter unchanged.
+    /// `x ← F x`, `P ← F P Fᵀ + Q`. If the result is non-finite or not PSD to
+    /// working precision, returns `FilterDivergence` and leaves the filter
+    /// unchanged.
     pub fn predict(&mut self) -> KalmanResult<()> {
         let n = self.n;
         let ws = &mut self.ws;
@@ -204,26 +210,19 @@ impl<T: KalmanScalar> LinearKalmanFilter<T> {
         add_inplace(&mut ws.p, &self.q, n * n);
         mirror_upper(&mut ws.p, n);
 
-        if !all_finite(&ws.x) {
-            return Err(diverged("predicted state"));
-        }
-        if !all_finite(&ws.p) {
-            return Err(diverged("predicted covariance"));
-        }
-        if !variances_consistent(&ws.p, n) {
-            return Err(KalmanError::FilterDivergence(
+        self.commit(|| {
+            KalmanError::FilterDivergence(
                 "predicted covariance lost positive semi-definiteness to rounding".into(),
-            ));
-        }
-        self.commit();
-        Ok(())
+            )
+        })
     }
 
     /// Incorporate measurement `z` (length m).
     ///
     /// Errors, all leaving the filter unchanged: `DimensionMismatch` (wrong
     /// length), `NonFiniteInput` (NaN/∞ in z), `SingularMatrix` (S not
-    /// numerically positive definite relative to its own diagonal),
+    /// numerically positive definite relative to its own diagonal, or so
+    /// ill-conditioned that the Joseph-form P⁺ is not PSD to working precision),
     /// `FilterDivergence` (non-finite intermediate or result).
     pub fn update(&mut self, z: &[T]) -> KalmanResult<()> {
         let (n, m) = (self.n, self.m);
@@ -239,9 +238,7 @@ impl<T: KalmanScalar> LinearKalmanFilter<T> {
         for ((yi, &zi), h_row) in ws.y.iter_mut().zip(z).zip(self.h.chunks_exact(n)) {
             *yi = zi - dot(h_row, &self.x);
         }
-        if !all_finite(&ws.y) {
-            return Err(diverged("innovation"));
-        }
+        // A non-finite y makes x⁺ = x + K y non-finite: `commit` catches it.
 
         // H P into kt; S = (H P) Hᵀ + R, exactly symmetric.
         matmul(&self.h, &self.p, &mut ws.kt, m, n, n);
@@ -250,7 +247,7 @@ impl<T: KalmanScalar> LinearKalmanFilter<T> {
         mirror_upper(&mut ws.s, m);
 
         // S = L Lᵀ, then Kᵀ = S⁻¹ (H P) in place: K = P Hᵀ S⁻¹ without inverting S.
-        cholesky_in_place(&mut ws.s, m, singular_tol::<T>(m)).map_err(|e| match e {
+        cholesky_in_place(&mut ws.s, m, rel_tol::<T>(m)).map_err(|e| match e {
             CholeskyError::Singular => KalmanError::SingularMatrix,
             CholeskyError::NonFinite => diverged("innovation covariance"),
         })?;
@@ -277,29 +274,33 @@ impl<T: KalmanScalar> LinearKalmanFilter<T> {
         matmul(&ws.a, &self.p, &mut ws.ap, n, n, n);
         matmul_transpose_upper(&ws.ap, &ws.a, &mut ws.p, n, n);
         matmul(&self.r, &ws.kt, &mut ws.rkt, m, m, n);
-        add_transpose_matmul_upper(&ws.kt, &ws.rkt, &mut ws.p, n, m);
+        add_transpose_matmul_upper(&ws.kt, &ws.rkt, &mut ws.p, n);
         mirror_upper(&mut ws.p, n);
 
-        if !all_finite(&ws.x) {
-            return Err(diverged("updated state"));
-        }
-        if !all_finite(&ws.p) {
-            return Err(diverged("updated covariance"));
-        }
         // Rounding in the Joseph sum grows with ‖I − K H‖²; when S is so
         // ill-conditioned that it swamps the posterior, report S as singular
         // rather than commit an invalid covariance.
-        if !variances_consistent(&ws.p, n) {
-            return Err(KalmanError::SingularMatrix);
-        }
-        self.commit();
-        Ok(())
+        self.commit(|| KalmanError::SingularMatrix)
     }
 
-    /// Make the candidate estimate in the workspace current (pointer swap).
-    fn commit(&mut self) {
-        core::mem::swap(&mut self.x, &mut self.ws.x);
-        core::mem::swap(&mut self.p, &mut self.ws.p);
+    /// Make the candidate estimate in the workspace current (pointer swap) if
+    /// it is finite and P is PSD to working precision (SPEC B11/B21; `ws.a` is
+    /// free by now and serves as scratch). `on_inconsistent` is a closure so
+    /// that no error value is built (or allocated) on success.
+    fn commit(&mut self, on_inconsistent: impl FnOnce() -> KalmanError) -> KalmanResult<()> {
+        let ws = &mut self.ws;
+        if !all_finite(&ws.x) {
+            return Err(diverged("candidate state"));
+        }
+        if !all_finite(&ws.p) {
+            return Err(diverged("candidate covariance"));
+        }
+        if !psd_to_working_precision(&ws.p, self.n, &mut ws.a) {
+            return Err(on_inconsistent());
+        }
+        core::mem::swap(&mut self.x, &mut ws.x);
+        core::mem::swap(&mut self.p, &mut ws.p);
+        Ok(())
     }
 }
 
@@ -308,7 +309,7 @@ mod tests {
     use super::*;
 
     fn cv_filter() -> LinearKalmanFilter<f64> {
-        LinearKalmanFilter::new(
+        LinearKalmanFilter::try_new(
             2,
             1,
             &[0.0, 1.0],
@@ -343,18 +344,47 @@ mod tests {
     }
 
     #[test]
-    fn scalar_update_matches_closed_form() {
-        let mut kf = LinearKalmanFilter::<f64>::new(1, 1, &[0.0], &[1.0], &[1.0], &[0.0], &[1.0], &[0.25]).unwrap();
-        kf.update(&[2.0]).unwrap();
-        assert!((kf.state()[0] - 1.6).abs() < 1e-15);
-        assert!((kf.covariance()[0] - 0.2).abs() < 1e-15);
+    fn filter_recovers_after_rejected_step() {
+        // F P Fᵀ overflows: predict is rejected and leaves ∞ in the scratch.
+        let new = || LinearKalmanFilter::<f64>::try_new(1, 1, &[1.0], &[1e200], &[1e200], &[0.0], &[1.0], &[1.0]).unwrap();
+        let mut kf = new();
+        assert!(matches!(kf.predict(), Err(KalmanError::FilterDivergence(_))));
+        assert_eq!(kf.covariance(), &[1e200]);
+        // Stale scratch must not leak: same result as a fresh filter, bit for bit.
+        let mut fresh = new();
+        kf.update(&[1.0]).unwrap();
+        fresh.update(&[1.0]).unwrap();
+        assert_eq!((kf.state(), kf.covariance()), (fresh.state(), fresh.covariance()));
     }
 
     #[test]
     fn invalid_dimensions_do_not_panic() {
-        let e = LinearKalmanFilter::<f32>::new(0, 1, &[], &[], &[], &[], &[], &[1.0]);
-        assert!(matches!(e, Err(KalmanError::InvalidDimension { .. })));
-        let e = LinearKalmanFilter::<f32>::new(usize::MAX, 1, &[], &[], &[], &[], &[], &[1.0]);
-        assert!(matches!(e, Err(KalmanError::InvalidDimension { .. })));
+        let e = LinearKalmanFilter::<f32>::try_new(0, 1, &[], &[], &[], &[], &[], &[1.0]);
+        assert!(matches!(e, Err(KalmanError::ZeroDimension)));
+        let e = LinearKalmanFilter::<f32>::try_new(usize::MAX, 1, &[], &[], &[], &[], &[], &[1.0]);
+        assert!(matches!(e, Err(KalmanError::DimensionMismatch { .. })));
+    }
+
+    #[test]
+    fn huge_finite_noise_survives_construction_and_predict() {
+        // Averaging the off-diagonal pair as (a + b)/2 would overflow to ∞.
+        let q = [1e308; 4];
+        let mut kf = LinearKalmanFilter::<f64>::try_new(2, 1, &[0.0; 2], &[0.0; 4], &[0.0; 4], &q, &[1.0, 0.0], &[1.0])
+            .unwrap();
+        kf.predict().unwrap();
+        assert_eq!(kf.covariance(), &q);
+    }
+
+    #[test]
+    fn nan_in_any_input_is_non_finite_input() {
+        let nan = f64::NAN;
+        let id = [1.0, 0.0, 0.0, 1.0];
+        let bad = [nan, 0.0, 0.0, 1.0];
+        for (p0, q) in [(&bad, &id), (&id, &bad)] {
+            let e = LinearKalmanFilter::try_new(2, 1, &[0.0; 2], p0, &id, q, &[1.0, 0.0], &[1.0]);
+            assert!(matches!(e, Err(KalmanError::NonFiniteInput)), "{e:?}");
+        }
+        let e = LinearKalmanFilter::try_new(2, 1, &[0.0; 2], &id, &id, &id, &[1.0, 0.0], &[nan]);
+        assert!(matches!(e, Err(KalmanError::NonFiniteInput)), "{e:?}");
     }
 }
